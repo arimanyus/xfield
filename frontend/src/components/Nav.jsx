@@ -7,7 +7,14 @@ export const Nav = () => (
         <span className="text-tape">ALREADY</span> <span className="text-white">AIRED</span>
         <span className="hidden sm:inline-block ml-3 align-middle font-osd text-sm tracking-[0.2em] text-slate-400">ARCHIVE</span>
       </Link>
-      <nav className="flex items-center gap-2 sm:gap-4 font-osd text-lg sm:text-xl uppercase tracking-wider">
+      <nav className="flex items-center gap-1 sm:gap-4 font-osd text-base sm:text-xl uppercase tracking-wider">
+        <NavLink
+          to="/timeline"
+          data-testid="nav-timeline"
+          className={({ isActive }) => `px-2 py-1 transition-colors ${isActive ? "text-tape" : "text-slate-300 hover:text-tape"}`}
+        >
+          Predictions
+        </NavLink>
         <NavLink
           to="/leaderboards"
           data-testid="nav-leaderboards"
@@ -15,8 +22,9 @@ export const Nav = () => (
         >
           Leaderboards
         </NavLink>
-        <Link to="/" data-testid="nav-find" className="bg-tape text-ink px-3 py-1 hover:bg-tape-dark transition-colors whitespace-nowrap">
-          Find episode
+        <Link to="/" data-testid="nav-find" className="bg-tape text-ink px-2 sm:px-3 py-1 hover:bg-tape-dark transition-colors whitespace-nowrap">
+          <span className="sm:hidden">Find</span>
+          <span className="hidden sm:inline">Find episode</span>
         </Link>
       </nav>
     </div>

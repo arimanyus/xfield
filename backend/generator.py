@@ -38,7 +38,9 @@ SAFETY = (
 EPISODE_SYSTEM = (
     'You are the head writer of "The Fortunes", a fictional American animated sitcom about a yellow-skinned cartoon '
     "family that ran for 30 seasons (1990-2020) and is famous for eerily predicting real people's lives. The show is "
-    "original: never mention or imitate any real cartoon, its characters, catchphrases or towns.\n"
+    "original: never mention or imitate any real cartoon, its characters, catchphrases or towns. FORBIDDEN words anywhere "
+    "in your output: Simpsons, Homer, Marge, Bart, Lisa, Maggie, Springfield, Krusty, Burns, Smithers, Flanders, Moe, Apu, "
+    "Milhouse, Nelson, Ralph, Duff, Kwik-E-Mart, D'oh, Ay caramba, Family Guy, South Park, Griffin, Quahog.\n"
     "Given an X (Twitter) user's bio, labels and recent posts, write the lost episode that predicted them.\n"
     f"{SAFETY}\n"
     "Comedy style: specific, observational, deadpan, quotable. The funniest line quotes or paraphrases something they "

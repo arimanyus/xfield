@@ -13,6 +13,16 @@ export const reportEpisode = (id, reason) => http.post(`/episodes/${id}/report`,
 export const getRecent = (limit = 20) => http.get("/recent", { params: { limit } }).then((r) => r.data);
 export const getHandle = (handle) => http.get(`/handles/${encodeURIComponent(handle)}`).then((r) => r.data);
 export const getLeaderboard = (type, period) => http.get("/leaderboard", { params: { type, period } }).then((r) => r.data);
+export const getTimeline = () => http.get("/timeline").then((r) => r.data);
+
+export const untilYear = (year) => {
+  const days = Math.ceil((Date.UTC(year, 0, 1) - Date.now()) / 86400000);
+  if (days <= 0) return { days, label: "due now", due: true };
+  if (days < 60) return { days, label: `${days} days`, due: false };
+  const y = Math.floor(days / 365.25);
+  const m = Math.floor((days - y * 365.25) / 30.44);
+  return { days, label: y ? `${y}y ${m}m` : `${m} months`, due: false };
+};
 
 export const errMsg = (e) => e?.response?.data?.detail || e?.message || "Something went wrong";
 

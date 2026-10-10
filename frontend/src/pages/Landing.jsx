@@ -4,6 +4,7 @@ import { HandleForm } from "@/components/HandleForm";
 import { Ticker } from "@/components/Ticker";
 import { StaticScreen } from "@/components/StaticScreen";
 import { EpisodeGrid } from "@/components/EpisodeTile";
+import { PredictionStrip } from "@/components/PredictionStrip";
 import { getRecent, seCode } from "@/lib/api";
 
 const HeroPreview = ({ ep }) => {
@@ -31,7 +32,7 @@ const HeroPreview = ({ ep }) => {
 const steps = [
   ["01", "Type a handle", "Yours, or a friend's. No login, nothing posted on your behalf."],
   ["02", "We read the posts", "Only public, original posts and the bio. Confirm three labels in one tap."],
-  ["03", "The episode airs", "A cartoon still + what already came true + two dated prophecies. Share it. Tag them."],
+  ["03", "The episode airs", "A cartoon still + what already came true + two dated prophecies that join the timeline. Share it. Tag them."],
 ];
 
 export default function Landing() {
@@ -41,16 +42,17 @@ export default function Landing() {
       <section className="max-w-6xl mx-auto px-4 sm:px-6 pt-10 sm:pt-16 pb-12 grid lg:grid-cols-[1.05fr_0.95fr] gap-10 lg:gap-14 items-center">
         <div className="animate-rise">
           <p className="osd" data-testid="hero-osd">
-            <span className="text-red-500 animate-blink">●</span> Archive · 30 seasons · 1990–2020
+            <span className="text-red-500 animate-blink">●</span> Inspired by 30 years of Simpsons predictions
           </p>
           <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl leading-[0.92] mt-4 tracking-wide" data-testid="hero-title">
-            THE SHOW <span className="text-tape">ALREADY AIRED</span>
+            THE SIMPSONS DID IT TO THE WORLD.
             <br />
-            YOUR LIFE.
+            <span className="text-tape">NOW IT'S YOUR TURN.</span>
           </h1>
           <p className="mt-5 text-slate-300 text-base sm:text-lg max-w-xl leading-relaxed" data-testid="hero-sub">
-            Type an X handle. We read the posts and pull the lost episode of a 30-season yellow cartoon that predicted them —
-            one thing that already came true, two still coming.
+            The Simpsons called President Trump 16 years early, Disney buying Fox 21 years early, the smartwatch 20 years early. Type an X
+            handle and we pull the lost episode of a yellow cartoon that predicted <em>them</em> — one thing that already came true, two still
+            coming.
           </p>
           <HandleForm className="mt-8" idPrefix="hero" />
         </div>
@@ -58,6 +60,8 @@ export default function Landing() {
           <HeroPreview ep={recent[0]} />
         </div>
       </section>
+
+      <PredictionStrip />
 
       <Ticker items={recent} />
 

@@ -20,6 +20,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 import storage  # noqa: E402
 from generator import extract_labels, render_card_for_episode, write_episode  # noqa: E402
+from predictions import CATEGORIES, PREDICTIONS  # noqa: E402
 from safety import contains_blocked  # noqa: E402
 from xreader import is_valid_handle, normalize_handle, read_handle  # noqa: E402
 
@@ -293,6 +294,25 @@ async def leaderboard(request: Request, type: Literal["prophesied", "prophets", 
     return [{"handle": r["handle"], "name": r["name"] if type == "prophesied" else None,
              "avatar_url": r["avatar_url"] if type == "prophesied" else None, "count": r["count"],
              "latest_id": r["latest_id"], "latest_title": r["latest_title"]} for r in rows]
+
+
+@api_router.get("/timeline")
+async def timeline(request: Request):
+    base = public_base(request)
+    confirmed = [{**p, "gap": p["event"] - p["aired"], "status": "confirmed"} for p in PREDICTIONS]
+    confirmed.sort(key=lambda p: (p["event"], p["aired"]))
+    docs = await db.episodes.find({"hidden": False}, {"_id": 0}).sort("created_at", -1).to_list(60)
+    pending = []
+    for d in docs:
+        for key in ("coming_near", "coming_far"):
+            p = d[key]
+            pending.append({"year": p["year"], "text": p["text"], "handle": d["handle"], "episode_id": d["id"],
+                            "code": f"S{d['season']:02d}E{d['episode']:02d}", "title": d["title"],
+                            "image_url": f"{base}/api/episodes/{d['id']}/image" if d["image_status"] == "ready" else None,
+                            "created_at": d["created_at"]})
+    pending.sort(key=lambda p: (p["year"], p["created_at"]), reverse=False)
+    return {"confirmed": confirmed, "pending": pending[:60], "categories": CATEGORIES,
+            "pending_total": await db.episodes.count_documents({"hidden": False}) * 2}
 
 
 @api_router.get("/s/{ep_id}")

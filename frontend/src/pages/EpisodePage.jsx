@@ -6,6 +6,7 @@ import { EpisodeCard, EpisodeMeta } from "@/components/EpisodeCard";
 import { ProphecyLines } from "@/components/ProphecyLines";
 import { ShareBar } from "@/components/ShareBar";
 import { ReportButton } from "@/components/ReportButton";
+import { TimelineCountdown } from "@/components/TimelineCountdown";
 import { HandleForm } from "@/components/HandleForm";
 import { StaticScreen } from "@/components/StaticScreen";
 import { cleanHandle, errMsg, getEpisode, HANDLE_RE, seCode } from "@/lib/api";
@@ -87,6 +88,7 @@ export default function EpisodePage() {
 
         <aside className="space-y-8 animate-rise" style={{ animationDelay: "150ms" }}>
           <ProphecyLines ep={ep} fresh={fresh} />
+          <TimelineCountdown ep={ep} />
           <ProphesyFriend ep={ep} />
           <Link to={`/u/${ep.handle}`} data-testid="see-all-handle-link" className="block font-osd text-xl text-tape hover:underline">
             See all episodes about @{ep.handle} →
@@ -98,7 +100,7 @@ export default function EpisodePage() {
         <div>
           <div className="osd">Your turn</div>
           <h2 className="font-display text-4xl sm:text-5xl tracking-wide mt-2 leading-[0.95]">
-            THE SHOW PROBABLY <span className="text-tape">PREDICTED YOU</span> TOO.
+            THE SIMPSONS GOT TRUMP. <span className="text-tape">THE SHOW GOT YOU.</span>
           </h2>
           <p className="text-slate-300 mt-3">Takes about twenty seconds. No login. Nothing is posted for you.</p>
         </div>
