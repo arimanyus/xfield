@@ -1,0 +1,30 @@
+{
+  "summary": "Full backend + frontend e2e testing of Already Aired. 17/17 backend pytest tests pass (100%): /api/read happy+error paths, episode creation (naval roast with image poll→ready, sama friend-by-naval, taps for nonexistent handle), validation (blocked label 400, invalid spice 422), share increment, all leaderboards (prophesied/prophets/shared, today/all), /api/recent, /api/handles/sama, /api/s/{id} OG html for bots + 302 for humans + 302 for unknown, 3-report hide flow (taps episode now hidden & excluded from /recent, returns 404). Frontend: Landing + nav + hero form + ticker render, mobile 390px has zero horizontal overflow. /find?handle=naval shows static-screen → confirm-screen with avatar/name/3 label chips; tapping confirm-label-vibe opens confirm-chips-vibe and label updates; confirm-generate-btn navigates to /ep/{id}. Episode page shows episode-card, code, aired, title, handle-link, line-past/near/far, share-x-btn (href=twitter.com/intent/tweet?...&url=.../api/s/..., url-encoded), copy-link-btn toast, download-btn disabled→enabled when image ready (verified: still appears within ~30s), report-btn opens report-dialog, prophesy-friend-form navigates to /find?handle=X&by=Y&spice=.. Handle page /u/sama renders handle-name/at/episode-count/grid/find-another. Leaderboards page tabs + period toggle render and switch. Taps flow /find?handle=zzqxnobody9985 chips through 3 steps and lands on /ep/{id} with a valid episode (verified S10E09 'The Barista Who Knew Too Little'). All features functional.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "LeaderboardsPage shared tab", "issues": ["Spec expects data-testid='lb-shared' / 'lb-shared-empty' on the shared tab list, but code uses <EpisodeGrid> which exposes data-testid='episode-grid' / 'episode-grid-empty'. Works functionally, only a testid naming mismatch — consider wrapping EpisodeGrid in a container with data-testid='lb-shared' for consistency with the handle-row leaderboards."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_already_aired.py", "/app/test_reports/pytest/pytest_results.xml"],
+  "action_items": [
+    "(Optional/cosmetic) Add data-testid='lb-shared' wrapper around the shared-tab EpisodeGrid in LeaderboardsPage.jsx for parity with lb-prophesied / lb-prophets testids."
+  ],
+  "critical_code_review_comments": [
+    "server.py: /api/handles/{handle} calls clean_handle() which rejects invalid handles with 400 — that's correct, but there is no 404 path when a handle has no cached profile AND no episodes: it returns an object with episode_count=0 instead of 404. Fine for an archive page, worth confirming it's intentional.",
+    "server.py: public_base() derives scheme from host prefix (http for localhost else https). In an environment behind an ingress serving over http this could be wrong — current preview sets host via x-forwarded-host which is correct.",
+    "safety.contains_blocked is used both for handle and label values; make sure blocklist does not accidentally reject common handle substrings (not observed here).",
+    "frontend ShareBar: xIntentUrl correctly points at twitter.com/intent/tweet; x.com is also acceptable but current implementation is fine.",
+    "frontend LeaderboardsPage: 'shared' tab uses EpisodeGrid rather than the HandleRows pattern — functional parity but testid naming diverges from the spec."
+  ],
+  "updated_files": ["/app/backend/tests/test_already_aired.py"],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100% of critical flows (landing/confirm/episode/handle/leaderboards/taps/friend-form all pass)"},
+  "test_credentials": "No auth required.",
+  "seed_data_creation": "Created 5 episodes total via tests: naval (roast), sama (savage, found_by naval), zzqxnobody9981 (taps, now hidden via 3 reports), one via UI confirm flow for naval, one via UI taps flow (zzqxnobody9985). All within rate limit.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Rate limit is 10 episodes/hour per IP; tests consume 4-5. If re-running soon, wait or they will 429. Note: Playwright click(force=True) on taps chips mis-fires (triggers the 'something else' chip instead) — use .locator().click() (no force) for ChipPicker. This is a Playwright/React event quirk, not an app bug.",
+  "rca of the issue": "N/A — no bugs found that need RCA. The one spec/code naming mismatch (lb-shared testid) is cosmetic."
+}

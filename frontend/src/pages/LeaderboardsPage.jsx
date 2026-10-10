@@ -78,7 +78,9 @@ export default function LeaderboardsPage() {
         </TabsContent>
         <TabsContent value="shared" className="mt-4">
           <p className="font-osd text-slate-400 text-lg mb-4">Episodes with the most share clicks.</p>
-          <EpisodeGrid items={shared.data || []} emptyText="No shares counted yet." />
+          <div data-testid="lb-shared">
+            <EpisodeGrid items={shared.data || []} emptyText="No shares counted yet." />
+          </div>
         </TabsContent>
       </Tabs>
     </main>
