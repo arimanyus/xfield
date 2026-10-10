@@ -1,0 +1,25 @@
+{
+  "summary": "Verified new Simpsons timeline features end-to-end. Backend /api/timeline: 6/6 pytest cases pass (23 confirmed, trump S11E17 gap=16, sports={superbowl-26,fifa,curling}, pending shape+sort, categories). Frontend: landing hero copy mentions Simpsons, prediction-strip renders 8 cards + '(23)' link, strip-card-trump deep-links to /timeline#trump and scrolls to entry, nav-timeline works, timeline page shows 23 entries, sports filter reduces to exactly the 3 expected entries, all restores 23, pending-year/pending-entry groups exist and link to /ep/{id}, timeline-cta -> /, episode page countdown shows two non-empty labels ('2 months', '4y 2m'), countdown-timeline-link navigates to /timeline#pending (URL hash set correctly, scroll occurs), footer-disclaimer visible. Mobile 390: landing has no horizontal overflow (scrollWidth=390), strip is horizontally scrollable, /timeline renders. Regression: hero form 'sama' -> /find?handle=sama&spice=roast and confirm-screen reached; leaderboards renders.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Nav", "issue": "On mobile (390px), the 'ALREADY AIRED' logo wraps to 2 lines (bounding box height=48px, 'ALREADY' on line 1, 'AIRED' on line 2). Request explicitly asked 'nav logo stays on one line'. Likely cause: logo text split across two spans with no whitespace:nowrap at that breakpoint, or stacked by design intent. Suggest adding `whitespace-nowrap` or inline flex / smaller letter-spacing at <640px.", "selector": "[data-testid=\"nav-logo\"] (or header brand)", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_timeline.py", "/app/test_reports/pytest/timeline_results.xml"],
+  "action_items": [
+    "Fix mobile nav: keep 'ALREADY AIRED' logo on one line at 390px (add whitespace-nowrap or restyle)."
+  ],
+  "critical_code_review_comments": [
+    "server.py timeline(): pending_total is computed as episodes_count*2 which conflates total pending (across all episodes) with the pending array length (capped at 60 of latest 60 episodes). If UI ever surfaces 'pending_total', it will be accurate; worth documenting that pending[] is a truncated preview.",
+    "pending sort uses (year, created_at) ascending — fine; episodes within same year interleave by creation time which matches spec."
+  ],
+  "updated_files": ["/app/backend/tests/test_timeline.py"],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "~95% (one minor mobile nav wrap issue)"},
+  "seed_data_creation": "None. Reused existing episodes via /api/recent (ids: 5MusI4jx, SOyV7Kk-).",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Backend /api/timeline fully covered by /app/backend/tests/test_timeline.py. Frontend new features (prediction-strip, /timeline, timeline-countdown on episode page, nav-timeline, footer-disclaimer) all verified. Only outstanding issue: nav logo wraps on mobile (390px). Note: a viewport-based assertion for pending scroll-into-view failed only because test viewport was 4000px tall — real behavior (URL hash + scrollIntoView) works correctly."
+}

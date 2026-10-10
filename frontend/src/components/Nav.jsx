@@ -3,11 +3,11 @@ import { Link, NavLink } from "react-router-dom";
 export const Nav = () => (
   <header className="sticky top-0 z-40 backdrop-blur-xl bg-ink/80 border-b border-tape/20">
     <div className="max-w-6xl mx-auto px-4 sm:px-6 h-14 flex items-center justify-between gap-4">
-      <Link to="/" data-testid="nav-logo" className="font-display text-2xl sm:text-3xl tracking-[0.08em] leading-none">
+      <Link to="/" data-testid="nav-logo" className="font-display text-xl sm:text-3xl tracking-[0.08em] leading-none whitespace-nowrap">
         <span className="text-tape">ALREADY</span> <span className="text-white">AIRED</span>
         <span className="hidden sm:inline-block ml-3 align-middle font-osd text-sm tracking-[0.2em] text-slate-400">ARCHIVE</span>
       </Link>
-      <nav className="flex items-center gap-1 sm:gap-4 font-osd text-base sm:text-xl uppercase tracking-wider">
+      <nav className="flex items-center gap-0.5 sm:gap-4 font-osd text-sm sm:text-xl uppercase tracking-wider">
         <NavLink
           to="/timeline"
           data-testid="nav-timeline"

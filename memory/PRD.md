@@ -39,6 +39,15 @@ Growth loops: share link unfurls to the card image on X; "prophesy a friend" tag
 - Handle pages, leaderboards (3 tabs, today/all), OG previews, caching, safety, rate limit, paid-provider slot (off).
 - Tested: 17/17 backend tests + all frontend flows (iteration_1).
 
+### Iteration 2 — Simpsons angle made explicit + real-predictions timeline (user request)
+- Hero/CTA copy names The Simpsons openly as the inspiration (nominative use); generated cards keep the fictional show name. Footer disclaimer (not affiliated with The Simpsons / Disney / Fox).
+- `backend/predictions.py`: 23 documented, non-tragic Simpsons predictions (episode code, title, aired, came-true year, gap, headline, detail, category, featured flag). `GET /api/timeline` → confirmed (sorted by came-true year) + pending (coming_near/coming_far of latest 60 archive episodes, grouped by year on the client).
+- `/timeline` page: hero, category filters, vertical timeline, `#pending` "Your turn on the timeline" section with countdowns per year, CTA. Hash deep links (`/timeline#trump`, `#pending`).
+- Landing: `PredictionStrip` under the hero (8 featured calls, "Full timeline (23) →"). Nav: "Predictions".
+- Episode page: `TimelineCountdown` block ("Your prophecies join the timeline", countdown to each prophecy year, link to `#pending`).
+- Prompt hardened with an explicit forbidden-names list (Homer, Bart, Springfield, …) after one generated title used "Homer".
+- Tested: 6/6 backend + all new UI flows (iteration_2); mobile nav logo wrap fixed.
+
 ## Known limitations / risks
 - nitter.cf is a community mirror and can throttle/vanish; chain + env-swappable mirror + paid slot mitigate.
 - Gemini often declines real-person likeness → generic character (`still_kind: generic`); expected.
