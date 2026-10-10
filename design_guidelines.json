@@ -1,0 +1,82 @@
+{
+  "project_identity": {
+    "app_name": "Already Aired",
+    "tagline": "The 1990s animated series that predicted your exact digital life.",
+    "theme_archetype": "LATE-90S BROADCAST ARCHIVE (RETRO CRT / VHS)",
+    "concept": "Reads an X handle, discovers the lost episode from 30-season cartoon show 'The Fortunes' that foresaw their life: 1 past roast + 2 future prophecies. Outputs a 16:9 paused TV frame with subtitle bar, metadata, and share triggers.",
+    "forbidden_elements": [
+      "Simpsons names, characters, catchphrases, logos, or copyrighted assets",
+      "Generic Inter/Roboto headings",
+      "Boring centered white/grey SaaS forms",
+      "AI assistant emoji characters (🤖, 🧠, 💡, 🔮, 🎯)",
+      "Full transparent backgrounds without blur/scrim on headers or overlays"
+    ]
+  },
+  "visual_theme_and_colors": {
+    "mode": "dark",
+    "palette": {
+      "background_deep": "#070B14",
+      "background_card": "#0F172A",
+      "background_crt_overlay": "rgba(10, 15, 28, 0.85)",
+      "primary_accent": "#FACC15",
+      "primary_accent_hover": "#EAB308",
+      "text_primary": "#F8FAFC",
+      "text_secondary": "#94A3B8",
+      "text_vhs_green": "#22C55E",
+      "text_vhs_cyan": "#06B6D4",
+      "text_vhs_red": "#EF4444",
+      "border_crt": "rgba(250, 204, 21, 0.2)",
+      "border_subtle": "rgba(255, 255, 255, 0.1)"
+    },
+    "effects": {
+      "scanlines": "repeating-linear-gradient(0deg, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.3) 1px, transparent 1px, transparent 3px)",
+      "crt_bloom": "0 0 12px rgba(250, 204, 21, 0.35)",
+      "vhs_tracking_bar": "h-1 bg-yellow-400/40 blur-[1px] animate-pulse",
+      "glassmorphism_nav": "backdrop-blur-xl bg-[#070B14]/80 border-b border-yellow-500/20"
+    }
+  },
+  "typography": {
+    "font_family_heading": "Bebas Neue, Impact, Barlow Condensed, sans-serif",
+    "font_family_osd_mono": "VT323, Courier New, monospace",
+    "font_family_body": "Outfit, Plus Jakarta Sans, sans-serif",
+    "scale": {
+      "h1_hero": "text-4xl sm:text-5xl lg:text-6xl tracking-tight uppercase font-black",
+      "h2_section": "text-2xl sm:text-3xl lg:text-4xl uppercase tracking-wide",
+      "h3_card": "text-xl sm:text-2xl font-bold",
+      "osd_label": "text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-yellow-400",
+      "body": "text-base sm:text-lg leading-relaxed"
+    }
+  },
+  "layout_and_spacing": {
+    "container": "max-w-6xl mx-auto px-4 sm:px-6 lg:px-8",
+    "mobile_first": true,
+    "card_aspect_ratio": "aspect-video (16:9 4:3 broadcast frame)",
+    "bento_grid": "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
+  },
+  "key_features_and_flows": [
+    "Navbar with Logo ('ALREADY AIRED'), Search Handle Quick-Input, Leaderboards link, Recent Ticker link",
+    "Landing Hero: Handle Input with (@) prefix, 'Find My Episode' button, Spice Toggle (Roast / Savage)",
+    "Recent Episodes Live Ticker: Marquee auto-scrolling recent generated prophecies with episode stills and handles",
+    "Analysis Loading State: 'Reading @handle...' with 3 personality tags extracted/editable ('builder', 'chronically online', 'AI obsessed')",
+    "3-Tap Fallback Flow: Quick option selector if handle API is throttled or user inputs custom details",
+    "Archive Searching Generation State: TV static flicker animation, rolling season/episode numbers, typing text effect, TV channel switch wipe",
+    "Episode Output Card (Hero Object): 16:9 paused VHS/TV capture frame, yellow subtitle bar at bottom, episode metadata badge (Season, Ep #, Air Date 1999), 3 prophecy cards (ALREADY HAPPENED, COMING NEXT YEAR, COMING 2029-2032)",
+    "Action/Share Bar: One-click Share to X with pre-filled viral text, Copy direct link, Download high-res PNG card preview, 'Prophesy a Friend' CTA",
+    "Public Episode View (/ep/:id): Dedicated page for sharing links with big 'Find Your Episode' sticky CTA",
+    "Handle Profile Page (/u/:handle): Profile header with avatar, total prophecies, grid of all aired episodes for this user",
+    "Leaderboards Page: 3 tabs ('Most Prophesied Handles', 'Top Prophets', 'Most Shared Episodes')",
+    "Report Episode Button: Modal dialog to report inaccurate or offensive prophecies",
+    "Light/Dark Theme Switcher: CRT Amber Dark Mode vs Vintage Broadcast CRT Light Mode"
+  ],
+  "image_urls": {
+    "retro_tv_frame": "https://images.unsplash.com/photo-1722080668729-3fd4e3c88b5e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHw0fHxyZXRybyUyMHllbGxvdyUyMGNhcnRvb24lMjBDUlQlMjBzY3JlZW4lMjBWSFMlMjB0ZWxldmlzaW9ufGVufDB8fHx8MTc5MTYzNTQ0M3ww&ixlib=rb-4.1.0&q=85",
+    "tv_stack": "https://images.unsplash.com/photo-1749209901692-fc86e51b22a1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwzfHxyZXRybyUyMHllbGxvdyUyMGNhcnRvb24lMjBDUlQlMjBzY3JlZW4lMjBWSFMlMjB0ZWxldmlzaW9ufGVufDB8fHx8MTc5MTYzNTQ0M3ww&ixlib=rb-4.1.0&q=85",
+    "vhs_screen": "https://images.unsplash.com/photo-1692731974074-03e7ef257a79?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwyfHxyZXRybyUyMHllbGxvdyUyMGNhcnRvb24lMjBDUlQlMjBzY3JlZW4lMjBWSFMlMjB0ZWxldmlzaW9ufGVufDB8fHx8MTc5MTYzNTQ0M3ww&ixlib=rb-4.1.0&q=85"
+  },
+  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
+    "All interactive elements MUST include data-testid attributes (e.g. data-testid=\"handle-input\", data-testid=\"generate-btn\", data-testid=\"share-x-btn\").",
+    "Never use generic centered plain white layouts — lean heavily into the dark CRT navy background with electric yellow highlights and scanline texture overlays.",
+    "Ensure high contrast on all text: white/yellow readable text over dark semi-opaque surfaces.",
+    "Include subtle micro-animations: hover scale, pulse on VHS timestamps, typing animation during generation, scanline shimmer."
+  ]
+}
