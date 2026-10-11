@@ -25,6 +25,10 @@ export default function FindFlow() {
     started.current = true;
     readHandle(handle)
       .then((p) => {
+        if (p.existing_episode_id) {
+          navigate(`/ep/${p.existing_episode_id}`, { replace: true });
+          return;
+        }
         setProfile(p);
         if (p.found && p.labels) {
           setLabels(p.labels);
@@ -86,6 +90,10 @@ export default function FindFlow() {
                   started.current = true;
                   readHandle(handle)
                     .then((p) => {
+                      if (p.existing_episode_id) {
+                        navigate(`/ep/${p.existing_episode_id}`, { replace: true });
+                        return;
+                      }
                       setProfile(p);
                       if (p.found && p.labels) {
                         setLabels(p.labels);

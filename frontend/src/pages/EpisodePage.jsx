@@ -7,6 +7,7 @@ import { EpisodeCard, EpisodeMeta } from "@/components/EpisodeCard";
 import { ProphecyLines } from "@/components/ProphecyLines";
 import { ShareBar } from "@/components/ShareBar";
 import { ReportButton } from "@/components/ReportButton";
+import { RerollButton } from "@/components/RerollButton";
 import { TimelineCountdown } from "@/components/TimelineCountdown";
 import { HandleForm } from "@/components/HandleForm";
 import { StaticScreen } from "@/components/StaticScreen";
@@ -138,6 +139,7 @@ export default function EpisodePage() {
           <ShareBar ep={ep} onShared={setShares} />
           <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 font-osd text-lg text-slate-500">
             <span data-testid="share-count">{shares ?? ep.shares} shares</span>
+            <RerollButton ep={ep} />
             <ReportButton ep={ep} />
           </div>
         </div>

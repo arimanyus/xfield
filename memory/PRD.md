@@ -79,7 +79,13 @@ Growth loops: share link unfurls to the card image on X; "prophesy a friend" tag
 - X's web intent cannot attach images, so the desktop composer opened with text + link only. Now `ShareBar` pre-converts the share card to PNG, and on "Share to X" copies it to the clipboard (`ClipboardItem` with a promise, gesture-safe) → opens the composer → toast "Card copied. Paste it into the post (⌘V / Ctrl+V)". Falls back to downloading the card if the clipboard is unavailable; popup-blocked fallback shows an "Open X" toast action. Mobile Web Share (image file) unchanged.
 - Verified in Chromium: composer opens, clipboard holds `image/png`.
 
-## Known limitations / risks
+### Iteration 9 — One episode per handle + share dialog (user request)
+- **Episode cache (forever)**: `existing_episode(handle)` returns the latest non-hidden episode that is ready (or pending <5 min). `POST /api/read` short-circuits with `existing_episode_id` (no X read, no labels); FindFlow jumps straight to `/ep/{id}`. `POST /api/episodes` without `fresh: true` returns the existing episode (no rate-limit charge). `fresh: true` forces a new generation.
+- **Re-roll**: "Find another episode" link on the episode page (`RerollButton`, reuses the episode's labels, `fresh: true`) → new episode becomes the handle's current one.
+- **Share dialog (desktop)**: `ShareDialog` replaces the toast flow — card preview on the left, 3 steps on the right (① Card copied ✓ auto on open, ② Open X button, ③ Paste ⌘V/Ctrl+V and post), plus Download / Copy link. Mobile keeps native Web Share with the image file.
+- Verified: `/find?handle=paulg` → instant redirect to existing episode; dialog copies PNG to clipboard and opens the composer; `fresh: true` creates a new pending episode which immediately becomes the handle's current one.
+
+
 - nitter.cf is a community mirror and can throttle/vanish; chain + env-swappable mirror + paid slot mitigate.
 - Gemini often declines real-person likeness → generic character (`still_kind: generic`); expected.
 - Share counts are client-reported (no verification). "found by" credit unverified.

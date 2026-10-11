@@ -71,6 +71,7 @@ class CreateEpisodeRequest(BaseModel):
     handle: str = Field(min_length=1, max_length=120)
     found_by: Optional[str] = Field(default=None, max_length=120)
     spice: Literal["savage"] = "savage"
+    fresh: bool = False
     labels: Labels
     posts_text: Optional[str] = Field(default=None, max_length=3000)
 
@@ -214,9 +215,19 @@ async def root():
     return {"message": "Already Aired archive is online"}
 
 
+async def existing_episode(handle: str):
+    recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
+    return await db.episodes.find_one(
+        {"handle_lower": handle.lower(), "hidden": False,
+         "$or": [{"text_status": "ready"}, {"text_status": "pending", "created_at": {"$gte": recent}}]},
+        {"_id": 0}, sort=[("created_at", -1)])
+
+
 @api_router.post("/read")
 async def read_profile(body: ReadRequest):
     handle = clean_handle(body.handle)
+    if existing := await existing_episode(handle):
+        return {"found": True, "handle": existing["handle"], "existing_episode_id": existing["id"]}
     profile = await get_profile(handle)
     labels = await extract_labels(profile) if profile["found"] else None
     posts = profile.get("posts") or []
@@ -235,6 +246,8 @@ async def create_episode(body: CreateEpisodeRequest, request: Request):
     labels = {k: v.strip().lower() for k, v in body.labels.model_dump().items()}
     if contains_blocked(*labels.values()):
         raise HTTPException(400, "Those answers can't be used here.")
+    if not body.fresh and (existing := await existing_episode(handle)):
+        return ep_public(existing, public_base(request))
     await check_rate(client_ip(request))
     pasted = parse_pasted(body.posts_text)
     if contains_blocked(*pasted):
