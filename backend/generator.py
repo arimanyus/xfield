@@ -114,7 +114,7 @@ CRITIC_SYSTEM = (
     "keep every specific, sharpen the twist. If no candidate scores at least 7 on both (a) and (b), write a new one from the "
     "posts that does. Pick the best already_happened option (the one whose evidence is really in the posts and whose scene "
     "mirrors it beat for beat); tighten it to max 180 chars and keep the evidence a verbatim excerpt.\n"
-    'Reply with ONLY JSON: {"already_happened": "...", "aired_short": "the chosen scene as a caption, max 70 chars, names the Simpsons character", "evidence": "...", "coming_near": "...", "coming_far": {"year": N, "text": "..."}}'
+    'Reply with ONLY JSON: {"already_happened": "...", "aired_short": "the chosen scene as a caption, max 70 chars, names the Simpsons character", "evidence": "...", "coming_near": {"text": "...", "short": "the same prophecy cut to max 85 chars, keep the proper noun and the number"}, "coming_far": {"year": N, "text": "...", "short": "max 85 chars"}}'
 )
 
 BANNED_RE = re.compile(r"^(he|she|they|the character)\b|\b(will (post|tweet)|keeps?|continues?|still|every day|seventeen times)\b", re.I)
@@ -211,11 +211,29 @@ def _pick(options, bad=BANNED_RE):
 async def _critic(draft: dict, user: str) -> dict:
     cands = {k: draft.get(k) for k in ("already_happened_options", "near_options", "far_options")}
     prompt = f"{user}\n\nWRITERS' DRAFT (title “{draft.get('title')}”, cast {draft.get('cast')}):\n{json.dumps(cands, ensure_ascii=False, indent=1)}\n\nDo the final pass now."
-    raw = await asyncio.wait_for(_llm_text(TEXT_MODEL, CRITIC_SYSTEM, prompt, 900, WRITER_EFFORT), timeout=40)
+    raw = await asyncio.wait_for(_llm_text(TEXT_MODEL, CRITIC_SYSTEM, prompt, 1000, WRITER_EFFORT), timeout=40)
     out = _json(raw)
-    if not out.get("coming_near") or not (out.get("coming_far") or {}).get("text"):
+    cn = out.get("coming_near")
+    if isinstance(cn, str):
+        out["coming_near"] = {"text": cn}
+    if not (out.get("coming_near") or {}).get("text") or not (out.get("coming_far") or {}).get("text"):
         raise ValueError("critic returned incomplete lines")
     return out
+
+
+async def shorten_prophecy(text: str) -> str:
+    out = text
+    for limit in (85, 70, 60):
+        raw = await asyncio.wait_for(_llm_text(
+            TEXT_MODEL, "You tighten prophecies. Reply with only the line, no quotes, sentence case, same voice as the original (starts with the verb, present tense).",
+            f"Cut this to max {limit} characters (count them). Keep the proper noun, the number and the twist; drop subordinate clauses:\n{text}", 1500, "low"), timeout=30)
+        out = raw.strip().strip('"“”')
+        if not out:
+            continue
+        out = out[:1].upper() + out[1:]
+        if len(out) <= 95:
+            return out
+    return _clamp(out, 95)
 
 
 async def shorten_aired(text: str) -> str:
@@ -275,8 +293,8 @@ async def write_episode(profile: dict, labels: dict, spice: str, found_by) -> di
         return max(lo, min(y, hi))
 
     cf = final.get("coming_far") or {}
-    cn_text = final.get("coming_near")
-    cn_text = cn_text.get("text") if isinstance(cn_text, dict) else cn_text
+    cn = final.get("coming_near")
+    cn = cn if isinstance(cn, dict) else {"text": cn}
     cast = [str(c).strip()[:40] for c in (data.get("cast") or []) if str(c).strip()][:4]
     return {
         "title": _clamp(data.get("title") or "The One Nobody Saw Coming", 70),
@@ -288,8 +306,10 @@ async def write_episode(profile: dict, labels: dict, spice: str, found_by) -> di
         "already_happened": _clamp(final.get("already_happened"), 220),
         "aired_short": _clamp(final.get("aired_short") or "", 90),
         "evidence": _verify_evidence(final.get("evidence"), profile),
-        "coming_near": {"year": near, "text": _clamp(cn_text, 170)},
+        "coming_near": {"year": near, "text": _clamp(cn.get("text"), 170)},
         "coming_far": {"year": year_of(cf, far_min + 2, far_min, far_max), "text": _clamp(cf.get("text"), 170)},
+        "coming_near_short": _clamp(cn.get("short") or "", 95),
+        "coming_far_short": _clamp(cf.get("short") or "", 95),
         "subtitle": _clamp(data.get("subtitle") or "HOMER: I should not have posted that.", 110),
         "scene": _clamp(data.get("scene"), 400),
         "scene_visual": _clamp(data.get("scene_visual"), 400),
@@ -548,6 +568,7 @@ def _circle_avatar(avatar: bytes | None, handle: str, size: int) -> Image.Image:
 
 
 def _clip_lines(d, text, font, max_w, n):
+    text = re.sub(r"[\U00010000-\U0010FFFF\uFE0F\u200D]", "", str(text or "")).strip()
     lines = _wrap(d, text, font, max_w)
     if len(lines) <= n:
         return lines
@@ -558,11 +579,11 @@ def _clip_lines(d, text, font, max_w, n):
 
 
 def _chip(d, x, y, label, bg, fg=INK):
-    f = _font("BebasNeue-Regular.ttf", 32)
+    f = _font("BebasNeue-Regular.ttf", 36)
     w = d.textlength(label, font=f)
-    d.rounded_rectangle([x, y, x + w + 28, y + 40], radius=6, fill=bg)
-    d.text((x + 14, y + 5), label, font=f, fill=fg)
-    return y + 40
+    d.rounded_rectangle([x, y, x + w + 30, y + 44], radius=6, fill=bg)
+    d.text((x + 15, y + 5), label, font=f, fill=fg)
+    return y + 44
 
 
 GREEN = (34, 197, 94)
@@ -570,64 +591,66 @@ ORANGE = (249, 115, 22)
 SKY = (56, 189, 248)
 PINK = (244, 114, 182)
 PAD = 24
+LINE = 52
 
 
 def _panel(d, x, y, max_w, color, label, lines, body):
-    h = PAD + 40 + 14 + 40 * len(lines) + PAD
+    h = PAD + 44 + 14 + LINE * len(lines) + PAD
     d.rounded_rectangle([x, y, x + max_w, y + h], radius=18, fill=color)
     _chip(d, x + PAD, y + PAD, label, INK, color)
-    ly = y + PAD + 54
+    ly = y + PAD + 58
     for ln in lines:
         d.text((x + PAD, ly), ln, font=body, fill=INK)
-        ly += 40
+        ly += LINE
     return y + h
 
 
 def _then_now(d, canvas, x, y, max_w, still, ep, avatar):
-    gutter = 72
+    gutter = 64
     col_w = (max_w - gutter) // 2
     inner = col_w - 2 * PAD
-    body = _font("Outfit-Regular.ttf", 30, "SemiBold")
-    osd = _font("VT323-Regular.ttf", 26)
+    body = _font("Outfit-Regular.ttf", 38, "Bold")
+    lh = 46
+    osd = _font("VT323-Regular.ttf", 28)
 
     frame = still.crop((still.width // 2 - still.width * 3 // 8, round(still.height * 0.17),
                         still.width // 2 + still.width * 3 // 8, round(still.height * 0.66)))
-    frame = _cover(frame, inner, round(inner * 0.5))
+    frame = _cover(frame, inner, round(inner / 2.6))
     aired_lines = _clip_lines(d, ep.get("aired_short") or ep["already_happened"], body, inner, 3)
-    left_h = PAD + 40 + 12 + frame.height + 12 + 38 * len(aired_lines) + PAD
+    left_h = PAD + 44 + 12 + frame.height + 12 + lh * len(aired_lines) + PAD
 
     receipt = ep.get("evidence") or ep["already_happened"]
-    r_lines = _clip_lines(d, receipt, body, inner, 5)
-    right_h = PAD + 40 + 12 + 64 + 12 + 38 * len(r_lines) + PAD
+    r_lines = _clip_lines(d, receipt, body, inner, 4)
+    right_h = PAD + 44 + 12 + 64 + 12 + lh * len(r_lines) + PAD
     h = max(left_h, right_h)
     r_off = (h - right_h) // 2
 
     lx, rx = x, x + col_w + gutter
     d.rounded_rectangle([lx, y, lx + col_w, y + h], radius=18, fill=SKY)
     _chip(d, lx + PAD, y + PAD, f"AIRED {ep['aired_year']}", INK, SKY)
-    fy = y + PAD + 52
+    fy = y + PAD + 56
     d.rounded_rectangle([lx + PAD - 4, fy - 4, lx + PAD + frame.width + 4, fy + frame.height + 4], radius=8, fill=INK)
     canvas.paste(frame, (lx + PAD, fy))
     ty = fy + frame.height + 12
     for ln in aired_lines:
         d.text((lx + PAD, ty), ln, font=body, fill=INK)
-        ty += 38
+        ty += lh
 
     d.rounded_rectangle([rx, y, rx + col_w, y + h], radius=18, fill=(255, 255, 255))
     _chip(d, rx + PAD, y + PAD, f"CAME TRUE {datetime.now().year}", GREEN, INK)
-    ay = y + PAD + 52 + r_off
+    ay = y + PAD + 56 + r_off
     av = _circle_avatar(avatar, ep["handle"], 64)
     canvas.paste(av, (rx + PAD, ay), av)
-    d.text((rx + PAD + 80, ay), _clamp(ep.get("display_name") or ep["handle"], 22), font=_font("Outfit-Regular.ttf", 30, "Bold"), fill=INK)
+    d.text((rx + PAD + 80, ay - 2), _clamp(ep.get("display_name") or ep["handle"], 20), font=_font("Outfit-Regular.ttf", 32, "Bold"), fill=INK)
     d.text((rx + PAD + 80, ay + 36), f"@{ep['handle']}", font=osd, fill=(100, 116, 139))
-    ry = ay + 76
+    ry = ay + 78
     for ln in r_lines:
         d.text((rx + PAD, ry), ln, font=body, fill=INK)
-        ry += 38
+        ry += lh
 
     cx, cy = x + col_w + gutter // 2, y + h // 2
     d.line([(lx + col_w, cy), (rx, cy)], fill=TAPE, width=6)
-    d.ellipse([cx - 34, cy - 34, cx + 34, cy + 34], fill=TAPE)
+    d.ellipse([cx - 32, cy - 32, cx + 32, cy + 32], fill=TAPE)
     d.line([(cx - 14, cy), (cx + 12, cy)], fill=INK, width=6)
     d.polygon([(cx + 4, cy - 14), (cx + 20, cy), (cx + 4, cy + 14)], fill=INK)
     return y + h
@@ -635,7 +658,7 @@ def _then_now(d, canvas, x, y, max_w, still, ep, avatar):
 
 def _render_share(ep: dict, still: Image.Image, site_host: str, avatar: bytes | None, sw: int):
     top_h = round(sw * still.height / still.width)
-    canvas = Image.new("RGB", (sw, 2400), INK)
+    canvas = Image.new("RGB", (sw, 2600), INK)
     canvas.paste(still.resize((sw, top_h), Image.LANCZOS), (0, 0))
     d = ImageDraw.Draw(canvas)
     x = 40
@@ -647,13 +670,14 @@ def _render_share(ep: dict, still: Image.Image, site_host: str, avatar: bytes | 
     d.text((x - 2, top_h + 48), f"@{ep['handle'].upper()}", font=_font("BebasNeue-Regular.ttf", 96), fill=INK)
     y = top_h + band_h + 16
 
-    body = _font("Outfit-Regular.ttf", 32, "SemiBold")
+    body = _font("Outfit-Regular.ttf", 44, "Bold")
     osd = _font("VT323-Regular.ttf", 28)
 
     y = _then_now(d, canvas, x, y, max_w, still, ep, avatar) + 14
 
-    for block, color in ((ep["coming_near"], ORANGE), (ep["coming_far"], PINK)):
-        lines = _clip_lines(d, block["text"], body, max_w - 2 * PAD, 3)
+    for block, short, color in ((ep["coming_near"], ep.get("coming_near_short"), ORANGE),
+                                (ep["coming_far"], ep.get("coming_far_short"), PINK)):
+        lines = _clip_lines(d, short or block["text"], body, max_w - 2 * PAD, 2)
         y = _panel(d, x, y, max_w, color, f"COMING {block['year']}", lines, body) + 14
 
     total_h = y + 56

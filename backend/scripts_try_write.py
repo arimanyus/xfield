@@ -16,7 +16,7 @@ async def main(handle):
     t = time.time()
     ep = await write_episode(prof, {"role": "founder", "vibe": "chronically online", "obsession": "shipping"}, "savage", None)
     print(f"{time.time()-t:.1f}s")
-    for k in ("title", "already_happened", "aired_short", "evidence", "coming_near", "coming_far", "subtitle"):
+    for k in ("title", "aired_short", "evidence", "coming_near", "coming_near_short", "coming_far", "coming_far_short"):
         print(f"{k}: {json.dumps(ep[k], ensure_ascii=False)}")
 
 asyncio.run(main(sys.argv[1]))
