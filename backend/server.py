@@ -72,6 +72,7 @@ class CreateEpisodeRequest(BaseModel):
     found_by: Optional[str] = Field(default=None, max_length=120)
     spice: Literal["roast", "savage"] = "roast"
     labels: Labels
+    posts_text: Optional[str] = Field(default=None, max_length=3000)
 
 
 class ShareRequest(BaseModel):
@@ -99,7 +100,12 @@ async def get_profile(handle: str) -> dict:
         ttl = timedelta(days=7) if doc["data"].get("found") else timedelta(hours=1)
         if age < ttl:
             return doc["data"]
-    data = await read_handle(handle)
+    try:
+        data = await asyncio.wait_for(read_handle(handle), timeout=55)
+    except Exception as e:
+        logger.warning("read_handle timed out/failed for @%s: %s", handle, e)
+        from xreader import empty
+        data = empty(handle)
     if data["found"] or not doc:
         await db.profiles.update_one({"handle_lower": key},
                                      {"$set": {"handle_lower": key, "data": data, "fetched_at": now_iso()}}, upsert=True)
@@ -108,14 +114,15 @@ async def get_profile(handle: str) -> dict:
 
 
 def ep_public(doc: dict, base: str) -> dict:
+    text_status = doc.get("text_status", "ready")
     return {
         "id": doc["id"], "handle": doc["handle"], "display_name": doc.get("display_name"),
         "avatar_url": doc.get("avatar_url"), "found_by": doc.get("found_by"), "spice": doc["spice"],
-        "labels": doc["labels"], "season": doc["season"], "episode": doc["episode"],
-        "aired_date": doc["aired_date"], "aired_year": doc["aired_year"], "title": doc["title"],
-        "already_happened": doc["already_happened"], "evidence": doc.get("evidence", ""),
-        "coming_near": doc["coming_near"], "coming_far": doc["coming_far"], "subtitle": doc["subtitle"],
-        "image_status": doc["image_status"], "still_kind": doc.get("still_kind"),
+        "labels": doc["labels"], "season": doc.get("season"), "episode": doc.get("episode"),
+        "aired_date": doc.get("aired_date"), "aired_year": doc.get("aired_year"), "title": doc.get("title"),
+        "already_happened": doc.get("already_happened"), "evidence": doc.get("evidence", ""),
+        "coming_near": doc.get("coming_near"), "coming_far": doc.get("coming_far"), "subtitle": doc.get("subtitle"),
+        "text_status": text_status, "image_status": doc["image_status"], "still_kind": doc.get("still_kind"),
         "image_url": f"{base}/api/episodes/{doc['id']}/image" if doc["image_status"] == "ready" else None,
         "share_url": f"{base}/api/s/{doc['id']}", "shares": doc.get("shares", 0),
         "source": doc.get("source"), "created_at": doc["created_at"],
@@ -137,6 +144,39 @@ async def check_rate(ip: str):
     if n >= EPISODES_PER_HOUR:
         raise HTTPException(429, "The archive is closed for you for an hour — too many episodes pulled. Come back soon.")
     await db.gen_events.insert_one({"ip": ip, "ts": now_iso()})
+
+
+PUBLIC = {"hidden": False, "text_status": {"$nin": ["pending", "failed"]}}
+
+
+def parse_pasted(text) -> list:
+    if not text:
+        return []
+    out = []
+    for line in re.split(r"\n+", text):
+        line = line.strip(" \t-•*>")
+        if len(line) >= 4:
+            out.append(line[:300])
+    return out[:12]
+
+
+def with_pasted(profile: dict, pasted: list) -> dict:
+    if not pasted:
+        return profile
+    posts = [{"text": t, "date": "", "pinned": False} for t in pasted] + list(profile.get("posts") or [])
+    return {**profile, "posts": posts, "found": True, "source": profile.get("source") or "pasted"}
+
+
+async def episode_job(ep_id: str, profile: dict, labels: dict, spice: str, found_by):
+    try:
+        ep = await write_episode(profile, labels, spice, found_by)
+    except Exception:
+        logger.exception("episode writing failed for %s (@%s)", ep_id, profile.get("handle"))
+        await db.episodes.update_one({"id": ep_id}, {"$set": {"text_status": "failed"}})
+        return
+    await db.episodes.update_one({"id": ep_id}, {"$set": {**ep, "text_status": "ready"}})
+    doc = await db.episodes.find_one({"id": ep_id}, {"_id": 0})
+    await image_job(ep_id, doc, profile.get("avatar_url"))
 
 
 async def image_job(ep_id: str, ep: dict, avatar_url):
@@ -185,21 +225,33 @@ async def create_episode(body: CreateEpisodeRequest, request: Request):
     if contains_blocked(*labels.values()):
         raise HTTPException(400, "Those answers can't be used here.")
     await check_rate(client_ip(request))
-    profile = await get_profile(handle)
-    try:
-        ep = await write_episode(profile, labels, body.spice, found_by)
-    except Exception:
-        logger.exception("episode writing failed for @%s", handle)
-        raise HTTPException(502, "The archive hiccuped while writing the episode. Try again.")
+    pasted = parse_pasted(body.posts_text)
+    if contains_blocked(*pasted):
+        raise HTTPException(400, "Those pasted posts can't be used here.")
+    profile = with_pasted(await get_profile(handle), pasted)
     ep_id = secrets.token_urlsafe(6)
-    doc = {**ep, "id": ep_id, "handle": profile["handle"] if profile["found"] else handle,
+    doc = {"id": ep_id, "handle": profile["handle"] if profile["found"] else handle,
            "handle_lower": handle.lower(), "display_name": profile.get("name") or handle,
            "avatar_url": profile.get("avatar_url"), "bio": profile.get("bio", ""), "found_by": found_by,
            "found_by_lower": found_by.lower() if found_by else None, "spice": body.spice, "labels": labels,
-           "source": profile.get("source") or "taps", "image_status": "pending", "shares": 0, "reports": 0,
-           "hidden": False, "created_at": now_iso()}
+           "pasted_posts": pasted, "source": profile.get("source") or "taps", "text_status": "pending",
+           "image_status": "pending", "shares": 0, "reports": 0, "hidden": False, "created_at": now_iso()}
     await db.episodes.insert_one(dict(doc))
-    asyncio.create_task(image_job(ep_id, doc, profile.get("avatar_url")))
+    asyncio.create_task(episode_job(ep_id, profile, labels, body.spice, found_by))
+    return ep_public(doc, public_base(request))
+
+
+@api_router.post("/episodes/{ep_id}/retry")
+async def retry_episode(ep_id: str, request: Request):
+    doc = await db.episodes.find_one({"id": ep_id, "hidden": False}, {"_id": 0})
+    if not doc:
+        raise HTTPException(404, "That episode isn't in the archive.")
+    if doc.get("text_status") != "failed":
+        return ep_public(doc, public_base(request))
+    profile = with_pasted(await get_profile(doc["handle"]), doc.get("pasted_posts") or [])
+    await db.episodes.update_one({"id": ep_id}, {"$set": {"text_status": "pending"}})
+    doc["text_status"] = "pending"
+    asyncio.create_task(episode_job(ep_id, profile, doc["labels"], doc["spice"], doc.get("found_by")))
     return ep_public(doc, public_base(request))
 
 
@@ -251,7 +303,7 @@ async def report_episode(ep_id: str, body: ReportRequest, request: Request):
 @api_router.get("/recent")
 async def recent(request: Request, limit: int = Query(20, ge=1, le=50)):
     base = public_base(request)
-    docs = await db.episodes.find({"hidden": False}, {"_id": 0}).sort("created_at", -1).to_list(limit)
+    docs = await db.episodes.find(PUBLIC, {"_id": 0}).sort("created_at", -1).to_list(limit)
     return [ep_tile(d, base) for d in docs]
 
 
@@ -259,10 +311,10 @@ async def recent(request: Request, limit: int = Query(20, ge=1, le=50)):
 async def handle_page(handle: str, request: Request):
     h = clean_handle(handle)
     base = public_base(request)
-    docs = await db.episodes.find({"handle_lower": h.lower(), "hidden": False}, {"_id": 0}).sort("created_at", -1).to_list(100)
+    docs = await db.episodes.find({**PUBLIC, "handle_lower": h.lower()}, {"_id": 0}).sort("created_at", -1).to_list(100)
     cached = await db.profiles.find_one({"handle_lower": h.lower()}, {"_id": 0})
     data = (cached or {}).get("data") or {}
-    found_for = await db.episodes.count_documents({"found_by_lower": h.lower(), "hidden": False})
+    found_for = await db.episodes.count_documents({**PUBLIC, "found_by_lower": h.lower()})
     return {"handle": data.get("handle") or (docs[0]["handle"] if docs else h),
             "name": data.get("name") or (docs[0]["display_name"] if docs else h),
             "bio": data.get("bio", ""), "avatar_url": data.get("avatar_url") or (docs[0].get("avatar_url") if docs else None),
@@ -274,7 +326,7 @@ async def handle_page(handle: str, request: Request):
 async def leaderboard(request: Request, type: Literal["prophesied", "prophets", "shared"] = "prophesied",
                       period: Literal["today", "all"] = "all"):
     base = public_base(request)
-    match = {"hidden": False}
+    match = dict(PUBLIC)
     if period == "today":
         start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
         match["created_at"] = {"$gte": start}
@@ -301,7 +353,7 @@ async def timeline(request: Request):
     base = public_base(request)
     confirmed = [{**p, "gap": p["event"] - p["aired"], "status": "confirmed"} for p in PREDICTIONS]
     confirmed.sort(key=lambda p: (p["event"], p["aired"]))
-    docs = await db.episodes.find({"hidden": False}, {"_id": 0}).sort("created_at", -1).to_list(60)
+    docs = await db.episodes.find(PUBLIC, {"_id": 0}).sort("created_at", -1).to_list(60)
     pending = []
     for d in docs:
         for key in ("coming_near", "coming_far"):
@@ -312,13 +364,13 @@ async def timeline(request: Request):
                             "created_at": d["created_at"]})
     pending.sort(key=lambda p: (p["year"], p["created_at"]), reverse=False)
     return {"confirmed": confirmed, "pending": pending[:60], "categories": CATEGORIES,
-            "pending_total": await db.episodes.count_documents({"hidden": False}) * 2}
+            "pending_total": await db.episodes.count_documents(PUBLIC) * 2}
 
 
 @api_router.get("/s/{ep_id}")
 async def share_page(ep_id: str, request: Request):
     base = public_base(request)
-    doc = await db.episodes.find_one({"id": ep_id, "hidden": False}, {"_id": 0})
+    doc = await db.episodes.find_one({"id": ep_id, **PUBLIC}, {"_id": 0})
     if not doc:
         return RedirectResponse(f"{base}/", status_code=302)
     target = f"{base}/ep/{ep_id}"

@@ -84,8 +84,10 @@ async def _llm_text(model: str, system: str, user: str, max_tokens: int) -> str:
 
 
 def _json(text: str) -> dict:
-    text = re.sub(r"^```(?:json)?|```$", "", text.strip(), flags=re.M).strip()
+    text = re.sub(r"^```(?:json)?|```$", "", (text or "").strip(), flags=re.M).strip()
     s, e = text.find("{"), text.rfind("}")
+    if s < 0 or e <= s:
+        raise ValueError("no JSON object in model output")
     return json.loads(text[s:e + 1])
 
 
@@ -104,7 +106,7 @@ def _profile_block(profile: dict) -> str:
 
 async def extract_labels(profile: dict) -> dict:
     try:
-        raw = await _llm_text(LABEL_MODEL, LABEL_SYSTEM, _profile_block(profile), 200)
+        raw = await asyncio.wait_for(_llm_text(LABEL_MODEL, LABEL_SYSTEM, _profile_block(profile), 200), timeout=25)
         data = _json(raw)
         out = {k: str(data.get(k, "")).strip().lower()[:40] or DEFAULT_LABELS[k] for k in DEFAULT_LABELS}
         return out
@@ -128,7 +130,19 @@ async def write_episode(profile: dict, labels: dict, spice: str, found_by) -> di
             f"obsession = {labels['obsession']}.\n"
             + (f"Submitted by @{found_by} who wants to roast their friend.\n" if found_by else "Submitted by the person themselves.\n")
             + _profile_block(profile) + "\nWrite the episode JSON now.")
-    data = _json(await _llm_text(TEXT_MODEL, system, user, 1200))
+    data, raw = None, ""
+    for attempt, model in enumerate((TEXT_MODEL, TEXT_MODEL, LABEL_MODEL), start=1):
+        try:
+            raw = await asyncio.wait_for(_llm_text(model, system, user, 1500), timeout=75)
+            data = _json(raw)
+            if not data.get("already_happened"):
+                raise ValueError("missing already_happened")
+            break
+        except Exception as e:
+            logger.warning("episode write attempt %d via %s failed: %s | raw=%r", attempt, model, e, (raw or "")[:300])
+            data = None
+    if data is None:
+        raise RuntimeError("episode writer returned no usable JSON after 3 attempts")
 
     try:
         aired = datetime.strptime(str(data.get("aired_date", "")), "%Y-%m-%d").date()

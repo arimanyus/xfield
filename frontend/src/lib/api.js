@@ -8,6 +8,7 @@ const http = axios.create({ baseURL: API, timeout: 120000 });
 export const readHandle = (handle) => http.post("/read", { handle }).then((r) => r.data);
 export const createEpisode = (body) => http.post("/episodes", body).then((r) => r.data);
 export const getEpisode = (id) => http.get(`/episodes/${id}`).then((r) => r.data);
+export const retryEpisode = (id) => http.post(`/episodes/${id}/retry`).then((r) => r.data);
 export const trackShare = (id, channel) => http.post(`/episodes/${id}/share`, { channel }).then((r) => r.data);
 export const reportEpisode = (id, reason) => http.post(`/episodes/${id}/report`, { reason }).then((r) => r.data);
 export const getRecent = (limit = 20) => http.get("/recent", { params: { limit } }).then((r) => r.data);
@@ -24,7 +25,14 @@ export const untilYear = (year) => {
   return { days, label: y ? `${y}y ${m}m` : `${m} months`, due: false };
 };
 
-export const errMsg = (e) => e?.response?.data?.detail || e?.message || "Something went wrong";
+export const errMsg = (e) => {
+  const detail = e?.response?.data?.detail;
+  if (typeof detail === "string") return detail;
+  const status = e?.response?.status;
+  if (status >= 500) return `The connection to the archive dropped (HTTP ${status}). Nothing was lost — try again.`;
+  if (e?.code === "ECONNABORTED") return "The archive took too long to answer. Try again.";
+  return e?.message || "Something went wrong";
+};
 
 export const HANDLE_RE = /^[A-Za-z0-9_]{1,15}$/;
 export const cleanHandle = (raw) =>

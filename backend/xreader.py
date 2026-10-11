@@ -63,15 +63,29 @@ def empty(handle: str, source=None) -> dict:
             "followers": None, "posts": [], "source": source, "found": False, "protected": False}
 
 
-async def from_nitter(client: httpx.AsyncClient, handle: str):
-    base = os.environ["NITTER_BASE_URL"].rstrip("/")
+def nitter_instances() -> list:
+    raw = os.environ.get("NITTER_INSTANCES") or os.environ["NITTER_BASE_URL"]
+    return [u.strip().rstrip("/") for u in raw.split(",") if u.strip()]
+
+
+def looks_blocked(r: httpx.Response) -> bool:
+    if r.headers.get("cf-mitigated") == "challenge" or r.status_code in (403, 429, 451, 503):
+        return True
+    head = r.content[:400].lower()
+    return b"<html" in head or b"<!doctype" in head
+
+
+async def _nitter_pages(client: httpx.AsyncClient, base: str, handle: str):
     posts, meta, cursor = [], None, None
     for page in range(2):
         url = f"{base}/{handle}/rss" + (f"?cursor={cursor}" if cursor else "")
         await polite()
-        r = await client.get(url)
-        if r.status_code != 200:
+        r = await client.get(url, timeout=8)
+        if r.status_code == 404 and page == 0:
+            return "missing"
+        if r.status_code != 200 or looks_blocked(r):
             if page == 0:
+                logger.warning("nitter %s blocked/unavailable for @%s (HTTP %s)", base, handle, r.status_code)
                 return None
             break
         root = ET.fromstring(r.content)
@@ -102,6 +116,20 @@ async def from_nitter(client: httpx.AsyncClient, handle: str):
         return None
     return {**meta, "location": "", "followers": None, "posts": posts[:25], "source": "nitter",
             "found": True, "protected": False}
+
+
+async def from_nitter(client: httpx.AsyncClient, handle: str):
+    for base in nitter_instances():
+        try:
+            res = await _nitter_pages(client, base, handle)
+        except Exception as e:
+            logger.warning("nitter %s failed for @%s: %s", base, handle, e)
+            continue
+        if res == "missing":
+            return None
+        if res:
+            return res
+    return None
 
 
 async def from_syndication(client: httpx.AsyncClient, handle: str):
@@ -182,14 +210,15 @@ SOURCES = (from_nitter, from_syndication, from_twitterapi, from_fxtwitter)
 
 
 async def read_handle(handle: str) -> dict:
-    async with httpx.AsyncClient(timeout=12, headers={"User-Agent": UA, "Accept": "*/*"}, follow_redirects=True) as client:
+    async with httpx.AsyncClient(timeout=10, headers={"User-Agent": UA, "Accept": "*/*"}, follow_redirects=True) as client:
         for fn in SOURCES:
             try:
-                res = await fn(client, handle)
+                res = await asyncio.wait_for(fn(client, handle), timeout=30)
             except Exception as e:
                 logger.warning("%s failed for @%s: %s", fn.__name__, handle, e)
                 res = None
             if res:
                 logger.info("@%s read via %s (%d posts)", handle, res["source"], len(res["posts"]))
                 return res
+    logger.warning("@%s: every source failed or blocked", handle)
     return empty(handle)

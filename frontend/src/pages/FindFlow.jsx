@@ -40,10 +40,10 @@ export default function FindFlow() {
       });
   }, [handle, navigate]);
 
-  const generate = async (finalLabels) => {
+  const generate = async (finalLabels, postsText) => {
     setStep("generating");
     try {
-      const ep = await createEpisode({ handle, found_by: by || null, spice, labels: finalLabels });
+      const ep = await createEpisode({ handle, found_by: by || null, spice, labels: finalLabels, posts_text: postsText || null });
       navigate(`/ep/${ep.id}?fresh=1`, { replace: true });
     } catch (e) {
       setError(errMsg(e));
@@ -72,7 +72,7 @@ export default function FindFlow() {
       {step === "taps" && <TapsFlow handle={profile?.handle || handle} profile={profile} spice={spice} setSpice={setSpice} onDone={generate} />}
 
       {step === "generating" && (
-        <StaticScreen message="SEARCHING THE ARCHIVE…" sub={`scrubbing 30 seasons for @${handle} · about 10 seconds`} />
+        <StaticScreen message="OPENING THE ARCHIVE…" sub={`filing a request for @${handle}`} />
       )}
 
       {step === "error" && (

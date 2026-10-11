@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { EpisodeCard, EpisodeMeta } from "@/components/EpisodeCard";
 import { ProphecyLines } from "@/components/ProphecyLines";
@@ -9,7 +10,58 @@ import { ReportButton } from "@/components/ReportButton";
 import { TimelineCountdown } from "@/components/TimelineCountdown";
 import { HandleForm } from "@/components/HandleForm";
 import { StaticScreen } from "@/components/StaticScreen";
-import { cleanHandle, errMsg, getEpisode, HANDLE_RE, seCode } from "@/lib/api";
+import { cleanHandle, errMsg, getEpisode, HANDLE_RE, retryEpisode, seCode } from "@/lib/api";
+
+const WritingScreen = ({ ep }) => {
+  const [slow, setSlow] = useState(false);
+  useEffect(() => {
+    const t = setTimeout(() => setSlow(true), 45000);
+    return () => clearTimeout(t);
+  }, []);
+  return (
+    <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12" data-testid="episode-writing">
+      <div className="osd mb-4">Searching the archive…</div>
+      <StaticScreen message="SEARCHING THE ARCHIVE…" sub={`scrubbing 30 seasons for @${ep.handle} · usually 10–20 seconds`} />
+      <p className="font-osd text-slate-500 text-lg mt-4" data-testid="writing-note">
+        {slow ? "The writers' room is slow today. Still working — this page updates by itself." : "This page updates by itself. You can leave it open."}
+      </p>
+    </main>
+  );
+};
+
+const FailedScreen = ({ ep }) => {
+  const qc = useQueryClient();
+  const [busy, setBusy] = useState(false);
+  const retry = async () => {
+    setBusy(true);
+    try {
+      const fresh = await retryEpisode(ep.id);
+      qc.setQueryData(["ep", ep.id], fresh);
+    } catch (e) {
+      toast.error(errMsg(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12" data-testid="episode-failed">
+      <div className="osd mb-4">Signal lost</div>
+      <StaticScreen message="TAPE DAMAGED" sub={`the writers' room dropped the episode about @${ep.handle}`} roll={false} />
+      <section className="panel p-5 mt-6">
+        <h2 className="font-display text-3xl tracking-wide">The archive hiccuped.</h2>
+        <p className="text-slate-300 mt-2">The episode text never came back. Nothing counts against your hourly limit — rerun it from here.</p>
+        <div className="mt-4 flex flex-wrap gap-3">
+          <button type="button" onClick={retry} disabled={busy} data-testid="episode-retry-btn" className="btn-tape">
+            {busy ? "Rewinding…" : "Try again"}
+          </button>
+          <Link to="/" data-testid="episode-failed-home" className="btn-ghost">
+            Start over
+          </Link>
+        </div>
+      </section>
+    </main>
+  );
+};
 
 const ProphesyFriend = ({ ep }) => {
   const navigate = useNavigate();
@@ -46,12 +98,15 @@ export default function EpisodePage() {
   const { data: ep, error, isLoading } = useQuery({
     queryKey: ["ep", id],
     queryFn: () => getEpisode(id),
-    retry: 1,
-    refetchInterval: (q) => (q.state.data?.image_status === "pending" ? 2000 : false),
+    retry: 2,
+    refetchInterval: (q) => {
+      const d = q.state.data;
+      return d && (d.text_status === "pending" || d.image_status === "pending") ? 2000 : false;
+    },
   });
 
   useEffect(() => {
-    if (ep) document.title = `${seCode(ep)} “${ep.title}” — @${ep.handle} · Already Aired`;
+    if (ep?.title) document.title = `${seCode(ep)} “${ep.title}” — @${ep.handle} · Already Aired`;
     return () => {
       document.title = "Already Aired — the show predicted you";
     };
@@ -72,6 +127,9 @@ export default function EpisodePage() {
       </main>
     );
   }
+
+  if (ep.text_status === "pending") return <WritingScreen ep={ep} />;
+  if (ep.text_status === "failed") return <FailedScreen ep={ep} />;
 
   return (
     <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10" data-testid="episode-page">
