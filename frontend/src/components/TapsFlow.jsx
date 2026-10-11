@@ -1,15 +1,12 @@
 import { useState } from "react";
 import { ChipPicker } from "@/components/ChipPicker";
-import { SpiceToggle } from "@/components/SpiceToggle";
 import { CHIPS, CHIP_KEYS } from "@/lib/chips";
 
-export const TapsFlow = ({ handle, profile, spice, setSpice, onDone }) => {
+export const TapsFlow = ({ handle, profile, onDone }) => {
   const [step, setStep] = useState(0);
   const [answers, setAnswers] = useState({});
   const key = CHIP_KEYS[step];
-  const reason = profile?.protected
-    ? "That account is protected, so its posts can't be read."
-    : "That account couldn't be read right now — it may not exist, or X isn't answering for it.";
+  const reason = profile?.protected ? "Protected account. Three taps instead." : "Couldn't read that account. Three taps instead.";
 
   const pick = (v) => {
     const next = { ...answers, [key]: v };
@@ -22,7 +19,7 @@ export const TapsFlow = ({ handle, profile, spice, setSpice, onDone }) => {
     <section className="panel p-5 sm:p-7 animate-tv-on" data-testid="taps-screen">
       <div className="osd text-sm">No signal · @{handle}</div>
       <p className="mt-2 text-slate-300 text-sm sm:text-base" data-testid="taps-reason">
-        {reason} Three quick taps and the archive can still find the episode.
+        {reason}
       </p>
       <div className="mt-5 flex items-center gap-2 font-osd text-lg text-slate-400">
         {CHIP_KEYS.map((k, i) => (
@@ -38,14 +35,13 @@ export const TapsFlow = ({ handle, profile, spice, setSpice, onDone }) => {
       <div className="mt-4">
         <ChipPicker key={key} category={key} value={answers[key]} onPick={pick} testPrefix="taps" />
       </div>
-      <div className="mt-7 flex flex-col sm:flex-row sm:items-center gap-3">
-        <SpiceToggle value={spice} onChange={setSpice} />
-        {step > 0 && (
-          <button type="button" data-testid="taps-back" onClick={() => setStep(step - 1)} className="btn-ghost sm:ml-auto">
+      {step > 0 && (
+        <div className="mt-7">
+          <button type="button" data-testid="taps-back" onClick={() => setStep(step - 1)} className="btn-ghost">
             Back
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </section>
   );
 };

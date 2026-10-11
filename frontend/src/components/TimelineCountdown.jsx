@@ -6,7 +6,6 @@ export const TimelineCountdown = ({ ep }) => {
   return (
     <section className="panel p-4 sm:p-5" data-testid="timeline-countdown">
       <div className="osd">Your prophecies join the timeline</div>
-      <p className="text-slate-300 text-sm mt-1">The Simpsons needed 16 years to land President Trump. Yours are on the clock.</p>
       {rows.map((r) => (
         <div key={r.year} className="mt-3 pt-3 border-t border-white/10 flex items-start justify-between gap-3" data-testid={`countdown-${r.year}`}>
           <div className="min-w-0">

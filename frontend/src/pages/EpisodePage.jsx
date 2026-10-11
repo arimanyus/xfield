@@ -21,9 +21,9 @@ const WritingScreen = ({ ep }) => {
   return (
     <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12" data-testid="episode-writing">
       <div className="osd mb-4">Searching the archive…</div>
-      <StaticScreen message="SEARCHING THE SPRINGFIELD ARCHIVE…" sub={`scrubbing 30 seasons for @${ep.handle} · usually 10–20 seconds`} />
+      <StaticScreen message="SEARCHING THE SPRINGFIELD ARCHIVE…" sub={`@${ep.handle}`} />
       <p className="font-osd text-slate-500 text-lg mt-4" data-testid="writing-note">
-        {slow ? "The writers' room is slow today. Still working — this page updates by itself." : "This page updates by itself. You can leave it open."}
+        {slow ? "Slow day in the writers' room. Still working." : "Updates by itself."}
       </p>
     </main>
   );
@@ -46,10 +46,9 @@ const FailedScreen = ({ ep }) => {
   return (
     <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12" data-testid="episode-failed">
       <div className="osd mb-4">Signal lost</div>
-      <StaticScreen message="TAPE DAMAGED" sub={`the writers' room dropped the episode about @${ep.handle}`} roll={false} />
+      <StaticScreen message="TAPE DAMAGED" sub={`@${ep.handle}`} roll={false} />
       <section className="panel p-5 mt-6">
         <h2 className="font-display text-3xl tracking-wide">The archive hiccuped.</h2>
-        <p className="text-slate-300 mt-2">The episode text never came back. Nothing counts against your hourly limit — rerun it from here.</p>
         <div className="mt-4 flex flex-wrap gap-3">
           <button type="button" onClick={retry} disabled={busy} data-testid="episode-retry-btn" className="btn-tape">
             {busy ? "Rewinding…" : "Try again"}
@@ -71,14 +70,13 @@ const ProphesyFriend = ({ ep }) => {
     e.preventDefault();
     const f = cleanHandle(friend);
     const y = cleanHandle(you);
-    if (!HANDLE_RE.test(f)) return toast.error("Enter your friend's X handle.");
-    if (!HANDLE_RE.test(y)) return toast.error("Add your handle so the card credits you.");
-    navigate(`/find?handle=${f}&by=${y}&spice=${ep.spice}`);
+    if (!HANDLE_RE.test(f)) return toast.error("Enter your friend's handle.");
+    if (!HANDLE_RE.test(y)) return toast.error("Add your handle too.");
+    navigate(`/find?handle=${f}&by=${y}`);
   };
   return (
     <form onSubmit={go} className="panel p-4 sm:p-5" data-testid="prophesy-friend-form">
       <div className="osd">Prophesy a friend</div>
-      <p className="text-slate-300 text-sm mt-1">Their posts get read the same way. The card says “found by @you” and the post tags them.</p>
       <div className="mt-3 grid grid-cols-2 gap-2">
         <input data-testid="friend-handle-input" value={friend} onChange={(e) => setFriend(e.target.value)} placeholder="@friend" className="input-tape text-lg py-2" autoCapitalize="none" spellCheck={false} />
         <input data-testid="friend-your-handle-input" value={you} onChange={(e) => setYou(e.target.value)} placeholder="@you" className="input-tape text-lg py-2" autoCapitalize="none" spellCheck={false} />
@@ -155,13 +153,9 @@ export default function EpisodePage() {
       </div>
 
       <section className="mt-16 border-t border-tape/20 pt-10 grid lg:grid-cols-2 gap-8 items-center" data-testid="episode-cta">
-        <div>
-          <div className="osd">Your turn</div>
-          <h2 className="font-display text-4xl sm:text-5xl tracking-wide mt-2 leading-[0.95]">
-            THE SIMPSONS GOT TRUMP. <span className="text-tape">THEY'LL GET YOU TOO.</span>
-          </h2>
-          <p className="text-slate-300 mt-3">Takes about twenty seconds. No login. Nothing is posted for you.</p>
-        </div>
+        <h2 className="font-display text-4xl sm:text-5xl tracking-wide leading-[0.95]">
+          THE SIMPSONS GOT TRUMP. <span className="text-tape">THEY'LL GET YOU TOO.</span>
+        </h2>
         <HandleForm idPrefix="cta" />
       </section>
     </main>

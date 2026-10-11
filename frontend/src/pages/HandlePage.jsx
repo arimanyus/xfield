@@ -52,11 +52,11 @@ export default function HandlePage() {
       </header>
 
       <div className="mt-8 flex flex-wrap gap-3">
-        <Link to={`/find?handle=${data.handle}&spice=savage`} data-testid="handle-find-another" className="btn-tape">
-          Find another episode about @{data.handle}
+        <Link to={`/find?handle=${data.handle}`} data-testid="handle-find-another" className="btn-tape">
+          Another episode about @{data.handle}
         </Link>
         <Link to="/" data-testid="handle-find-mine" className="btn-ghost">
-          Find mine instead
+          Find mine
         </Link>
       </div>
 

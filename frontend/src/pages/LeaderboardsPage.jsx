@@ -69,17 +69,14 @@ export default function LeaderboardsPage() {
           </TabsTrigger>
         </TabsList>
         <TabsContent value="prophesied" className="mt-4">
-          <p className="font-osd text-slate-400 text-lg mb-2">Handles with the most episodes found about them.</p>
           <HandleRows rows={prophesied.data} unit="episodes" testid="lb-prophesied" />
         </TabsContent>
         <TabsContent value="prophets" className="mt-4">
-          <p className="font-osd text-slate-400 text-lg mb-2">Handles that found the most episodes about others.</p>
           <HandleRows rows={prophets.data} unit="found" testid="lb-prophets" />
         </TabsContent>
         <TabsContent value="shared" className="mt-4">
-          <p className="font-osd text-slate-400 text-lg mb-4">Episodes with the most share clicks.</p>
           <div data-testid="lb-shared">
-            <EpisodeGrid items={shared.data || []} emptyText="No shares counted yet." />
+            <EpisodeGrid items={shared.data || []} emptyText="No shares yet." />
           </div>
         </TabsContent>
       </Tabs>

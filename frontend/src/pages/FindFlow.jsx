@@ -10,7 +10,6 @@ export default function FindFlow() {
   const navigate = useNavigate();
   const handle = params.get("handle") || "";
   const by = params.get("by") || "";
-  const [spice, setSpice] = useState(params.get("spice") === "roast" ? "roast" : "savage");
   const [step, setStep] = useState("reading");
   const [profile, setProfile] = useState(null);
   const [labels, setLabels] = useState(null);
@@ -43,7 +42,7 @@ export default function FindFlow() {
   const generate = async (finalLabels) => {
     setStep("generating");
     try {
-      const ep = await createEpisode({ handle, found_by: by || null, spice, labels: finalLabels });
+      const ep = await createEpisode({ handle, found_by: by || null, labels: finalLabels });
       navigate(`/ep/${ep.id}?fresh=1`, { replace: true });
     } catch (e) {
       setError(errMsg(e));
@@ -61,19 +60,15 @@ export default function FindFlow() {
         {step === "error" && "Signal lost"}
       </div>
 
-      {step === "reading" && (
-        <StaticScreen message={`READING @${handle.toUpperCase()}…`} sub="pulling the public posts and the bio" roll={false} />
-      )}
+      {step === "reading" && <StaticScreen message={`READING @${handle.toUpperCase()}…`} roll={false} />}
 
       {step === "confirm" && profile && (
-        <LabelConfirm profile={profile} labels={labels} setLabels={setLabels} spice={spice} setSpice={setSpice} onConfirm={() => generate(labels)} foundBy={by} />
+        <LabelConfirm profile={profile} labels={labels} setLabels={setLabels} onConfirm={() => generate(labels)} foundBy={by} />
       )}
 
-      {step === "taps" && <TapsFlow handle={profile?.handle || handle} profile={profile} spice={spice} setSpice={setSpice} onDone={generate} />}
+      {step === "taps" && <TapsFlow handle={profile?.handle || handle} profile={profile} onDone={generate} />}
 
-      {step === "generating" && (
-        <StaticScreen message="OPENING THE SPRINGFIELD ARCHIVE…" sub={`filing a request for @${handle}`} />
-      )}
+      {step === "generating" && <StaticScreen message="OPENING THE SPRINGFIELD ARCHIVE…" />}
 
       {step === "error" && (
         <section className="panel p-6" data-testid="find-error">

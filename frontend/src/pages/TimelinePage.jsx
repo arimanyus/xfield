@@ -86,10 +86,6 @@ export default function TimelinePage() {
         <br />
         THEN IT HAPPENED.
       </h1>
-      <p className="text-slate-300 mt-4 max-w-2xl text-base sm:text-lg">
-        {data.confirmed.length} documented calls the show made years before the real thing — sorted by when they came true. At the end: the prophecies
-        this archive has made about real X handles, still on the clock.
-      </p>
 
       <div className="mt-6 flex flex-wrap gap-2" data-testid="timeline-filters">
         {["all", ...data.categories].map((c) => (
@@ -110,12 +106,9 @@ export default function TimelinePage() {
         <h2 className="font-display text-4xl sm:text-5xl tracking-wide leading-none mt-2">
           YOUR TURN ON THE <span className="text-tape">TIMELINE.</span>
         </h2>
-        <p className="text-slate-300 mt-3 max-w-2xl">
-          Every episode the archive finds adds two dated prophecies about a real handle. They sit here until their year arrives.
-        </p>
         {pendingByYear.length === 0 ? (
           <div className="panel p-6 mt-6 font-osd text-xl text-slate-400" data-testid="pending-empty">
-            No prophecies yet. <Link to="/" className="text-tape hover:underline">Find your episode</Link> and be first on the clock.
+            Nothing yet. <Link to="/" className="text-tape hover:underline">Find your episode</Link>.
           </div>
         ) : (
           pendingByYear.map(([year, items]) => (
@@ -136,10 +129,7 @@ export default function TimelinePage() {
           ))
         )}
         <div className="mt-10 panel p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center gap-4">
-          <div className="flex-1">
-            <div className="osd">Add yours</div>
-            <div className="font-display text-3xl tracking-wide leading-none mt-1">GET TWO PROPHECIES ON THE CLOCK.</div>
-          </div>
+          <div className="flex-1 font-display text-3xl tracking-wide leading-none">GET ON THE CLOCK.</div>
           <Link to="/" data-testid="timeline-cta" className="btn-tape text-center">
             Find my episode
           </Link>

@@ -1,7 +1,6 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { SpiceToggle } from "@/components/SpiceToggle";
 import { cleanHandle, HANDLE_RE } from "@/lib/api";
 
 export const HandleForm = ({ initialHandle = "", initialMode = "me", lockHandle = false, className = "", idPrefix = "hero" }) => {
@@ -9,15 +8,14 @@ export const HandleForm = ({ initialHandle = "", initialMode = "me", lockHandle 
   const [mode, setMode] = useState(initialMode);
   const [handle, setHandle] = useState(initialHandle);
   const [you, setYou] = useState("");
-  const [spice, setSpice] = useState("savage");
 
   const submit = (e) => {
     e.preventDefault();
     const h = cleanHandle(handle);
     const by = cleanHandle(you);
-    if (!HANDLE_RE.test(h)) return toast.error("Enter a real X handle: letters, numbers, underscore, max 15.");
-    if (mode === "friend" && !HANDLE_RE.test(by)) return toast.error("Add your own handle so the card credits you.");
-    const q = new URLSearchParams({ handle: h, spice });
+    if (!HANDLE_RE.test(h)) return toast.error("That's not an X handle.");
+    if (mode === "friend" && !HANDLE_RE.test(by)) return toast.error("Add your own handle too.");
+    const q = new URLSearchParams({ handle: h });
     if (mode === "friend") q.set("by", by);
     navigate(`/find?${q.toString()}`);
   };
@@ -44,8 +42,7 @@ export const HandleForm = ({ initialHandle = "", initialMode = "me", lockHandle 
       </div>
 
       <label className="block">
-        <span className="osd text-sm">{mode === "friend" ? "Their X handle" : "Your X handle"}</span>
-        <div className="relative mt-1">
+        <div className="relative">
           <span className="absolute left-4 top-1/2 -translate-y-1/2 font-osd text-2xl text-tape">@</span>
           <input
             data-testid={`${idPrefix}-handle-input`}
@@ -64,8 +61,7 @@ export const HandleForm = ({ initialHandle = "", initialMode = "me", lockHandle 
 
       {mode === "friend" && (
         <label className="block mt-3 animate-rise">
-          <span className="osd text-sm">Your handle (for the credit)</span>
-          <div className="relative mt-1">
+          <div className="relative">
             <span className="absolute left-4 top-1/2 -translate-y-1/2 font-osd text-2xl text-slate-400">@</span>
             <input
               data-testid={`${idPrefix}-your-handle-input`}
@@ -81,12 +77,9 @@ export const HandleForm = ({ initialHandle = "", initialMode = "me", lockHandle 
         </label>
       )}
 
-      <div className="mt-4 flex flex-col sm:flex-row sm:items-center gap-3">
-        <SpiceToggle value={spice} onChange={setSpice} />
-        <button type="submit" data-testid={`${idPrefix}-submit`} className="btn-tape sm:ml-auto">
-          {mode === "friend" ? "Find their episode" : "Find my episode"}
-        </button>
-      </div>
+      <button type="submit" data-testid={`${idPrefix}-submit`} className="btn-tape w-full mt-4">
+        {mode === "friend" ? "Find their episode" : "Find my episode"}
+      </button>
     </form>
   );
 };

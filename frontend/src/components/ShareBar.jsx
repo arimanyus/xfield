@@ -53,9 +53,9 @@ export const ShareBar = ({ ep, onShared }) => {
     if (ready) {
       try {
         saveBlob(await fetchFile(ep.card_url, fileName));
-        toast.success("Card saved — drop it into the post. The link unfurls into the still too.");
+        toast.success("Card saved — drop it into the post.");
       } catch {
-        toast.message("Post opened. Download the card and attach it.");
+        toast.message("Post opened. Attach the card.");
       }
     }
     count("x");
@@ -96,20 +96,11 @@ export const ShareBar = ({ ep, onShared }) => {
           <Download className="w-5 h-5" /> {ready ? "Download card" : "Card developing…"}
         </button>
       </div>
-      <p className="font-osd text-slate-500 text-base mt-2" data-testid="share-hint">
-        {ready ? (
-          <>
-            The share card is an image with the still and all three prophecies — on a phone it goes straight into the post.{" "}
-            <a href={ep.card_url} target="_blank" rel="noopener noreferrer" data-testid="share-card-preview" className="text-tape hover:underline inline-flex items-center gap-1">
-              Preview card <ExternalLink className="w-3.5 h-3.5" />
-            </a>
-          </>
-        ) : ep.image_status === "failed" ? (
-          "The still could not be recovered; the link still unfurls with the episode text."
-        ) : (
-          "Share now and the picture will be in the preview by the time anyone taps it."
-        )}
-      </p>
+      {ready && (
+        <a href={ep.card_url} target="_blank" rel="noopener noreferrer" data-testid="share-card-preview" className="inline-flex items-center gap-1 mt-2 font-osd text-base text-slate-500 hover:text-tape">
+          Preview card <ExternalLink className="w-3.5 h-3.5" />
+        </a>
+      )}
     </div>
   );
 };

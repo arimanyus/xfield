@@ -64,6 +64,10 @@ Growth loops: share link unfurls to the card image on X; "prophesy a friend" tag
 - Tested: iteration_5 (backend + full UI; one new-episode check skipped due to the per-IP rate limit; evidence quote-wrap fixed and old rows cleaned).
 - Risk: FLUX output is unfiltered for IP — this is a fan parody by the user's explicit choice; disclaimer in footer.
 
+### Iteration 6 — Savage only + copy diet (user request)
+- Roast option removed entirely: `SpiceToggle` deleted, API accepts only `spice: "savage"` (422 otherwise), no `spice` URL params.
+- Copy cut hard across the site: hero sub is one sentence, how-it-works section removed, strip/section headings shortened, confirm screen drops bio + hint, taps reason is one line, share hint replaced by a tiny "Preview card" link, countdown/friend/CTA/timeline/leaderboard descriptions removed, footer is one line.
+
 ## Known limitations / risks
 - nitter.cf is a community mirror and can throttle/vanish; chain + env-swappable mirror + paid slot mitigate.
 - Gemini often declines real-person likeness → generic character (`still_kind: generic`); expected.

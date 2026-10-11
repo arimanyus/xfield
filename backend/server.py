@@ -70,7 +70,7 @@ class Labels(BaseModel):
 class CreateEpisodeRequest(BaseModel):
     handle: str = Field(min_length=1, max_length=120)
     found_by: Optional[str] = Field(default=None, max_length=120)
-    spice: Literal["roast", "savage"] = "savage"
+    spice: Literal["savage"] = "savage"
     labels: Labels
     posts_text: Optional[str] = Field(default=None, max_length=3000)
 

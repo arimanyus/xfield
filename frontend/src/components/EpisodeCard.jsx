@@ -19,12 +19,7 @@ export const EpisodeCard = ({ ep }) => {
         />
       )}
       {(!ready || !loaded) && (
-        <StaticScreen
-          fill
-          roll={!failed}
-          message={failed ? "TAPE DAMAGED" : ready ? "LOADING STILL…" : "DEVELOPING THE STILL…"}
-          sub={failed ? "The still could not be recovered. The episode text stands." : "the picture lands in 10–20 seconds"}
-        />
+        <StaticScreen fill roll={!failed} message={failed ? "TAPE DAMAGED" : ready ? "LOADING STILL…" : "DEVELOPING THE STILL…"} />
       )}
     </figure>
   );
@@ -36,10 +31,6 @@ export const EpisodeMeta = ({ ep }) => (
       <span data-testid="episode-code">{seCode(ep)}</span>
       <span className="text-slate-500">·</span>
       <span className="text-white" data-testid="episode-aired">AIRED {airedLabel(ep.aired_date)}</span>
-      <span className="text-slate-500">·</span>
-      <span className={ep.spice === "savage" ? "text-red-400" : "text-slate-300"} data-testid="episode-spice">
-        {ep.spice}
-      </span>
     </div>
     <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl leading-[0.95] mt-2" data-testid="episode-title">
       “{ep.title}”

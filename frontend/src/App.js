@@ -25,14 +25,8 @@ export default function App() {
           <Route path="/timeline" element={<TimelinePage />} />
           <Route path="*" element={<Landing />} />
         </Routes>
-        <footer className="max-w-6xl mx-auto px-4 py-10 font-osd text-slate-500 text-lg space-y-2">
-          <div className="flex flex-wrap gap-x-6 gap-y-2 justify-between">
-            <span>ALREADY AIRED · THE LOST SIMPSONS EPISODES · 30 SEASONS · 1990–2020</span>
-            <span>Parody. Only public posts are read. Report any episode from its page.</span>
-          </div>
-          <p className="text-base text-slate-600" data-testid="footer-disclaimer">
-            Fan parody of The Simpsons. Not affiliated with or endorsed by The Simpsons, Disney or Fox. Every episode here is fiction.
-          </p>
+        <footer className="max-w-6xl mx-auto px-4 py-10 font-osd text-slate-600 text-base" data-testid="footer-disclaimer">
+          ALREADY AIRED · Fan parody. Not affiliated with The Simpsons, Disney or Fox.
         </footer>
         <Toaster theme="dark" position="top-center" richColors />
       </div>

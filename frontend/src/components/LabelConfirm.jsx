@@ -1,9 +1,8 @@
 import { useState } from "react";
 import { ChipPicker } from "@/components/ChipPicker";
-import { SpiceToggle } from "@/components/SpiceToggle";
 import { CHIP_KEYS } from "@/lib/chips";
 
-export const LabelConfirm = ({ profile, labels, setLabels, spice, setSpice, onConfirm, foundBy }) => {
+export const LabelConfirm = ({ profile, labels, setLabels, onConfirm, foundBy }) => {
   const [editing, setEditing] = useState(null);
   return (
     <section className="panel p-5 sm:p-7 animate-tv-on origin-center" data-testid="confirm-screen">
@@ -14,14 +13,13 @@ export const LabelConfirm = ({ profile, labels, setLabels, spice, setSpice, onCo
           <div className="w-14 h-14 bg-ink-3 border-2 border-tape/50" />
         )}
         <div className="min-w-0">
-          <div className="osd text-sm">Signal found · {profile.post_count} posts read</div>
+          <div className="osd text-sm">{profile.post_count} posts read</div>
           <div className="font-display text-3xl sm:text-4xl leading-none mt-1 truncate" data-testid="confirm-name">
             {profile.name}
           </div>
           <div className="font-osd text-slate-400 text-lg">@{profile.handle}{foundBy ? ` · found by @${foundBy}` : ""}</div>
         </div>
       </div>
-      {profile.bio && <p className="mt-4 text-slate-300 text-sm sm:text-base line-clamp-2" data-testid="confirm-bio">{profile.bio}</p>}
 
       <h2 className="font-display text-2xl sm:text-3xl mt-6 tracking-wide">
         We read <span className="text-tape">@{profile.handle}</span> as
@@ -41,7 +39,6 @@ export const LabelConfirm = ({ profile, labels, setLabels, spice, setSpice, onCo
           </span>
         ))}
       </div>
-      <p className="font-osd text-slate-500 mt-2 text-base">Tap a label to change it.</p>
 
       {editing && (
         <div className="mt-4">
@@ -57,9 +54,8 @@ export const LabelConfirm = ({ profile, labels, setLabels, spice, setSpice, onCo
         </div>
       )}
 
-      <div className="mt-7 flex flex-col sm:flex-row sm:items-center gap-3">
-        <SpiceToggle value={spice} onChange={setSpice} />
-        <button type="button" data-testid="confirm-generate-btn" onClick={onConfirm} className="btn-tape sm:ml-auto">
+      <div className="mt-7">
+        <button type="button" data-testid="confirm-generate-btn" onClick={onConfirm} className="btn-tape w-full sm:w-auto">
           Pull the episode
         </button>
       </div>

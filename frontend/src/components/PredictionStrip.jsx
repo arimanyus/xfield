@@ -9,14 +9,11 @@ export const PredictionStrip = () => {
   return (
     <section className="max-w-6xl mx-auto px-4 sm:px-6 pb-12" data-testid="prediction-strip">
       <div className="flex items-end justify-between gap-4 mb-4">
-        <div>
-          <div className="osd">The real ones · 1990–today</div>
-          <h2 className="font-display text-3xl sm:text-4xl tracking-wide mt-1 leading-none">
-            THE SIMPSONS CALLED THESE <span className="text-tape">YEARS EARLY.</span>
-          </h2>
-        </div>
+        <h2 className="font-display text-3xl sm:text-4xl tracking-wide leading-none">
+          THE SIMPSONS <span className="text-tape">CALLED THESE.</span>
+        </h2>
         <Link to="/timeline" data-testid="strip-timeline-link" className="font-osd text-lg sm:text-xl text-tape hover:underline whitespace-nowrap">
-          Full timeline ({all.length}) →
+          Full timeline →
         </Link>
       </div>
       <div className="flex gap-3 overflow-x-auto pb-3 [scrollbar-width:thin]" data-testid="strip-scroller">
@@ -40,7 +37,7 @@ export const PredictionStrip = () => {
         ))}
         <Link to="/timeline" className="shrink-0 w-44 panel p-4 flex flex-col justify-center items-start border-l-2 border-white/20 hover:border-tape transition-colors">
           <div className="font-display text-2xl leading-none text-tape">+{Math.max(all.length - picks.length, 0)} MORE</div>
-          <div className="font-osd text-slate-400 mt-1">and yours, pending →</div>
+          <div className="font-osd text-slate-400 mt-1">and yours →</div>
         </Link>
       </div>
     </section>
