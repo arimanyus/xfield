@@ -186,7 +186,7 @@ async def write_episode(profile: dict, labels: dict, spice: str, found_by) -> di
         "aired_year": aired.year,
         "cast": cast,
         "already_happened": _clamp(data.get("already_happened"), 240),
-        "evidence": _clamp(data.get("evidence"), 110),
+        "evidence": _clamp(str(data.get("evidence") or "").strip().strip('"“”\'‘’'), 110),
         "coming_near": {"year": near, "text": _clamp(cn.get("text"), 190)},
         "coming_far": {"year": year_of(cf, far_min + 2, far_min, far_max), "text": _clamp(cf.get("text"), 190)},
         "subtitle": _clamp(data.get("subtitle") or "HOMER: I should not have posted that.", 110),

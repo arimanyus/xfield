@@ -56,6 +56,14 @@ Growth loops: share link unfurls to the card image on X; "prophesy a friend" tag
 - Tested: iteration_3 (10/10 backend + UI) and iteration_4 (7/7 backend + UI).
 - Risk notes: X GraphQL query IDs rotate occasionally (overridable via `X_GQL_USER_OP` / `X_GQL_TWEETS_OP`); guest tokens have per-token/IP quotas (token auto-refreshes on 401/403/429). If both X and the mirror fail, adding a twitterapi.io key turns on the paid fallback.
 
+### Iteration 5 — Savage default, real Simpsons cast, image share card (user request)
+- Spice defaults to **savage** everywhere (API default, toggle order, find flow, handle page); writer prompt rewritten to "go for the throat" within the unchanged hard rules (no protected traits/health/family/harm).
+- Episodes are now explicitly lost **Simpsons** episodes: writer returns `cast` (2–4 real characters), Springfield settings, speaker-prefixed subtitles ("KENT BROCKMAN: …"), plus a name-free `scene_visual`. UI shows "STARRING Homer Simpson, Mr. Burns & @handle"; copy, footer ("Fan parody of The Simpsons…"), OG title and share text name the show.
+- Stills: Gemini refuses anything evoking the characters, so stills now come from **fal.ai FLUX dev** via the universal key (`falmedia.py`, queue proxy flow) with named cast + an avatar-derived look (Claude Haiku vision); Gemini generic is the fallback. FLUX draws recognizable Homer/Burns/Brockman alongside the user's cartoon self (~16–40s, ~$0.03).
+- **Share card is an image**: `compose_share_card` builds a 1080×≥1350 portrait JPEG (still + title + starring + the three prophecy blocks + footer), stored as `cards/{id}-share.jpg`, served at `GET /api/episodes/{id}/card` (falls back to the 16:9 still for old episodes). Share to X: Web Share with the image file on phones; on desktop opens the X composer and downloads the card. Download button downloads the card. OG preview still uses the 16:9 still.
+- Tested: iteration_5 (backend + full UI; one new-episode check skipped due to the per-IP rate limit; evidence quote-wrap fixed and old rows cleaned).
+- Risk: FLUX output is unfiltered for IP — this is a fan parody by the user's explicit choice; disclaimer in footer.
+
 ## Known limitations / risks
 - nitter.cf is a community mirror and can throttle/vanish; chain + env-swappable mirror + paid slot mitigate.
 - Gemini often declines real-person likeness → generic character (`still_kind: generic`); expected.

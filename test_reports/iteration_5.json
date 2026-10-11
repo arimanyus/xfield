@@ -1,0 +1,37 @@
+{
+  "summary": "Verified savage/Simpsons-cast/share-card features. Backend pytest 4 passed + 1 failed + 1 skipped (/app/backend/tests/test_savage_cast_card.py). Could NOT create a new levelsio episode: POST /api/episodes was rate-limited (429 'The archive is closed for you for an hour'), so downstream read-only checks were performed against the pre-existing pmarca episode HzJr0Bjq (spice=savage, cast=[Homer Simpson, Marge Simpson, Kent Brockman, Mr. Burns], still_kind=likeness, text/image ready). Verified card endpoint for HzJr0Bjq returns image/jpeg, 1080x1350, >100KB. Verified card fallback for old episode SOyV7Kk- returns 200 image/jpeg. Verified /api/s/HzJr0Bjq with Twitterbot UA returns HTML with og:title containing 'The Simpsons predicted @'. Frontend end-to-end on desktop: landing has spice-savage pressed by default and first inside the toggle container; hero-sub mentions Homer+Simpsons; footer-disclaimer contains 'Fan parody of The Simpsons'; typing pmarca navigates to /find?handle=pmarca&spice=savage with confirm-screen and spice-savage pressed. /ep/HzJr0Bjq shows episode-cast 'Starring Homer Simpson, Marge Simpson, Kent Brockman, Mr. Burns & @pmarca', episode-spice 'savage', episode-still rendered, download-btn text 'Download card' enabled, share-hint mentions 'image' and share-card-preview href ends with /api/episodes/HzJr0Bjq/card. Clicking share-x-btn opened a popup to https://x.com/intent/tweet?text=The%20Simpsons%20predicted%20%40pmarca%20in%202001.%20S12E12%20%E2%80%9CThe%20Venture%20Capitalist%20Who%20Cried%20Censorship%E2%80%9D and triggered a .jpg download (filename 'the-simpsons-predicted-pmarca-S12E12.jpg'); share-count incremented 1→2→3. /u/levelsio handle-find-another href is /find?handle=levelsio&spice=savage. /timeline and /leaderboards render. Mobile 390px /ep/HzJr0Bjq has scrollWidth==clientWidth==390 (no horizontal overflow).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/episodes/{id}", "issue": "evidence field is wrapped in matching double quotes. HzJr0Bjq returns evidence='\"George Orwell's '1984' is supposed to be a warning, NOT an instruction manual.\"' (also visible in the UI 'EVIDENCE › \"\"…\"\"'). Spec explicitly says 'evidence NOT wrapped in quote characters'. Fix in generator.py normalize_payload: strip surrounding smart/straight quotes from evidence after _clamp (e.g. evidence = re.sub(r'^[\"“‘\\']+|[\"”’\\']+$', '', _clamp(...)))."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/ep/HzJr0Bjq EVIDENCE line", "issues": ["Evidence renders as double-wrapped quotes '\"\"…\"\"' because backend evidence is already wrapped in '\"…\"' and the UI adds its own quote styling. Fix after backend quote-stripping lands."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_savage_cast_card.py",
+    "/app/test_reports/pytest/savage_cast_card.xml"
+  ],
+  "action_items": [
+    "Strip surrounding quote characters from evidence in generator.normalize_payload (both regular and smart quotes). Example on HzJr0Bjq: '\"George Orwell\\'s \\'1984\\' …manual.\"' → 'George Orwell\\'s \\'1984\\' …manual.'",
+    "Could not re-verify the savage POST default on a fresh episode because the backend returned 429 for this IP. The default is set in CreateEpisodeRequest and was already verified by the main agent on HzJr0Bjq (spice='savage'). Suggest exposing an admin/debug endpoint to reset per-IP rate limit for CI, or increasing the hourly cap in non-prod."
+  ],
+  "critical_code_review_comments": [
+    "generator.normalize_payload clamps 'evidence' but never trims wrapping quotes. The writer prompt instructs 'verbatim or lightly trimmed quote' — Claude is returning the quote wrapped in '\"…\"' which is passing straight through. Add quote-strip step.",
+    "server.episode_card returns 404 when image_status != 'ready'; the fallback test depended on the old episodes still being image-ready. If an old episode has image_status in {pending,failed}, GET /card will 404 instead of serving the still. Consider serving the raw still even when image_status != 'ready' as long as image_path exists, so old items never 404 just because their status field was never set."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_savage_cast_card.py"
+  ],
+  "success_rate": {"backend": "4/5 ran + 1 skipped (rate-limited); 1 real failure (evidence quote-wrap)", "frontend": "100%"},
+  "seed_data_creation": "No new episodes created this run (rate-limited). Shares on HzJr0Bjq incremented from 1 → 3 (two share-x clicks during tests).",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Next agent should (a) wait for rate-limit cooldown (~1h) then create one levelsio episode to verify savage-default via a fresh POST and image_url+card_url on first ready; (b) after main agent strips the wrapping quotes, re-check that evidence on a new episode does not start/end with '\"' or '“/”'. HzJr0Bjq remains the stable regression episode (spice=savage, cast=[Homer, Marge, Kent Brockman, Mr. Burns], still_kind=likeness, card 1080x1350).",
+  "rca of the issue": "evidence quote-wrap: Claude 3.5 Haiku frequently returns the 'evidence' JSON string already wrapped in double quotes to signal 'this is a quote from the user' (e.g. \"\\\"George Orwell's '1984'…manual.\\\"\"). generator.normalize_payload calls _clamp which only trims whitespace+length and converts to str — it does NOT strip wrapping quotes. The field is then persisted and surfaced as-is through ep_public, so both the API payload and the UI (which wraps evidence inside its own typographic quotes in EpisodeCard) end up double-quoted. Fix is a one-liner in normalize_payload: evidence = re.sub(r'^[\"\\u201c\\u2018\\'`]+|[\"\\u201d\\u2019\\'`]+$', '', _clamp(data.get('evidence'), 110)).strip()."
+}
