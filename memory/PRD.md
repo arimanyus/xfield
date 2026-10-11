@@ -85,7 +85,15 @@ Growth loops: share link unfurls to the card image on X; "prophesy a friend" tag
 - **Share dialog (desktop)**: `ShareDialog` replaces the toast flow — card preview on the left, 3 steps on the right (① Card copied ✓ auto on open, ② Open X button, ③ Paste ⌘V/Ctrl+V and post), plus Download / Copy link. Mobile keeps native Web Share with the image file.
 - Verified: `/find?handle=paulg` → instant redirect to existing episode; dialog copies PNG to clipboard and opens the composer; `fresh: true` creates a new pending episode which immediately becomes the handle's current one.
 
+### Iteration 10 — Intuitive flow pass (user: "just want the flow to be more intuitive")
+- **Confirm-labels step removed** (`LabelConfirm.jsx` deleted): read → auto-generate with extracted labels; 3-tap fallback only when the account can't be read. Static screens kept per user.
+- **Landing form**: one input + "Find the episode"; "Roasting a friend? Add your @ →" toggle reveals the second field. Hero copy: "THE SIMPSONS PREDICTED TRUMP. THEY PREDICTED YOU TOO." + "Type an X handle. Get the lost episode, the receipt, and two dated prophecies."
+- **Episode page**: Share to X is a full-width hero button under title/meta; Copy link / Download are text links; prophecies first on mobile (grid row/col placement, no duplicate DOM); timeline countdown + prophesy-a-friend + see-all moved to a secondary section below.
+- **Still legibility**: solid subtitle bar, speaker name in yellow VT323 above white 40px dialogue; bigger OSD. Writer prompt: the scene must stage the already-happened moment literally. Aired date/episode number now random in code (model kept picking S12E14 / 2001-02-11).
+- **Share card redesign** (`compose_share_card(ep, card16, host, avatar)`): still → "THE SIMPSONS PREDICTED / @HANDLE" headline → episode code/title/aired → "AIRED {year}" block → "CAME TRUE {now}" receipt box rendered like an X post (circular avatar, name, @handle, verbatim quote) → COMING blocks → footer. 1080×≥1350.
+- Tested: iteration_6 (backend 10/10 + full UI incl. dialog/clipboard, mobile order, redirects, taps). New-handle auto-generate path (@elonmusk) verified by hand.
 
+## Known limitations / risks
 - nitter.cf is a community mirror and can throttle/vanish; chain + env-swappable mirror + paid slot mitigate.
 - Gemini often declines real-person likeness → generic character (`still_kind: generic`); expected.
 - Share counts are client-reported (no verification). "found by" credit unverified.

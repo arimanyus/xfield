@@ -254,16 +254,8 @@ async def write_episode(profile: dict, labels: dict, spice: str, found_by) -> di
     except Exception as e:
         logger.warning("critic pass failed, using first clean candidates: %s", e)
 
-    try:
-        aired = datetime.strptime(str(data.get("aired_date", "")), "%Y-%m-%d").date()
-    except ValueError:
-        aired = date(random.randint(1996, 2004), random.randint(1, 12), random.randint(1, 28))
-    aired = max(date(1996, 1, 1), min(aired, date(2004, 12, 31)))
-    try:
-        ep_num = int(data.get("episode_number") or random.randint(1, 24))
-    except (TypeError, ValueError):
-        ep_num = random.randint(1, 24)
-    ep_num = max(1, min(ep_num, 24))
+    aired = date(random.randint(1996, 2004), random.randint(1, 12), random.randint(1, 28))
+    ep_num = random.randint(1, 24)
 
     def year_of(block, default, lo, hi):
         try:
