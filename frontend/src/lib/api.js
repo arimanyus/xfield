@@ -50,17 +50,7 @@ export const airedLabel = (iso) => {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 };
 
-const clip = (s, n) => (s.length > n ? s.slice(0, n - 1).trimEnd() + "…" : s);
-
-export const shareText = (ep) => {
-  const head = ep.found_by
-    ? `@${ep.handle} The Simpsons predicted you in ${ep.aired_year}.`
-    : `The Simpsons predicted @${ep.handle} in ${ep.aired_year}.`;
-  const tail = ep.found_by ? "\n\nExplain yourself." : "";
-  const fixed = `${head}\n${seCode(ep)} “${ep.title}”\n\nComing ${ep.coming_near.year}: ${tail}`;
-  const budget = 280 - 25 - fixed.length;
-  return `${head}\n${seCode(ep)} “${ep.title}”\n\nComing ${ep.coming_near.year}: ${clip(ep.coming_near.text, Math.max(40, budget))}${tail}`;
-};
+export const shareText = () => "Find yours";
 
 export const isMobile = () => typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 

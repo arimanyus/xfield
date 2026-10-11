@@ -106,6 +106,10 @@ Growth loops: share link unfurls to the card image on X; "prophesy a friend" tag
 - Card v5: full-width Simpsons-yellow title band (ink text), then filled rounded panels with dark text — sky-blue AIRED, white X-post receipt with green CAME TRUE chip, orange COMING near, pink COMING far — on the ink background. `card_url?v=5`. All existing cards re-rendered.
 - `shareText` now uses line breaks: "The Simpsons predicted @h in YYYY.\nS12E14 “Title”\n\nComing 2027: <prophecy clipped to fit 280 incl. link>" (+ "\n\nExplain yourself." in friend mode).
 
+### Iteration 14 — 3:4-safe card + minimal post text
+- X shows single images uncropped only between 2:1 and 3:4. `compose_share_card` now renders at 1200 wide, measures height, and re-renders wider (up to 3 passes) until width ≥ 0.75×height, letterboxing any remaining px → cards are always ≤ 3:4 (e.g. 1260×1648). Still's own footer bar is cropped off before pasting (uses `H`). `card_url?v=6`. All existing cards re-rendered.
+- `shareText()` is now just "Find yours" (X appends the link).
+
 ## Known limitations / risks
 - nitter.cf is a community mirror and can throttle/vanish; chain + env-swappable mirror + paid slot mitigate.
 - Gemini often declines real-person likeness → generic character (`still_kind: generic`); expected.

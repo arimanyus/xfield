@@ -3,6 +3,7 @@ import base64
 import io
 import json
 import logging
+import math
 import os
 import random
 import re
@@ -582,58 +583,73 @@ def _panel(d, x, y, max_w, color, label, lines, body):
     return y + h
 
 
-def compose_share_card(ep: dict, card16: bytes, site_host: str, avatar: bytes | None = None) -> bytes:
-    top_h = round(SW * 9 / 16)
-    canvas = Image.new("RGB", (SW, 2200), INK)
-    canvas.paste(Image.open(io.BytesIO(card16)).convert("RGB").resize((SW, top_h), Image.LANCZOS), (0, 0))
+def _render_share(ep: dict, still: Image.Image, site_host: str, avatar: bytes | None, sw: int):
+    top_h = round(sw * still.height / still.width)
+    canvas = Image.new("RGB", (sw, 2400), INK)
+    canvas.paste(still.resize((sw, top_h), Image.LANCZOS), (0, 0))
     d = ImageDraw.Draw(canvas)
     x = 40
-    max_w = SW - 2 * x
+    max_w = sw - 2 * x
 
-    band_h = 170
-    d.rectangle([0, top_h, SW, top_h + band_h], fill=TAPE)
-    d.text((x, top_h + 18), "THE SIMPSONS PREDICTED", font=_font("BebasNeue-Regular.ttf", 46), fill=INK)
-    d.text((x - 2, top_h + 56), f"@{ep['handle'].upper()}", font=_font("BebasNeue-Regular.ttf", 104), fill=INK)
-    y = top_h + band_h + 28
+    band_h = 150
+    d.rectangle([0, top_h, sw, top_h + band_h], fill=TAPE)
+    d.text((x, top_h + 14), "THE SIMPSONS PREDICTED", font=_font("BebasNeue-Regular.ttf", 42), fill=INK)
+    d.text((x - 2, top_h + 48), f"@{ep['handle'].upper()}", font=_font("BebasNeue-Regular.ttf", 96), fill=INK)
+    y = top_h + band_h + 16
 
     body = _font("Outfit-Regular.ttf", 32, "SemiBold")
     osd = _font("VT323-Regular.ttf", 28)
 
     aired_lines = _clip_lines(d, ep.get("aired_short") or ep["already_happened"], body, max_w - 2 * PAD, 2)
-    y = _panel(d, x, y, max_w, SKY, f"AIRED {ep['aired_year']}", aired_lines, body) + 18
+    y = _panel(d, x, y, max_w, SKY, f"AIRED {ep['aired_year']}", aired_lines, body) + 14
 
     receipt = ep.get("evidence") or ep["already_happened"]
     r_lines = _clip_lines(d, receipt, body, max_w - 2 * PAD, 3)
-    box_h = PAD + 40 + 14 + 64 + 14 + 40 * len(r_lines) + PAD
+    box_h = PAD + 40 + 12 + 64 + 12 + 40 * len(r_lines) + PAD
     d.rounded_rectangle([x, y, x + max_w, y + box_h], radius=18, fill=(255, 255, 255))
     _chip(d, x + PAD, y + PAD, f"CAME TRUE {datetime.now().year}", GREEN, INK)
-    ay = y + PAD + 54
+    ay = y + PAD + 52
     av = _circle_avatar(avatar, ep["handle"], 64)
     canvas.paste(av, (x + PAD, ay), av)
     name = _clamp(ep.get("display_name") or ep["handle"], 26)
     d.text((x + PAD + 80, ay), name, font=_font("Outfit-Regular.ttf", 30, "Bold"), fill=INK)
     d.text((x + PAD + 80, ay + 36), f"@{ep['handle']}", font=osd, fill=(100, 116, 139))
-    ry = ay + 78
+    ry = ay + 76
     for ln in r_lines:
         d.text((x + PAD, ry), ln, font=body, fill=INK)
         ry += 40
-    y += box_h + 18
+    y += box_h + 14
 
     for block, color in ((ep["coming_near"], ORANGE), (ep["coming_far"], PINK)):
         lines = _clip_lines(d, block["text"], body, max_w - 2 * PAD, 3)
-        y = _panel(d, x, y, max_w, color, f"COMING {block['year']}", lines, body) + 18
+        y = _panel(d, x, y, max_w, color, f"COMING {block['year']}", lines, body) + 14
 
-    total_h = max(1350, y + 62)
-    d.text((x, total_h - 50), f"@{ep['handle']}", font=osd, fill=(248, 250, 252))
+    total_h = y + 56
+    d.text((x, total_h - 46), f"@{ep['handle']}", font=osd, fill=(248, 250, 252))
     brand_font = _font("BebasNeue-Regular.ttf", 32)
     bw = d.textlength("ALREADY AIRED", font=brand_font)
-    d.text((SW - x - bw, total_h - 54), "ALREADY AIRED", font=brand_font, fill=TAPE)
+    d.text((sw - x - bw, total_h - 50), "ALREADY AIRED", font=brand_font, fill=TAPE)
     mid = f"FIND YOURS · {site_host}"
     mw = d.textlength(mid, font=osd)
-    if mw < SW - 2 * x - bw - 220:
-        d.text(((SW - mw) / 2, total_h - 50), mid, font=osd, fill=GREY)
+    if mw < sw - 2 * x - bw - 220:
+        d.text(((sw - mw) / 2, total_h - 46), mid, font=osd, fill=GREY)
+    return canvas.crop((0, 0, sw, total_h))
 
-    out = canvas.crop((0, 0, SW, total_h))
+
+def compose_share_card(ep: dict, card16: bytes, site_host: str, avatar: bytes | None = None) -> bytes:
+    still = Image.open(io.BytesIO(card16)).convert("RGB")
+    still = still.crop((0, 0, still.width, still.height - round(still.height * 58 / H)))
+    sw = 1200
+    for _ in range(3):
+        out = _render_share(ep, still, site_host, avatar, sw)
+        need = math.ceil(out.height * 0.75)
+        if need <= sw:
+            break
+        sw = need
+    if out.height * 0.75 > out.width:
+        wide = Image.new("RGB", (math.ceil(out.height * 0.75), out.height), INK)
+        wide.paste(out, ((wide.width - out.width) // 2, 0))
+        out = wide
     buf = io.BytesIO()
     out.save(buf, "JPEG", quality=90, optimize=True)
     return buf.getvalue()
