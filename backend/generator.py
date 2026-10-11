@@ -583,6 +583,56 @@ def _panel(d, x, y, max_w, color, label, lines, body):
     return y + h
 
 
+def _then_now(d, canvas, x, y, max_w, still, ep, avatar):
+    gutter = 72
+    col_w = (max_w - gutter) // 2
+    inner = col_w - 2 * PAD
+    body = _font("Outfit-Regular.ttf", 30, "SemiBold")
+    osd = _font("VT323-Regular.ttf", 26)
+
+    frame = still.crop((still.width // 2 - still.width * 3 // 8, round(still.height * 0.17),
+                        still.width // 2 + still.width * 3 // 8, round(still.height * 0.66)))
+    frame = _cover(frame, inner, round(inner * 0.5))
+    aired_lines = _clip_lines(d, ep.get("aired_short") or ep["already_happened"], body, inner, 3)
+    left_h = PAD + 40 + 12 + frame.height + 12 + 38 * len(aired_lines) + PAD
+
+    receipt = ep.get("evidence") or ep["already_happened"]
+    r_lines = _clip_lines(d, receipt, body, inner, 5)
+    right_h = PAD + 40 + 12 + 64 + 12 + 38 * len(r_lines) + PAD
+    h = max(left_h, right_h)
+    r_off = (h - right_h) // 2
+
+    lx, rx = x, x + col_w + gutter
+    d.rounded_rectangle([lx, y, lx + col_w, y + h], radius=18, fill=SKY)
+    _chip(d, lx + PAD, y + PAD, f"AIRED {ep['aired_year']}", INK, SKY)
+    fy = y + PAD + 52
+    d.rounded_rectangle([lx + PAD - 4, fy - 4, lx + PAD + frame.width + 4, fy + frame.height + 4], radius=8, fill=INK)
+    canvas.paste(frame, (lx + PAD, fy))
+    ty = fy + frame.height + 12
+    for ln in aired_lines:
+        d.text((lx + PAD, ty), ln, font=body, fill=INK)
+        ty += 38
+
+    d.rounded_rectangle([rx, y, rx + col_w, y + h], radius=18, fill=(255, 255, 255))
+    _chip(d, rx + PAD, y + PAD, f"CAME TRUE {datetime.now().year}", GREEN, INK)
+    ay = y + PAD + 52 + r_off
+    av = _circle_avatar(avatar, ep["handle"], 64)
+    canvas.paste(av, (rx + PAD, ay), av)
+    d.text((rx + PAD + 80, ay), _clamp(ep.get("display_name") or ep["handle"], 22), font=_font("Outfit-Regular.ttf", 30, "Bold"), fill=INK)
+    d.text((rx + PAD + 80, ay + 36), f"@{ep['handle']}", font=osd, fill=(100, 116, 139))
+    ry = ay + 76
+    for ln in r_lines:
+        d.text((rx + PAD, ry), ln, font=body, fill=INK)
+        ry += 38
+
+    cx, cy = x + col_w + gutter // 2, y + h // 2
+    d.line([(lx + col_w, cy), (rx, cy)], fill=TAPE, width=6)
+    d.ellipse([cx - 34, cy - 34, cx + 34, cy + 34], fill=TAPE)
+    d.line([(cx - 14, cy), (cx + 12, cy)], fill=INK, width=6)
+    d.polygon([(cx + 4, cy - 14), (cx + 20, cy), (cx + 4, cy + 14)], fill=INK)
+    return y + h
+
+
 def _render_share(ep: dict, still: Image.Image, site_host: str, avatar: bytes | None, sw: int):
     top_h = round(sw * still.height / still.width)
     canvas = Image.new("RGB", (sw, 2400), INK)
@@ -600,25 +650,7 @@ def _render_share(ep: dict, still: Image.Image, site_host: str, avatar: bytes | 
     body = _font("Outfit-Regular.ttf", 32, "SemiBold")
     osd = _font("VT323-Regular.ttf", 28)
 
-    aired_lines = _clip_lines(d, ep.get("aired_short") or ep["already_happened"], body, max_w - 2 * PAD, 2)
-    y = _panel(d, x, y, max_w, SKY, f"AIRED {ep['aired_year']}", aired_lines, body) + 14
-
-    receipt = ep.get("evidence") or ep["already_happened"]
-    r_lines = _clip_lines(d, receipt, body, max_w - 2 * PAD, 3)
-    box_h = PAD + 40 + 12 + 64 + 12 + 40 * len(r_lines) + PAD
-    d.rounded_rectangle([x, y, x + max_w, y + box_h], radius=18, fill=(255, 255, 255))
-    _chip(d, x + PAD, y + PAD, f"CAME TRUE {datetime.now().year}", GREEN, INK)
-    ay = y + PAD + 52
-    av = _circle_avatar(avatar, ep["handle"], 64)
-    canvas.paste(av, (x + PAD, ay), av)
-    name = _clamp(ep.get("display_name") or ep["handle"], 26)
-    d.text((x + PAD + 80, ay), name, font=_font("Outfit-Regular.ttf", 30, "Bold"), fill=INK)
-    d.text((x + PAD + 80, ay + 36), f"@{ep['handle']}", font=osd, fill=(100, 116, 139))
-    ry = ay + 76
-    for ln in r_lines:
-        d.text((x + PAD, ry), ln, font=body, fill=INK)
-        ry += 40
-    y += box_h + 14
+    y = _then_now(d, canvas, x, y, max_w, still, ep, avatar) + 14
 
     for block, color in ((ep["coming_near"], ORANGE), (ep["coming_far"], PINK)):
         lines = _clip_lines(d, block["text"], body, max_w - 2 * PAD, 3)

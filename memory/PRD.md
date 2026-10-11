@@ -110,6 +110,9 @@ Growth loops: share link unfurls to the card image on X; "prophesy a friend" tag
 - X shows single images uncropped only between 2:1 and 3:4. `compose_share_card` now renders at 1200 wide, measures height, and re-renders wider (up to 3 passes) until width ≥ 0.75×height, letterboxing any remaining px → cards are always ≤ 3:4 (e.g. 1260×1648). Still's own footer bar is cropped off before pasting (uses `H`). `card_url?v=6`. All existing cards re-rendered.
 - `shareText()` is now just "Find yours" (X appends the link).
 
+### Iteration 15 — THEN → NOW block (user: "can aired and came true be better contextualized/linked/visualized?")
+- `_then_now()`: AIRED and CAME TRUE are now side-by-side columns joined by a yellow line + arrow badge — left (sky) holds a cropped frame of the still (centre 75% width, 17–66% height, 2:1, ink border) above the caption; right (white) is the X-post receipt with the chip top-aligned and content vertically centred. Prophecies stay stacked below. `card_url?v=7`; all cards re-rendered.
+
 ## Known limitations / risks
 - nitter.cf is a community mirror and can throttle/vanish; chain + env-swappable mirror + paid slot mitigate.
 - Gemini often declines real-person likeness → generic character (`still_kind: generic`); expected.
