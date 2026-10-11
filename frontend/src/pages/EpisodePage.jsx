@@ -21,7 +21,7 @@ const WritingScreen = ({ ep }) => {
   return (
     <main className="max-w-3xl mx-auto px-4 sm:px-6 py-8 sm:py-12" data-testid="episode-writing">
       <div className="osd mb-4">Searching the archive…</div>
-      <StaticScreen message="SEARCHING THE ARCHIVE…" sub={`scrubbing 30 seasons for @${ep.handle} · usually 10–20 seconds`} />
+      <StaticScreen message="SEARCHING THE SPRINGFIELD ARCHIVE…" sub={`scrubbing 30 seasons for @${ep.handle} · usually 10–20 seconds`} />
       <p className="font-osd text-slate-500 text-lg mt-4" data-testid="writing-note">
         {slow ? "The writers' room is slow today. Still working — this page updates by itself." : "This page updates by itself. You can leave it open."}
       </p>
@@ -108,7 +108,7 @@ export default function EpisodePage() {
   useEffect(() => {
     if (ep?.title) document.title = `${seCode(ep)} “${ep.title}” — @${ep.handle} · Already Aired`;
     return () => {
-      document.title = "Already Aired — the show predicted you";
+      document.title = "Already Aired — The Simpsons predicted you";
     };
   }, [ep]);
 
@@ -158,7 +158,7 @@ export default function EpisodePage() {
         <div>
           <div className="osd">Your turn</div>
           <h2 className="font-display text-4xl sm:text-5xl tracking-wide mt-2 leading-[0.95]">
-            THE SIMPSONS GOT TRUMP. <span className="text-tape">THE SHOW GOT YOU.</span>
+            THE SIMPSONS GOT TRUMP. <span className="text-tape">THEY'LL GET YOU TOO.</span>
           </h2>
           <p className="text-slate-300 mt-3">Takes about twenty seconds. No login. Nothing is posted for you.</p>
         </div>

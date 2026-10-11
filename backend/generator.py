@@ -17,6 +17,8 @@ from PIL import Image, ImageDraw, ImageFont
 from emergentintegrations.llm.chat import ImageContent, LlmChat, StreamDone, TextDelta, UserMessage
 
 load_dotenv(Path(__file__).parent / ".env")
+import falmedia  # noqa: E402
+
 logger = logging.getLogger("generator")
 
 ASSETS = Path(__file__).parent / "assets"
@@ -28,36 +30,48 @@ IMAGE_MODEL = os.environ["IMAGE_MODEL"]
 DEFAULT_LABELS = {"role": "poster", "vibe": "chronically online", "obsession": "the timeline"}
 
 SAFETY = (
-    "Hard rules: joke ONLY about what this person has publicly posted, their bio, and their online behaviour "
-    "(posting habits, ego, takes, obsessions, hustle, gear, routines). NEVER joke about or mention race, ethnicity, "
-    "religion, gender, sexuality, disability, body, appearance, health, age, family, children, relationships, "
-    "nationality, identity politics, tragedy, violence, self-harm, death or real-world harm. No slurs, no hate. "
-    "Never present invented facts as real-world claims about the person; everything is framed as what the cartoon episode showed."
+    "Hard rules (the only off-limits list): never joke about or mention race, ethnicity, religion, gender, sexuality, "
+    "disability, body, appearance, health, age, family, children, relationships, nationality, tragedy, violence, "
+    "self-harm, death or real-world harm. No slurs. Everything else they chose to post publicly is fair game: their job, "
+    "company, product, fundraising, net-worth claims, follower count, hustle, takes, hot streaks, flops, routines, gear, "
+    "ego, and the gap between how they post and what they obviously are. Never present invented facts as real-world "
+    "claims; everything is framed as what the episode showed."
 )
 
+CAST = ("Homer Simpson, Marge Simpson, Bart Simpson, Lisa Simpson, Maggie, Mr. Burns, Smithers, Moe Szyslak, Krusty the Clown, "
+        "Ned Flanders, Comic Book Guy, Milhouse, Nelson Muntz, Ralph Wiggum, Chief Wiggum, Principal Skinner, Kent Brockman, "
+        "Lenny and Carl, Barney Gumble, Professor Frink, Sideshow Bob, Grampa Simpson, Patty and Selma, Groundskeeper Willie, "
+        "Apu, Dr. Nick, Lionel Hutz, Troy McClure, Disco Stu, Duffman, Mayor Quimby, Otto, Edna Krabappel")
+
 EPISODE_SYSTEM = (
-    'You are the head writer of "The Fortunes", a fictional American animated sitcom about a yellow-skinned cartoon '
-    "family that ran for 30 seasons (1990-2020) and is famous for eerily predicting real people's lives. The show is "
-    "original: never mention or imitate any real cartoon, its characters, catchphrases or towns. FORBIDDEN words anywhere "
-    "in your output: Simpsons, Homer, Marge, Bart, Lisa, Maggie, Springfield, Krusty, Burns, Smithers, Flanders, Moe, Apu, "
-    "Milhouse, Nelson, Ralph, Duff, Kwik-E-Mart, D'oh, Ay caramba, Family Guy, South Park, Griffin, Quahog.\n"
-    "Given an X (Twitter) user's bio, labels and recent posts, write the lost episode that predicted them.\n"
+    "You are the head writer of a parody archive of lost episodes of THE SIMPSONS: the Fox animated series famous for "
+    "predicting the future (President Trump in 2000, Disney buying Fox in 1998, the smartwatch in 1995). Each lost episode "
+    "predicted a real X (Twitter) user years before they existed online. Write it as a real Simpsons episode: Springfield "
+    "settings (Moe's Tavern, the Kwik-E-Mart, the nuclear plant, Springfield Elementary, Channel 6 News, the Android's "
+    "Dungeon, 742 Evergreen Terrace), running gags, Kent Brockman segments, Mr. Burns schemes, chalkboard gags, couch gags. "
+    f"Use the actual characters by name — {CAST} — reacting to a new Springfield character who is this person.\n"
+    "Given the user's bio, labels and real posts, write the lost episode that predicted them.\n"
     f"{SAFETY}\n"
-    "Comedy style: specific, observational, deadpan, quotable. The funniest line quotes or paraphrases something they "
-    'actually posted. Spice: "roast" = affectionate ribbing; "savage" = merciless about ego, habits, takes and online '
-    "behaviour, still within the hard rules.\n"
+    "Comedy style: specific, observational, deadpan, quotable, in the voice of the show's golden era. The funniest line "
+    "quotes or paraphrases something they actually posted and lets a Simpsons character react to it.\n"
+    'Spice "savage" (the default): go for the throat. No compliments, no softening, no "but honestly they\'re great". '
+    "Mock the ego, the delusion, the engagement bait, the recycled takes, the product nobody asked for, the follower count "
+    "versus the self-image. Cruel, precise, quotable, and still within the hard rules. "
+    'Spice "roast": the same jokes with a wink, affectionate instead of lethal.\n'
     "Reply with ONLY a JSON object, no markdown fences, with exactly these keys:\n"
     "{\n"
-    ' "title": "episode title spoofing their life, 3-7 words, Title Case",\n'
+    ' "title": "Simpsons-style episode title spoofing their life, 3-7 words, Title Case (puns on film/book titles welcome)",\n'
     ' "aired_date": "YYYY-MM-DD between 1996-01-01 and 2004-12-31",\n'
     ' "episode_number": <integer 1-24>,\n'
-    ' "already_happened": "1-2 sentences, max 200 characters, present tense: what the episode showed that has now come true about them, grounded in a specific real post or bio detail",\n'
+    ' "cast": ["2 to 4 real Simpsons character names who appear in the episode"],\n'
+    ' "already_happened": "1-2 sentences, max 200 characters, present tense: what the episode showed that has now come true about them, grounded in a specific real post or bio detail, with a Simpsons character involved",\n'
     ' "evidence": "short verbatim or lightly trimmed quote (max 90 chars) from one of their real posts that proves it; empty string if no posts were given",\n'
-    ' "coming_near": {"year": NEAR_YEAR, "text": "1 sentence, max 160 chars, a specific funny prophecy for that year"},\n'
+    ' "coming_near": {"year": NEAR_YEAR, "text": "1 sentence, max 160 chars, a specific brutal prophecy for that year"},\n'
     ' "coming_far": {"year": <integer between FAR_MIN and FAR_MAX>, "text": "1 sentence, max 160 chars, a bigger, stranger prophecy"},\n'
-    ' "subtitle": "one line of dialogue (max 60 chars) the character says in the still",\n'
-    ' "scene": "1-2 sentences describing the still: setting, action, props. No on-screen text.",\n'
-    ' "character": "visual description of the cartoon version of them: hair, glasses, facial hair, outfit, expression. Max 40 words. Use hints from bio/posts about their gear or style, otherwise invent something fitting the labels."\n'
+    ' "subtitle": "one line of dialogue from the still, max 90 chars, prefixed with the speaker in caps, e.g. MR. BURNS: Excellent. Another man posting through it.",\n'
+    ' "scene": "1-2 sentences describing the still: Springfield setting, the cast members by name, what they and the person are doing. No on-screen text.",\n'
+    ' "scene_visual": "the same still described for an illustrator who has never seen the show: no character names, no show or brand names, no place names. Describe the setting and each character purely visually (e.g. a bald overweight yellow man in a white polo shirt). 1-2 sentences.",\n'
+    ' "character": "visual description of the Simpsons-style version of this person: hair, glasses, facial hair, outfit, expression. Max 40 words. Use hints from bio/posts about their gear or style, otherwise invent something fitting the labels."\n'
     "}"
 )
 
@@ -163,33 +177,41 @@ async def write_episode(profile: dict, labels: dict, spice: str, found_by) -> di
         return max(lo, min(y, hi))
 
     cn, cf = data.get("coming_near") or {}, data.get("coming_far") or {}
+    cast = [str(c).strip()[:40] for c in (data.get("cast") or []) if str(c).strip()][:4]
     return {
         "title": _clamp(data.get("title") or "The One Nobody Saw Coming", 70),
         "season": aired.year - 1989,
         "episode": ep_num,
         "aired_date": aired.isoformat(),
         "aired_year": aired.year,
+        "cast": cast,
         "already_happened": _clamp(data.get("already_happened"), 240),
         "evidence": _clamp(data.get("evidence"), 110),
         "coming_near": {"year": near, "text": _clamp(cn.get("text"), 190)},
         "coming_far": {"year": year_of(cf, far_min + 2, far_min, far_max), "text": _clamp(cf.get("text"), 190)},
-        "subtitle": _clamp(data.get("subtitle") or "I should not have posted that.", 70),
+        "subtitle": _clamp(data.get("subtitle") or "HOMER: I should not have posted that.", 110),
         "scene": _clamp(data.get("scene"), 400),
+        "scene_visual": _clamp(data.get("scene_visual"), 400),
         "character": _clamp(data.get("character"), 300),
     }
 
 
-STILL_BASE = (
-    "A single paused frame from a late-1990s American animated TV sitcom, hand-drawn cel animation look: flat colors, "
-    "thick clean black outlines, soft CRT glow, slightly faded VHS color palette. Widescreen 16:9 composition, medium shot. "
-    "Scene: {scene} The main character is a yellow-skinned cartoon person with an overbite and big round eyes: {character} "
-    "{ref} Absolutely no text, letters, captions, subtitles, logos or watermarks anywhere in the image."
+NAME_RE = re.compile(r"\b(the simpsons?|simpsons?|springfield|homer|marge|bart|lisa|maggie|mr\.? burns|burns|smithers|moe'?s?( tavern)?|"
+                     r"krusty|flanders|comic book guy|milhouse|nelson|ralph|wiggum|skinner|brockman|lenny|carl|barney|frink|"
+                     r"sideshow bob|grampa|patty|selma|willie|apu|kwik-e-mart|duff(man)?|quimby|otto|krabappel|evergreen terrace|"
+                     r"channel 6|fox)\b", re.I)
+
+
+def sanitize_visual(text: str) -> str:
+    return re.sub(r"\s{2,}", " ", NAME_RE.sub("a cartoon character", text or "")).strip()
+
+
+STILL_STYLE_ONLY = (
+    "A single paused frame from a 1990s yellow-skinned animated family sitcom: overbites, big round eyes, four fingers, "
+    "flat colors, thick black outlines, a small American town, soft CRT glow and faded VHS color. Widescreen 16:9 "
+    "composition, medium shot. Scene: {scene} The main character is a yellow-skinned cartoon person: {character} "
+    "Absolutely no text, letters, captions, subtitles, logos or watermarks anywhere in the image."
 )
-REF_NOTE = ("Use the attached picture only as a loose style reference for the character design: borrow the hair color and "
-            "hairstyle, whether they wear glasses, facial hair, and clothing colors. The result must be an original flat "
-            "yellow cartoon character in the show's house style, not a portrait or likeness of any real person. ")
-
-
 async def fetch_avatar(url) -> bytes | None:
     if not url:
         return None
@@ -207,24 +229,59 @@ async def fetch_avatar(url) -> bytes | None:
         return None
 
 
+async def describe_avatar(avatar: bytes | None) -> str:
+    if not avatar:
+        return ""
+    try:
+        chat = LlmChat(api_key=KEY, session_id=f"look-{uuid.uuid4()}",
+                       system_message="You describe profile photos for a cartoonist. Reply with one line, max 25 words, only visible "
+                                      "physical features and clothing: hair color/style, facial hair, glasses, headwear, clothing colors. "
+                                      "No names, no guesses about identity.").with_model("anthropic", LABEL_MODEL)
+        r = await asyncio.wait_for(chat.send_message(UserMessage(text="Describe this person for a cartoonist.",
+                                                                  file_contents=[ImageContent(base64.b64encode(avatar).decode())])), 25)
+        return _clamp(r.strip().strip('"'), 200)
+    except Exception as e:
+        logger.warning("avatar description failed: %s", e)
+        return ""
+
+
+FLUX_PROMPT = (
+    "A paused frame from a classic 1990s episode of The Simpsons, authentic Simpsons cel animation style: yellow skin, big round "
+    "eyes, overbites, flat colors, thick clean black outlines, soft CRT glow and faded VHS color. {scene} The Simpsons characters "
+    "{cast} are drawn exactly as they appear in the show. The new character representing the person: {character}. Widescreen, "
+    "medium shot, expressive faces. No text, no captions, no signs with words, no logos, no watermarks."
+)
+
+
 async def generate_still(ep: dict, avatar: bytes | None):
-    attempts = []
-    if avatar:
-        attempts.append((STILL_BASE.format(scene=ep["scene"], character=ep["character"], ref=REF_NOTE), avatar))
-    attempts.append((STILL_BASE.format(scene=ep["scene"], character=ep["character"], ref=""), None))
-    for prompt, ref in attempts:
-        try:
-            chat = (LlmChat(api_key=KEY, session_id=f"img-{uuid.uuid4()}", system_message="You generate images.")
-                    .with_model("gemini", IMAGE_MODEL).with_params(modalities=["image", "text"]))
-            kwargs = {"text": prompt}
-            if ref:
-                kwargs["file_contents"] = [ImageContent(base64.b64encode(ref).decode())]
-            _, images = await chat.send_message_multimodal_response(UserMessage(**kwargs))
-            if images:
-                return base64.b64decode(images[0]["data"]), bool(ref)
-            logger.warning("image model returned no image (ref=%s)", bool(ref))
-        except Exception as e:
-            logger.warning("still generation failed (ref=%s): %s", bool(ref), e)
+    look = await describe_avatar(avatar)
+    character = f"a Simpsons-style version of a person with {look}; {ep['character']}" if look else ep["character"]
+    cast_names = ", ".join(ep.get("cast") or []) or "Homer Simpson"
+    try:
+        prompt = FLUX_PROMPT.format(scene=ep["scene"], cast=cast_names, character=character)
+        img = await asyncio.wait_for(asyncio.to_thread(falmedia.flux_text_to_image, prompt), 150)
+        if img:
+            logger.info("still generated via flux (likeness=%s)", bool(look))
+            return img, bool(look)
+        logger.warning("flux returned no image")
+    except falmedia.InsufficientCreditsError:
+        logger.error("Universal Key credits exhausted for fal image generation")
+    except Exception as e:
+        logger.warning("flux still generation failed: %s", e)
+
+    scene = sanitize_visual(ep.get("scene_visual") or ep["scene"])
+    gen_character = sanitize_visual(f"{look}; {ep['character']}" if look else ep["character"])
+    try:
+        chat = (LlmChat(api_key=KEY, session_id=f"img-{uuid.uuid4()}", system_message="You generate images.")
+                .with_model("gemini", IMAGE_MODEL).with_params(modalities=["image", "text"]))
+        _, images = await chat.send_message_multimodal_response(
+            UserMessage(text=STILL_STYLE_ONLY.format(scene=scene, character=gen_character)))
+        if images:
+            logger.info("still generated via gemini fallback")
+            return base64.b64decode(images[0]["data"]), False
+        logger.warning("gemini fallback returned no image")
+    except Exception as e:
+        logger.warning("gemini fallback failed: %s", e)
     return None, False
 
 
@@ -296,7 +353,7 @@ def compose_card(ep: dict, still: bytes | None) -> bytes:
 
     osd = _font("VT323-Regular.ttf", 40)
     aired = datetime.strptime(ep["aired_date"], "%Y-%m-%d").strftime("%m.%d.%Y")
-    _shadow(d, (36, 24), f"ARCHIVE  S{ep['season']:02d}E{ep['episode']:02d}", osd, YELLOW)
+    _shadow(d, (36, 24), f"THE SIMPSONS  S{ep['season']:02d}E{ep['episode']:02d}", osd, YELLOW)
     _shadow(d, (36, 62), f"AIRED {aired}", osd, WHITE)
     d.ellipse([W - 156, 36, W - 136, 56], fill=(239, 68, 68, 255))
     _shadow(d, (W - 122, 24), "PLAY", osd, WHITE)
@@ -305,7 +362,7 @@ def compose_card(ep: dict, still: bytes | None) -> bytes:
     lines = _wrap(d, ep["subtitle"], sub_font, W - 180)[:2]
     line_h, bottom_h = 46, 58
     bar_h = 26 + line_h * len(lines)
-    d.rectangle([0, H - bottom_h - bar_h, W, H - bottom_h], fill=(0, 0, 0, 150))
+    d.rectangle([0, H - bottom_h - bar_h, W, H - bottom_h], fill=(0, 0, 0, 200))
     y = H - bottom_h - bar_h + 12
     for ln in lines:
         w = d.textlength(ln, font=sub_font)
@@ -335,3 +392,60 @@ async def render_card_for_episode(ep: dict, avatar_url) -> tuple:
     card = await asyncio.to_thread(compose_card, ep, still)
     kind = "likeness" if still and used_ref else ("generic" if still else "missing")
     return card, kind
+
+
+SW = 1080
+INK = (7, 11, 20)
+GREY = (148, 163, 184)
+
+
+def compose_share_card(ep: dict, card16: bytes, site_host: str) -> bytes:
+    top_h = round(SW * 9 / 16)
+    canvas = Image.new("RGB", (SW, 1700), INK)
+    canvas.paste(Image.open(io.BytesIO(card16)).convert("RGB").resize((SW, top_h), Image.LANCZOS), (0, 0))
+    d = ImageDraw.Draw(canvas)
+    x, y = 44, top_h + 34
+
+    title_font = _font("BebasNeue-Regular.ttf", 64)
+    for ln in _wrap(d, f"“{ep['title']}”", title_font, SW - 2 * x)[:2]:
+        d.text((x, y), ln, font=title_font, fill=(250, 204, 21))
+        y += 64
+    osd = _font("VT323-Regular.ttf", 28)
+    cast = [c.upper() for c in (ep.get("cast") or [])[:3]]
+    starring = "STARRING " + (", ".join(cast) + " & " if cast else "") + f"@{ep['handle'].upper()}"
+    while d.textlength(starring, font=osd) > SW - 2 * x and len(starring) > 20:
+        starring = starring[:-2] + "…"
+    d.text((x, y + 6), starring, font=osd, fill=GREY)
+    y += 50
+
+    label_font = _font("VT323-Regular.ttf", 30)
+    body = _font("Outfit-Regular.ttf", 27)
+    blocks = [("ALREADY HAPPENED", ep["already_happened"], True),
+              (f"COMING {ep['coming_near']['year']}", ep["coming_near"]["text"], False),
+              (f"COMING {ep['coming_far']['year']}", ep["coming_far"]["text"], False)]
+    for label, text, accent in blocks:
+        lines = _wrap(d, text, body, SW - x - 70)[:3]
+        block_h = 30 + 34 * len(lines)
+        d.rectangle([x, y + 4, x + 3, y + block_h], fill=(250, 204, 21) if accent else (71, 85, 105))
+        d.text((x + 18, y), label, font=label_font, fill=(250, 204, 21) if accent else (203, 213, 225))
+        y += 32
+        for ln in lines:
+            d.text((x + 18, y), ln, font=body, fill=(241, 245, 249))
+            y += 34
+        y += 26
+
+    total_h = max(1350, y + 70)
+    d.line([(x, total_h - 60), (SW - x, total_h - 60)], fill=(250, 204, 21), width=1)
+    d.text((x, total_h - 48), f"@{ep['handle']}", font=osd, fill=(248, 250, 252))
+    brand_font = _font("BebasNeue-Regular.ttf", 30)
+    bw = d.textlength("ALREADY AIRED", font=brand_font)
+    d.text((SW - x - bw, total_h - 50), "ALREADY AIRED", font=brand_font, fill=(250, 204, 21))
+    mid = f"FIND YOURS · {site_host}"
+    mw = d.textlength(mid, font=osd)
+    if mw < SW - 2 * x - bw - 220:
+        d.text(((SW - mw) / 2, total_h - 48), mid, font=osd, fill=GREY)
+
+    out = canvas.crop((0, 0, SW, total_h))
+    buf = io.BytesIO()
+    out.save(buf, "JPEG", quality=88, optimize=True)
+    return buf.getvalue()

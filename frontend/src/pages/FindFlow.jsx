@@ -10,7 +10,7 @@ export default function FindFlow() {
   const navigate = useNavigate();
   const handle = params.get("handle") || "";
   const by = params.get("by") || "";
-  const [spice, setSpice] = useState(params.get("spice") === "savage" ? "savage" : "roast");
+  const [spice, setSpice] = useState(params.get("spice") === "roast" ? "roast" : "savage");
   const [step, setStep] = useState("reading");
   const [profile, setProfile] = useState(null);
   const [labels, setLabels] = useState(null);
@@ -72,7 +72,7 @@ export default function FindFlow() {
       {step === "taps" && <TapsFlow handle={profile?.handle || handle} profile={profile} spice={spice} setSpice={setSpice} onDone={generate} />}
 
       {step === "generating" && (
-        <StaticScreen message="OPENING THE ARCHIVE…" sub={`filing a request for @${handle}`} />
+        <StaticScreen message="OPENING THE SPRINGFIELD ARCHIVE…" sub={`filing a request for @${handle}`} />
       )}
 
       {step === "error" && (

@@ -27,11 +27,11 @@ export default function App() {
         </Routes>
         <footer className="max-w-6xl mx-auto px-4 py-10 font-osd text-slate-500 text-lg space-y-2">
           <div className="flex flex-wrap gap-x-6 gap-y-2 justify-between">
-            <span>ALREADY AIRED · ARCHIVE OF “THE FORTUNES” · 30 SEASONS · 1990–2020</span>
+            <span>ALREADY AIRED · THE LOST SIMPSONS EPISODES · 30 SEASONS · 1990–2020</span>
             <span>Parody. Only public posts are read. Report any episode from its page.</span>
           </div>
           <p className="text-base text-slate-600" data-testid="footer-disclaimer">
-            Inspired by the Simpsons-predictions phenomenon. Not affiliated with or endorsed by The Simpsons, Disney or Fox. “The Fortunes” and every episode here are fiction.
+            Fan parody of The Simpsons. Not affiliated with or endorsed by The Simpsons, Disney or Fox. Every episode here is fiction.
           </p>
         </footer>
         <Toaster theme="dark" position="top-center" richColors />

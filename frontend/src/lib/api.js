@@ -52,8 +52,10 @@ export const airedLabel = (iso) => {
 
 export const shareText = (ep) =>
   ep.found_by
-    ? `@${ep.handle} the show predicted you in ${ep.aired_year}. ${seCode(ep)} “${ep.title}”. Explain yourself.`
-    : `The show predicted @${ep.handle} in ${ep.aired_year}. ${seCode(ep)} “${ep.title}”. Episode:`;
+    ? `@${ep.handle} The Simpsons predicted you in ${ep.aired_year}. ${seCode(ep)} “${ep.title}”. Explain yourself.`
+    : `The Simpsons predicted @${ep.handle} in ${ep.aired_year}. ${seCode(ep)} “${ep.title}”.`;
+
+export const isMobile = () => typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 
 export const xIntentUrl = (text, url) =>
   `https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`;

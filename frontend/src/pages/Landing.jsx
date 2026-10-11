@@ -31,8 +31,8 @@ const HeroPreview = ({ ep }) => {
 
 const steps = [
   ["01", "Type a handle", "Yours, or a friend's. No login, nothing posted on your behalf."],
-  ["02", "We read the posts", "Only public, original posts and the bio. Confirm three labels in one tap."],
-  ["03", "The episode airs", "A cartoon still + what already came true + two dated prophecies that join the timeline. Share it. Tag them."],
+  ["02", "We read the posts", "Only public, original posts and the bio. Confirm three labels in one tap. Savage by default."],
+  ["03", "The episode airs", "A Simpsons still with the real cast, what already came true, and two dated prophecies that join the timeline. Share the card. Tag them."],
 ];
 
 export default function Landing() {
@@ -51,8 +51,8 @@ export default function Landing() {
           </h1>
           <p className="mt-5 text-slate-300 text-base sm:text-lg max-w-xl leading-relaxed" data-testid="hero-sub">
             The Simpsons called President Trump 16 years early, Disney buying Fox 21 years early, the smartwatch 20 years early. Type an X
-            handle and we pull the lost episode of a yellow cartoon that predicted <em>them</em> — one thing that already came true, two still
-            coming.
+            handle and we pull the lost Springfield episode that predicted <em>them</em> — Homer, Mr. Burns and the rest of the cast
+            included. One thing that already came true, two still coming.
           </p>
           <HandleForm className="mt-8" idPrefix="hero" />
         </div>

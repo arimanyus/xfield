@@ -9,7 +9,7 @@ export const HandleForm = ({ initialHandle = "", initialMode = "me", lockHandle 
   const [mode, setMode] = useState(initialMode);
   const [handle, setHandle] = useState(initialHandle);
   const [you, setYou] = useState("");
-  const [spice, setSpice] = useState("roast");
+  const [spice, setSpice] = useState("savage");
 
   const submit = (e) => {
     e.preventDefault();

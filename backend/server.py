@@ -19,7 +19,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import storage  # noqa: E402
-from generator import extract_labels, render_card_for_episode, write_episode  # noqa: E402
+from generator import compose_share_card, extract_labels, render_card_for_episode, write_episode  # noqa: E402
 from predictions import CATEGORIES, PREDICTIONS  # noqa: E402
 from safety import contains_blocked  # noqa: E402
 from xreader import is_valid_handle, normalize_handle, read_handle  # noqa: E402
@@ -70,7 +70,7 @@ class Labels(BaseModel):
 class CreateEpisodeRequest(BaseModel):
     handle: str = Field(min_length=1, max_length=120)
     found_by: Optional[str] = Field(default=None, max_length=120)
-    spice: Literal["roast", "savage"] = "roast"
+    spice: Literal["roast", "savage"] = "savage"
     labels: Labels
     posts_text: Optional[str] = Field(default=None, max_length=3000)
 
@@ -122,10 +122,12 @@ def ep_public(doc: dict, base: str) -> dict:
         "avatar_url": doc.get("avatar_url"), "found_by": doc.get("found_by"), "spice": doc["spice"],
         "labels": doc["labels"], "season": doc.get("season"), "episode": doc.get("episode"),
         "aired_date": doc.get("aired_date"), "aired_year": doc.get("aired_year"), "title": doc.get("title"),
+        "cast": doc.get("cast") or [],
         "already_happened": doc.get("already_happened"), "evidence": doc.get("evidence", ""),
         "coming_near": doc.get("coming_near"), "coming_far": doc.get("coming_far"), "subtitle": doc.get("subtitle"),
         "text_status": text_status, "image_status": doc["image_status"], "still_kind": doc.get("still_kind"),
         "image_url": f"{base}/api/episodes/{doc['id']}/image" if doc["image_status"] == "ready" else None,
+        "card_url": f"{base}/api/episodes/{doc['id']}/card" if doc["image_status"] == "ready" else None,
         "share_url": f"{base}/api/s/{doc['id']}", "shares": doc.get("shares", 0),
         "source": doc.get("source"), "created_at": doc["created_at"],
     }
@@ -169,7 +171,7 @@ def with_pasted(profile: dict, pasted: list) -> dict:
     return {**profile, "posts": posts, "found": True, "source": profile.get("source") or "pasted"}
 
 
-async def episode_job(ep_id: str, profile: dict, labels: dict, spice: str, found_by):
+async def episode_job(ep_id: str, profile: dict, labels: dict, spice: str, found_by, site_host: str):
     try:
         ep = await write_episode(profile, labels, spice, found_by)
     except Exception:
@@ -178,26 +180,33 @@ async def episode_job(ep_id: str, profile: dict, labels: dict, spice: str, found
         return
     await db.episodes.update_one({"id": ep_id}, {"$set": {**ep, "text_status": "ready"}})
     doc = await db.episodes.find_one({"id": ep_id}, {"_id": 0})
-    await image_job(ep_id, doc, profile.get("avatar_url"))
+    await image_job(ep_id, doc, profile.get("avatar_url"), site_host)
 
 
-async def image_job(ep_id: str, ep: dict, avatar_url):
+async def _store(path: str, data: bytes, local_name: str) -> str:
+    try:
+        await asyncio.to_thread(storage.put_object, path, data, "image/jpeg")
+        return "storage"
+    except Exception as e:
+        logger.warning("object storage failed (%s); saving locally", e)
+        (MEDIA_DIR / local_name).write_bytes(data)
+        return "local"
+
+
+async def image_job(ep_id: str, ep: dict, avatar_url, site_host: str):
     try:
         card, kind = await render_card_for_episode(ep, avatar_url)
+        share = await asyncio.to_thread(compose_share_card, ep, card, site_host)
     except Exception:
         logger.exception("card render failed for %s", ep_id)
         await db.episodes.update_one({"id": ep_id}, {"$set": {"image_status": "failed"}})
         return
     path = f"{storage.APP_NAME}/cards/{ep_id}.jpg"
-    store = "storage"
-    try:
-        await asyncio.to_thread(storage.put_object, path, card, "image/jpeg")
-    except Exception as e:
-        logger.warning("object storage failed (%s); saving locally", e)
-        (MEDIA_DIR / f"{ep_id}.jpg").write_bytes(card)
-        store = "local"
-    await db.episodes.update_one({"id": ep_id}, {"$set": {"image_status": "ready", "image_path": path,
-                                                          "image_store": store, "still_kind": kind}})
+    card_path = f"{storage.APP_NAME}/cards/{ep_id}-share.jpg"
+    store = await _store(path, card, f"{ep_id}.jpg")
+    card_store = await _store(card_path, share, f"{ep_id}-share.jpg")
+    await db.episodes.update_one({"id": ep_id}, {"$set": {"image_status": "ready", "image_path": path, "image_store": store,
+                                                          "card_path": card_path, "card_store": card_store, "still_kind": kind}})
 
 
 @api_router.get("/")
@@ -239,8 +248,9 @@ async def create_episode(body: CreateEpisodeRequest, request: Request):
            "pasted_posts": pasted, "source": profile.get("source") or "taps", "text_status": "pending",
            "image_status": "pending", "shares": 0, "reports": 0, "hidden": False, "created_at": now_iso()}
     await db.episodes.insert_one(dict(doc))
-    asyncio.create_task(episode_job(ep_id, profile, labels, body.spice, found_by))
-    return ep_public(doc, public_base(request))
+    base = public_base(request)
+    asyncio.create_task(episode_job(ep_id, profile, labels, body.spice, found_by, base.split("://", 1)[-1]))
+    return ep_public(doc, base)
 
 
 @api_router.post("/episodes/{ep_id}/retry")
@@ -253,8 +263,9 @@ async def retry_episode(ep_id: str, request: Request):
     profile = with_pasted(await get_profile(doc["handle"], cache_only=True), doc.get("pasted_posts") or [])
     await db.episodes.update_one({"id": ep_id}, {"$set": {"text_status": "pending"}})
     doc["text_status"] = "pending"
-    asyncio.create_task(episode_job(ep_id, profile, doc["labels"], doc["spice"], doc.get("found_by")))
-    return ep_public(doc, public_base(request))
+    base = public_base(request)
+    asyncio.create_task(episode_job(ep_id, profile, doc["labels"], doc["spice"], doc.get("found_by"), base.split("://", 1)[-1]))
+    return ep_public(doc, base)
 
 
 async def load_episode(ep_id: str) -> dict:
@@ -274,10 +285,25 @@ async def episode_image(ep_id: str):
     doc = await db.episodes.find_one({"id": ep_id}, {"_id": 0, "image_status": 1, "image_path": 1, "image_store": 1})
     if not doc or doc.get("image_status") != "ready":
         raise HTTPException(404, "Still not ready")
-    if doc.get("image_store") == "local":
-        data = (MEDIA_DIR / f"{ep_id}.jpg").read_bytes()
+    return await _serve_image(doc["image_store"], doc["image_path"], f"{ep_id}.jpg")
+
+
+@api_router.get("/episodes/{ep_id}/card")
+async def episode_card(ep_id: str):
+    doc = await db.episodes.find_one({"id": ep_id}, {"_id": 0, "image_status": 1, "image_path": 1, "image_store": 1,
+                                                     "card_path": 1, "card_store": 1})
+    if not doc or doc.get("image_status") != "ready":
+        raise HTTPException(404, "Card not ready")
+    if doc.get("card_path"):
+        return await _serve_image(doc["card_store"], doc["card_path"], f"{ep_id}-share.jpg")
+    return await _serve_image(doc["image_store"], doc["image_path"], f"{ep_id}.jpg")
+
+
+async def _serve_image(store: str, path: str, local_name: str) -> Response:
+    if store == "local":
+        data = (MEDIA_DIR / local_name).read_bytes()
     else:
-        data, _ = await asyncio.to_thread(storage.get_object, doc["image_path"])
+        data, _ = await asyncio.to_thread(storage.get_object, path)
     return Response(content=data, media_type="image/jpeg",
                     headers={"Cache-Control": "public, max-age=31536000, immutable"})
 
@@ -378,7 +404,7 @@ async def share_page(ep_id: str, request: Request):
     target = f"{base}/ep/{ep_id}"
     if not BOT_RE.search(request.headers.get("user-agent", "")):
         return RedirectResponse(target, status_code=302)
-    title = html.escape(f"The show predicted @{doc['handle']} in {doc['aired_year']}")
+    title = html.escape(f"The Simpsons predicted @{doc['handle']} in {doc['aired_year']}")
     desc = html.escape(f"S{doc['season']:02d}E{doc['episode']:02d} “{doc['title']}” — {doc['already_happened']}")
     img = f"{base}/api/episodes/{ep_id}/image"
     page = f"""<!doctype html><html><head><meta charset="utf-8"><title>{title} · Already Aired</title>

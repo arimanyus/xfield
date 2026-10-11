@@ -44,6 +44,11 @@ export const EpisodeMeta = ({ ep }) => (
     <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl leading-[0.95] mt-2" data-testid="episode-title">
       “{ep.title}”
     </h1>
+    {ep.cast?.length > 0 && (
+      <div className="mt-2 font-osd text-base sm:text-lg text-slate-400 uppercase tracking-wide" data-testid="episode-cast">
+        Starring {ep.cast.join(", ")} &amp; <span className="text-white">@{ep.handle}</span>
+      </div>
+    )}
     <div className="mt-2 font-osd text-lg sm:text-xl text-slate-300 flex flex-wrap items-center gap-x-2">
       <span>about</span>
       <Link to={`/u/${ep.handle}`} data-testid="episode-handle-link" className="text-tape hover:underline">

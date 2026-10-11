@@ -1,8 +1,8 @@
 export const SpiceToggle = ({ value, onChange, compact = false }) => (
   <div data-testid="spice-toggle" className={`inline-flex border border-white/15 bg-ink-2 ${compact ? "" : "w-full sm:w-auto"}`}>
     {[
+      ["savage", "SAVAGE", "default · no mercy"],
       ["roast", "ROAST", "affectionate"],
-      ["savage", "SAVAGE", "no mercy"],
     ].map(([key, label, hint]) => {
       const on = value === key;
       return (
