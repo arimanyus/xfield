@@ -63,6 +63,122 @@ def empty(handle: str, source=None) -> dict:
             "followers": None, "posts": [], "source": source, "found": False, "protected": False}
 
 
+X_API = "https://api.x.com"
+X_BEARER = "AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs%3D1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA"
+X_OP_USER = os.environ.get("X_GQL_USER_OP", "xc8f1g7BYqr6VTzTbvNlGw")
+X_OP_TWEETS = os.environ.get("X_GQL_TWEETS_OP", "E3opETHurmVJflFsUBVuUQ")
+X_FEATURES_USER = {
+    "hidden_profile_subscriptions_enabled": True, "rweb_tipjar_consumption_enabled": True,
+    "responsive_web_graphql_exclude_directive_enabled": True, "verified_phone_label_enabled": False,
+    "subscriptions_verification_info_is_identity_verified_enabled": True,
+    "subscriptions_verification_info_verified_since_enabled": True, "highlights_tweets_tab_ui_enabled": True,
+    "responsive_web_twitter_article_notes_tab_enabled": True, "subscriptions_feature_can_gift_premium": True,
+    "creator_subscriptions_tweet_preview_api_enabled": True,
+    "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
+    "responsive_web_graphql_timeline_navigation_enabled": True,
+}
+X_FEATURES_TWEETS = {
+    "responsive_web_graphql_exclude_directive_enabled": True, "verified_phone_label_enabled": False,
+    "creator_subscriptions_tweet_preview_api_enabled": True, "responsive_web_graphql_timeline_navigation_enabled": True,
+    "responsive_web_graphql_skip_user_profile_image_extensions_enabled": False,
+    "c9s_tweet_anatomy_moderator_badge_enabled": True, "tweetypie_unmention_optimization_enabled": True,
+    "responsive_web_edit_tweet_api_enabled": True, "graphql_is_translatable_rweb_tweet_is_translatable_enabled": True,
+    "view_counts_everywhere_api_enabled": True, "longform_notetweets_consumption_enabled": True,
+    "responsive_web_twitter_article_tweet_consumption_enabled": True, "tweet_awards_web_tipping_enabled": False,
+    "freedom_of_speech_not_reach_fetch_enabled": True, "standardized_nudges_misinfo": True,
+    "tweet_with_visibility_results_prefer_gql_limited_actions_policy_enabled": True,
+    "rweb_video_timestamps_enabled": True, "longform_notetweets_rich_text_read_enabled": True,
+    "longform_notetweets_inline_media_enabled": True, "responsive_web_media_download_video_enabled": False,
+    "responsive_web_enhance_cards_enabled": False,
+}
+_guest = {"token": None, "ts": 0.0}
+
+
+async def guest_token(client: httpx.AsyncClient, force: bool = False) -> str:
+    if _guest["token"] and not force and time.monotonic() - _guest["ts"] < 2 * 3600:
+        return _guest["token"]
+    r = await client.post(f"{X_API}/1.1/guest/activate.json", headers={"Authorization": f"Bearer {X_BEARER}"}, timeout=8)
+    r.raise_for_status()
+    _guest.update(token=r.json()["guest_token"], ts=time.monotonic())
+    return _guest["token"]
+
+
+async def _gql(client: httpx.AsyncClient, token: str, op: str, name: str, variables: dict, features: dict):
+    params = {"variables": json.dumps(variables, separators=(",", ":")),
+              "features": json.dumps(features, separators=(",", ":"))}
+    headers = {"Authorization": f"Bearer {X_BEARER}", "x-guest-token": token, "x-twitter-active-user": "yes",
+               "x-twitter-client-language": "en", "Content-Type": "application/json"}
+    return await client.get(f"{X_API}/graphql/{op}/{name}", params=params, headers=headers, timeout=10)
+
+
+def _parse_timeline(data: dict, own_handle: str) -> list:
+    instructions = ((((data.get("data") or {}).get("user") or {}).get("result") or {})
+                    .get("timeline_v2") or {}).get("timeline", {}).get("instructions", [])
+    entries = []
+    for ins in instructions:
+        if ins.get("type") == "TimelinePinEntry" and ins.get("entry"):
+            entries.append((ins["entry"], True))
+        for e in ins.get("entries") or []:
+            entries.append((e, False))
+    posts, own = [], own_handle.lower()
+    for entry, pinned in entries:
+        content = entry.get("content") or {}
+        if content.get("entryType") == "TimelineTimelineItem":
+            items = [content.get("itemContent") or {}]
+        elif content.get("entryType") == "TimelineTimelineModule":
+            items = [(x.get("item") or {}).get("itemContent") or {} for x in content.get("items") or []]
+        else:
+            continue
+        for ic in items:
+            tr = (ic.get("tweet_results") or {}).get("result") or {}
+            if tr.get("__typename") == "TweetWithVisibilityResults":
+                tr = tr.get("tweet") or {}
+            leg = tr.get("legacy") or {}
+            text = leg.get("full_text") or ""
+            if not text or leg.get("retweeted_status_result") or text.startswith("RT @"):
+                continue
+            reply_to = (leg.get("in_reply_to_screen_name") or "").lower()
+            if reply_to and reply_to != own:
+                continue
+            text = clean_text(text)
+            if text:
+                posts.append({"text": text[:500], "date": leg.get("created_at", ""), "pinned": pinned})
+    return posts[:25]
+
+
+async def from_xguest(client: httpx.AsyncClient, handle: str):
+    token = await guest_token(client)
+    variables = {"screen_name": handle, "withSafetyModeUserFields": True}
+    r = await _gql(client, token, X_OP_USER, "UserByScreenName", variables, X_FEATURES_USER)
+    if r.status_code in (401, 403, 429):
+        token = await guest_token(client, force=True)
+        r = await _gql(client, token, X_OP_USER, "UserByScreenName", variables, X_FEATURES_USER)
+    if r.status_code != 200:
+        logger.warning("x guest UserByScreenName HTTP %s for @%s", r.status_code, handle)
+        return None
+    result = (((r.json().get("data") or {}).get("user") or {}).get("result") or {})
+    if not result or result.get("__typename") == "UserUnavailable" or not result.get("rest_id"):
+        return None
+    legacy, core = result.get("legacy") or {}, result.get("core") or {}
+    name = core.get("name") or legacy.get("name") or handle
+    screen = core.get("screen_name") or legacy.get("screen_name") or handle
+    avatar = ((result.get("avatar") or {}).get("image_url") or legacy.get("profile_image_url_https") or "")
+    base = {"handle": screen, "name": name, "bio": clean_text(legacy.get("description") or ""),
+            "avatar_url": avatar.replace("_normal", "_400x400") or None,
+            "location": (result.get("location") or {}).get("location") or legacy.get("location") or "",
+            "followers": legacy.get("followers_count"), "posts": [], "source": "x", "found": True, "protected": False}
+    if legacy.get("protected") or (result.get("privacy") or {}).get("protected"):
+        return {**base, "found": False, "protected": True}
+    tweets_vars = {"userId": result["rest_id"], "count": 40, "includePromotedContent": False,
+                   "withQuickPromoteEligibilityTweetFields": False, "withVoice": True, "withV2Timeline": True}
+    r2 = await _gql(client, token, X_OP_TWEETS, "UserTweets", tweets_vars, X_FEATURES_TWEETS)
+    if r2.status_code == 200:
+        base["posts"] = _parse_timeline(r2.json(), screen)
+    else:
+        logger.warning("x guest UserTweets HTTP %s for @%s (profile only)", r2.status_code, handle)
+    return base
+
+
 def nitter_instances() -> list:
     raw = os.environ.get("NITTER_INSTANCES") or os.environ["NITTER_BASE_URL"]
     return [u.strip().rstrip("/") for u in raw.split(",") if u.strip()]
@@ -206,7 +322,7 @@ async def from_fxtwitter(client: httpx.AsyncClient, handle: str):
             "source": "fxtwitter", "found": True, "protected": False}
 
 
-SOURCES = (from_nitter, from_syndication, from_twitterapi, from_fxtwitter)
+SOURCES = (from_xguest, from_nitter, from_syndication, from_twitterapi, from_fxtwitter)
 
 
 async def read_handle(handle: str) -> dict:
@@ -218,6 +334,9 @@ async def read_handle(handle: str) -> dict:
                 logger.warning("%s failed for @%s: %s", fn.__name__, handle, e)
                 res = None
             if res:
+                if res.get("protected"):
+                    logger.info("@%s is protected (via %s)", handle, res["source"])
+                    return res
                 logger.info("@%s read via %s (%d posts)", handle, res["source"], len(res["posts"]))
                 return res
     logger.warning("@%s: every source failed or blocked", handle)

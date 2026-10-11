@@ -101,7 +101,7 @@ def _posts_block(profile: dict) -> str:
 def _profile_block(profile: dict) -> str:
     return (f"Handle: @{profile['handle']}\nName: {profile.get('name') or profile['handle']}\n"
             f"Bio: {profile.get('bio') or '(empty)'}\nLocation: {profile.get('location') or '(unknown)'}\n"
-            f"Recent original posts:\n{_posts_block(profile)}")
+            f"Their original posts (a mix of their most popular and most recent):\n{_posts_block(profile)}")
 
 
 async def extract_labels(profile: dict) -> dict:
@@ -133,7 +133,7 @@ async def write_episode(profile: dict, labels: dict, spice: str, found_by) -> di
     data, raw = None, ""
     for attempt, model in enumerate((TEXT_MODEL, TEXT_MODEL, LABEL_MODEL), start=1):
         try:
-            raw = await asyncio.wait_for(_llm_text(model, system, user, 1500), timeout=75)
+            raw = await asyncio.wait_for(_llm_text(model, system, user, 1500), timeout=45)
             data = _json(raw)
             if not data.get("already_happened"):
                 raise ValueError("missing already_happened")

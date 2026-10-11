@@ -1,0 +1,33 @@
+{
+  "summary": "Verified the Cloudflare 'archive hiccuped' bug fix end-to-end. Backend: 10/10 pytest cases pass in /app/backend/tests/test_async_bugfix.py — POST /api/episodes returns in ~1-3s with text_status=pending/image_status=pending/title=null/source='pasted' when posts_text is provided; pending ep NOT in /api/recent; text becomes ready within ~15s with title/already_happened/coming_near/coming_far populated and already_happened/evidence quote the pasted post verbatim ('shipped the thing. nobody noticed.'); image becomes ready and /api/episodes/{id}/image returns image/jpeg >10KB; retry on unknown id → 404; retry on ready ep is idempotent (no state/title change); after flipping text_status='failed' in Mongo, GET shows failed, /recent excludes it, POST /api/episodes/{id}/retry → pending → ready within ~15s with regenerated already_happened; posts_text containing blocked word returns 400; POST /api/read on zzqxnobody9981 fast-fails under 25s (multi-mirror chain). Frontend: full taps-paste flow at /find?handle=zzqxnobody9981&spice=roast → taps-screen → taps-paste-toggle → taps-paste-input filled → chip picks → navigates to /ep/{id}?fresh=1 showing episode-writing ('SEARCHING THE ARCHIVE…', writing-note, S00E00) within seconds, no find-error, polls and switches without reload to episode-card with episode-title '“The Lurker Who Shipped Quietly”' and episode-still appearing. Failed→retry UI on same ep (text_status flipped in Mongo): episode-failed renders with 'TAPE DAMAGED' copy and 'Nothing counts against your hourly limit' note; clicking episode-retry-btn switches to episode-writing then to episode-card (new text) without reload. Regression: /, /timeline, /leaderboards and /ep/{existing} all render. Budget used: 1 fresh episode (A93yR8LE from frontend taps-paste) + 1 retry text regen from pytest + 1 retry from frontend. Total POST creations across backend+frontend: 2 (within the ≤3 budget).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "episode-page after retry / direct nav to a ready ep", "issue": "Observed rendering artifact: screenshot taken immediately after wait_for_selector('[data-testid=\"episode-card\"]') returning shows the left column mostly empty / collapsed with only a thin TV strip and title visible — the right column (ALREADY HAPPENED / COMING blocks) still rendered correctly. Occurred both after retry success and on direct nav to /ep/A93yR8LE in a fresh load. May be a FadeIn/StaticTV mount transition where the TV frame initially renders with near-zero height, OR CSS grid alignment issue when image_status=ready but still loading. data-testid presence check passes, so this is purely a brief visual bleed-through, not a functional break. Worth a visual QA pass by main agent.", "affected_selectors": ["[data-testid=\"episode-card\"]", "[data-testid=\"episode-still\"]"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_async_bugfix.py",
+    "/app/test_reports/pytest/async_bugfix.xml"
+  ],
+  "action_items": [
+    "Investigate transient episode-card render on direct nav/after retry — may just be a mount animation but screenshots show a collapsed TV frame + mostly-blank left column until something settles."
+  ],
+  "critical_code_review_comments": [
+    "server.py retry_episode(): on retry it re-fetches get_profile(doc['handle']) which can take up to 55s due to the multi-mirror wait_for; this blocks the HTTP response for a 'retry' action that users expect to be instant. For non-taps episodes where the original source was 'pasted', the retry does not strictly need a fresh profile — consider reusing stored doc fields (bio/avatar/display_name/pasted_posts) and only re-reading X when source != 'pasted'. Otherwise a user clicking retry during a Cloudflare block will hit the same 55s wall.",
+    "server.py episode_job(): on write_episode exception the doc is set to text_status='failed' but image_job is never scheduled, which is correct; however there is no 'last_error' field persisted, so the UI can't show *why* it failed and operators have to grep logs.",
+    "generator.write_episode retry loop with 3 attempts @ 75s each means a single POST /api/episodes background job can take up to ~225s before marking failed — the FE polls every 2s so UX is fine, but worth capping total wall time to e.g. 90s for faster user feedback.",
+    "PUBLIC filter {text_status: {$nin: ['pending','failed']}} is applied in /recent/leaderboard/timeline/handles — good. Confirm /api/handles/{h} episodes[] uses the same filter (quick grep suggests yes).",
+    "retry_episode uses asyncio.create_task without awaiting rate check — intentional (free retry) but no safeguard against a user script hammering /retry; a lightweight per-ip-per-minute cap would be prudent."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_async_bugfix.py"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% functional (1 minor visual artifact)"},
+  "seed_data_creation": "Created 1 new episode via frontend taps-paste flow: id A93yR8LE (handle zzqxnobody9981, source='pasted'). Flipped its text_status to 'failed' in Mongo twice to exercise retry path; final state is text_status=ready, image_status=ready.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Async bug fix (pending/ready/failed + retry + pasted posts + multi-mirror fast-fail) fully covered by /app/backend/tests/test_async_bugfix.py (10/10 passing in ~33s, uses pytest-xdist loadscope so all tests live in one TestAsyncBugfix class to share STATE on a single worker). Frontend confirmed: taps-paste-toggle/taps-paste-input, episode-writing ('SEARCHING THE ARCHIVE…'), episode-failed ('TAPE DAMAGED') + episode-retry-btn, polling transitions work without reload. Known small visual artifact on episode-page right after retry/first render — not blocking. Previous iteration flagged mobile nav wrap at 390px (still open, not retested here)."
+}

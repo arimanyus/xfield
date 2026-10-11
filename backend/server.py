@@ -92,10 +92,12 @@ def clean_handle(raw: str) -> str:
     return h
 
 
-async def get_profile(handle: str) -> dict:
+async def get_profile(handle: str, cache_only: bool = False) -> dict:
     key = handle.lower()
     doc = await db.profiles.find_one({"handle_lower": key}, {"_id": 0})
     if doc:
+        if cache_only:
+            return doc["data"]
         age = datetime.now(timezone.utc) - datetime.fromisoformat(doc["fetched_at"])
         ttl = timedelta(days=7) if doc["data"].get("found") else timedelta(hours=1)
         if age < ttl:
@@ -248,7 +250,7 @@ async def retry_episode(ep_id: str, request: Request):
         raise HTTPException(404, "That episode isn't in the archive.")
     if doc.get("text_status") != "failed":
         return ep_public(doc, public_base(request))
-    profile = with_pasted(await get_profile(doc["handle"]), doc.get("pasted_posts") or [])
+    profile = with_pasted(await get_profile(doc["handle"], cache_only=True), doc.get("pasted_posts") or [])
     await db.episodes.update_one({"id": ep_id}, {"$set": {"text_status": "pending"}})
     doc["text_status"] = "pending"
     asyncio.create_task(episode_job(ep_id, profile, doc["labels"], doc["spice"], doc.get("found_by")))

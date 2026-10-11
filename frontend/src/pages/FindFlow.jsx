@@ -40,10 +40,10 @@ export default function FindFlow() {
       });
   }, [handle, navigate]);
 
-  const generate = async (finalLabels, postsText) => {
+  const generate = async (finalLabels) => {
     setStep("generating");
     try {
-      const ep = await createEpisode({ handle, found_by: by || null, spice, labels: finalLabels, posts_text: postsText || null });
+      const ep = await createEpisode({ handle, found_by: by || null, spice, labels: finalLabels });
       navigate(`/ep/${ep.id}?fresh=1`, { replace: true });
     } catch (e) {
       setError(errMsg(e));
