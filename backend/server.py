@@ -127,8 +127,8 @@ def ep_public(doc: dict, base: str) -> dict:
         "already_happened": doc.get("already_happened"), "evidence": doc.get("evidence", ""),
         "coming_near": doc.get("coming_near"), "coming_far": doc.get("coming_far"), "subtitle": doc.get("subtitle"),
         "text_status": text_status, "image_status": doc["image_status"], "still_kind": doc.get("still_kind"),
-        "image_url": f"{base}/api/episodes/{doc['id']}/image" if doc["image_status"] == "ready" else None,
-        "card_url": f"{base}/api/episodes/{doc['id']}/card?v=3" if doc["image_status"] == "ready" else None,
+        "image_url": f"{base}/api/episodes/{doc['id']}/image?v=2" if doc["image_status"] == "ready" else None,
+        "card_url": f"{base}/api/episodes/{doc['id']}/card?v=4" if doc["image_status"] == "ready" else None,
         "share_url": f"{base}/api/s/{doc['id']}", "shares": doc.get("shares", 0),
         "source": doc.get("source"), "created_at": doc["created_at"],
     }

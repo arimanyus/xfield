@@ -91,7 +91,7 @@ EPISODE_SYSTEM = (
     ' "aired_date": "YYYY-MM-DD between 1996-01-01 and 2004-12-31",\n'
     ' "episode_number": <integer 1-24>,\n'
     ' "cast": ["2 to 4 real Simpsons character names who appear in the episode"],\n'
-    ' "already_happened_options": [{"text": "receipt recap as specified", "evidence": "verbatim excerpt of the matching post"}, {...}] (2 options, each built on a DIFFERENT post),\n'
+    ' "already_happened_options": [{"text": "receipt recap as specified", "short": "the same scene in max 70 characters, no character over 12 words, punchy caption style", "evidence": "verbatim excerpt of the matching post"}, {...}] (2 options, each built on a DIFFERENT post),\n'
     ' "near_options": ["4 distinct headline prophecies for NEAR_YEAR, each on a different specific from their posts"],\n'
     ' "far_options": [{"year": <integer between FAR_MIN and FAR_MAX>, "text": "headline prophecy"}, ...] (4 options),\n'
     ' "subtitle": "one line of dialogue from the still, max 90 chars, prefixed with the speaker in caps, e.g. MR. BURNS: Excellent. Another man posting through it.",\n'
@@ -113,7 +113,7 @@ CRITIC_SYSTEM = (
     "keep every specific, sharpen the twist. If no candidate scores at least 7 on both (a) and (b), write a new one from the "
     "posts that does. Pick the best already_happened option (the one whose evidence is really in the posts and whose scene "
     "mirrors it beat for beat); tighten it to max 180 chars and keep the evidence a verbatim excerpt.\n"
-    'Reply with ONLY JSON: {"already_happened": "...", "evidence": "...", "coming_near": "...", "coming_far": {"year": N, "text": "..."}}'
+    'Reply with ONLY JSON: {"already_happened": "...", "aired_short": "the chosen scene as a caption, max 70 chars, names the Simpsons character", "evidence": "...", "coming_near": "...", "coming_far": {"year": N, "text": "..."}}'
 )
 
 BANNED_RE = re.compile(r"^(he|she|they|the character)\b|\b(will (post|tweet)|keeps?|continues?|still|every day|seventeen times)\b", re.I)
@@ -217,6 +217,13 @@ async def _critic(draft: dict, user: str) -> dict:
     return out
 
 
+async def shorten_aired(text: str) -> str:
+    raw = await asyncio.wait_for(_llm_text(
+        LABEL_MODEL, "You caption Simpsons freeze-frames. Reply with only the caption, no quotes.",
+        f"Rewrite as a caption of max 70 characters, max 12 words, keeping the Simpsons character's name and the punch:\n{text}", 80), timeout=20)
+    return _clamp(raw.strip().strip('"“”'), 90)
+
+
 async def write_episode(profile: dict, labels: dict, spice: str, found_by) -> dict:
     today = date.today()
     near, far_min, far_max = today.year + 1, today.year + 3, today.year + 7
@@ -243,7 +250,9 @@ async def write_episode(profile: dict, labels: dict, spice: str, found_by) -> di
         raise RuntimeError("episode writer returned no usable JSON after 3 attempts")
 
     ah_opts = [o for o in (data.get("already_happened_options") or []) if isinstance(o, dict)]
-    final = {"already_happened": _pick(ah_opts, re.compile(r"$^")), "evidence": (ah_opts[0] if ah_opts else {}).get("evidence", ""),
+    first_ah = ah_opts[0] if ah_opts else {}
+    final = {"already_happened": _pick(ah_opts, re.compile(r"$^")), "evidence": first_ah.get("evidence", ""),
+             "aired_short": first_ah.get("short", ""),
              "coming_near": _pick(data.get("near_options")), "coming_far": {}}
     far_first = next((o for o in (data.get("far_options") or []) if isinstance(o, dict) and not BANNED_RE.search(str(o.get("text", "")))),
                      (data.get("far_options") or [{}])[0])
@@ -276,6 +285,7 @@ async def write_episode(profile: dict, labels: dict, spice: str, found_by) -> di
         "aired_year": aired.year,
         "cast": cast,
         "already_happened": _clamp(final.get("already_happened"), 220),
+        "aired_short": _clamp(final.get("aired_short") or "", 90),
         "evidence": _verify_evidence(final.get("evidence"), profile),
         "coming_near": {"year": near, "text": _clamp(cn_text, 170)},
         "coming_far": {"year": year_of(cf, far_min + 2, far_min, far_max), "text": _clamp(cf.get("text"), 170)},
@@ -433,6 +443,37 @@ def _generic_background(ep):
     return base
 
 
+def _draw_subtitle(d, ep: dict):
+    sub_font = _font("Outfit-Regular.ttf", 40, "Bold")
+    speaker, _, line = ep["subtitle"].partition(": ")
+    if not line:
+        speaker, line = "", ep["subtitle"]
+    lines = _wrap(d, line.strip(), sub_font, W - 160)[:2]
+    line_h, bottom_h = 50, 58
+    bar_h = 28 + line_h * len(lines) + (40 if speaker else 0)
+    d.rectangle([0, H - bottom_h - bar_h, W, H - bottom_h], fill=(0, 0, 0, 250))
+    y = H - bottom_h - bar_h + 14
+    if speaker:
+        sp_font = _font("VT323-Regular.ttf", 38)
+        w = d.textlength(speaker.upper(), font=sp_font)
+        d.text(((W - w) / 2, y), speaker.upper(), font=sp_font, fill=YELLOW)
+        y += 40
+    for ln in lines:
+        w = d.textlength(ln, font=sub_font)
+        d.text(((W - w) / 2, y), ln, font=sub_font, fill=WHITE)
+        y += line_h
+
+
+def refresh_subtitle(card16: bytes, ep: dict) -> bytes:
+    base = Image.open(io.BytesIO(card16)).convert("RGBA")
+    ov = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    _draw_subtitle(ImageDraw.Draw(ov), ep)
+    out = Image.alpha_composite(base, ov).convert("RGB")
+    buf = io.BytesIO()
+    out.save(buf, "JPEG", quality=90, optimize=True)
+    return buf.getvalue()
+
+
 def compose_card(ep: dict, still: bytes | None) -> bytes:
     if still:
         base = _cover(Image.open(io.BytesIO(still)).convert("RGB"), W, H)
@@ -451,25 +492,8 @@ def compose_card(ep: dict, still: bytes | None) -> bytes:
     d.ellipse([W - 156, 36, W - 136, 56], fill=(239, 68, 68, 255))
     _shadow(d, (W - 122, 22), "PLAY", osd, WHITE)
 
-    sub_font = _font("Outfit-Regular.ttf", 40)
-    speaker, _, line = ep["subtitle"].partition(": ")
-    if not line:
-        speaker, line = "", ep["subtitle"]
-    lines = _wrap(d, line.strip(), sub_font, W - 160)[:2]
-    line_h, bottom_h = 50, 58
-    bar_h = 28 + line_h * len(lines) + (40 if speaker else 0)
-    d.rectangle([0, H - bottom_h - bar_h, W, H - bottom_h], fill=(0, 0, 0, 236))
-    y = H - bottom_h - bar_h + 14
-    if speaker:
-        sp_font = _font("VT323-Regular.ttf", 38)
-        w = d.textlength(speaker.upper(), font=sp_font)
-        _shadow(d, ((W - w) / 2, y), speaker.upper(), sp_font, YELLOW)
-        y += 40
-    for ln in lines:
-        w = d.textlength(ln, font=sub_font)
-        _shadow(d, ((W - w) / 2, y), ln, sub_font, WHITE)
-        y += line_h
-
+    _draw_subtitle(d, ep)
+    bottom_h = 58
     d.rectangle([0, H - bottom_h, W, H], fill=(7, 11, 20, 238))
     small = _font("VT323-Regular.ttf", 30)
     brand_font = _font("BebasNeue-Regular.ttf", 30)
@@ -560,6 +584,16 @@ def compose_share_card(ep: dict, card16: bytes, site_host: str, avatar: bytes | 
 
     body = _font("Outfit-Regular.ttf", 32, "SemiBold")
     osd = _font("VT323-Regular.ttf", 28)
+
+    aired_lines = _clip_lines(d, ep.get("aired_short") or ep["already_happened"], body, max_w - 40, 2)
+    sec_h = 52 + 40 * len(aired_lines)
+    d.rounded_rectangle([x, y, x + 10, y + sec_h - 6], radius=4, fill=TAPE)
+    _chip(d, x + 28, y, f"AIRED {ep['aired_year']}", TAPE)
+    ly = y + 52
+    for ln in aired_lines:
+        d.text((x + 28, ly), ln, font=body, fill=(248, 250, 252))
+        ly += 40
+    y += sec_h + 26
 
     _chip(d, x, y, f"CAME TRUE {datetime.now().year}", GREEN)
     y += 52

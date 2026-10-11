@@ -98,6 +98,10 @@ Growth loops: share link unfurls to the card image on X; "prophesy a friend" tag
 - Share card v3: still → "THE SIMPSONS PREDICTED / @HANDLE" → green **CAME TRUE {year}** chip + green-outlined receipt box (avatar, bold name, quote) → orange **COMING {near}** and sky-blue **COMING {far}** sections with colored bars; 32px SemiBold body, max 3 lines each with ellipsis; dropped the episode-code/title line and the "AIRED" paragraph (less text). `card_url` carries `?v=3` to bust the immutable cache.
 - `scripts_rerender_cards.py <host> [handles…]` re-renders stored share cards from the stored 16:9 still (ran for all existing episodes).
 
+### Iteration 12 — Card context + bold subtitle on existing stills
+- Card v4: added a yellow **AIRED {year}** section (new `aired_short` ≤70-char caption from the critic; backfilled for old episodes via a Haiku `shorten_aired` call) right above the green **CAME TRUE** receipt, so the pair reads as "episode showed X → they did X".
+- `_draw_subtitle` extracted (Bold 40px, opaque bar); `refresh_subtitle(card16, ep)` repaints the subtitle bar on already-composed stills — re-render script now refreshes stills + share cards + `aired_short` for all ready episodes. `image_url?v=2`, `card_url?v=4` cache-busters.
+
 ## Known limitations / risks
 - nitter.cf is a community mirror and can throttle/vanish; chain + env-swappable mirror + paid slot mitigate.
 - Gemini often declines real-person likeness → generic character (`still_kind: generic`); expected.
