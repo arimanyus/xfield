@@ -75,7 +75,11 @@ Growth loops: share link unfurls to the card image on X; "prophesy a friend" tag
 - `backend/scripts_try_write.py <handle>` runs the writer against a cached profile for prompt tuning without burning rate limit/images.
 - Self-tested on cached @levelsio/@pmarca/@paulg + one live E2E episode (`/ep/kZDnuYGZ`): episode page and share card render fine at the new lengths.
 
+### Iteration 8 — Desktop share: card goes to the clipboard (user: "share card not working")
+- X's web intent cannot attach images, so the desktop composer opened with text + link only. Now `ShareBar` pre-converts the share card to PNG, and on "Share to X" copies it to the clipboard (`ClipboardItem` with a promise, gesture-safe) → opens the composer → toast "Card copied. Paste it into the post (⌘V / Ctrl+V)". Falls back to downloading the card if the clipboard is unavailable; popup-blocked fallback shows an "Open X" toast action. Mobile Web Share (image file) unchanged.
+- Verified in Chromium: composer opens, clipboard holds `image/png`.
 
+## Known limitations / risks
 - nitter.cf is a community mirror and can throttle/vanish; chain + env-swappable mirror + paid slot mitigate.
 - Gemini often declines real-person likeness → generic character (`still_kind: generic`); expected.
 - Share counts are client-reported (no verification). "found by" credit unverified.
