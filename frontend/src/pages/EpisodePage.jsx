@@ -132,27 +132,35 @@ export default function EpisodePage() {
 
   return (
     <main className="max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10" data-testid="episode-page">
-      <div className="grid lg:grid-cols-[1.25fr_0.75fr] gap-8 lg:gap-12 items-start">
-        <div className="animate-tv-on">
+      <div className="grid lg:grid-cols-[1.25fr_0.75fr] gap-8 lg:gap-x-12 lg:gap-y-0 items-start">
+        <div className="animate-tv-on lg:col-start-1 lg:row-start-1">
           <EpisodeCard ep={ep} />
           <EpisodeMeta ep={ep} />
+        </div>
+
+        <aside className="animate-rise lg:col-start-2 lg:row-start-1 lg:row-span-2" style={{ animationDelay: "150ms" }}>
+          <ProphecyLines ep={ep} fresh={fresh} />
+        </aside>
+
+        <div className="lg:col-start-1 lg:row-start-2 animate-rise" style={{ animationDelay: "250ms" }}>
           <ShareBar ep={ep} onShared={setShares} />
-          <div className="mt-4 flex flex-wrap items-center gap-x-5 gap-y-2 font-osd text-lg text-slate-500">
+          <div className="mt-5 flex flex-wrap items-center gap-x-5 gap-y-2 font-osd text-lg text-slate-500">
             <span data-testid="share-count">{shares ?? ep.shares} shares</span>
             <RerollButton ep={ep} />
             <ReportButton ep={ep} />
           </div>
         </div>
+      </div>
 
-        <aside className="space-y-8 animate-rise" style={{ animationDelay: "150ms" }}>
-          <ProphecyLines ep={ep} fresh={fresh} />
-          <TimelineCountdown ep={ep} />
+      <section className="mt-14 grid md:grid-cols-2 gap-6 items-start" data-testid="episode-secondary">
+        <TimelineCountdown ep={ep} />
+        <div className="space-y-4">
           <ProphesyFriend ep={ep} />
           <Link to={`/u/${ep.handle}`} data-testid="see-all-handle-link" className="block font-osd text-xl text-tape hover:underline">
             See all episodes about @{ep.handle} →
           </Link>
-        </aside>
-      </div>
+        </div>
+      </section>
 
       <section className="mt-16 border-t border-tape/20 pt-10 grid lg:grid-cols-2 gap-8 items-center" data-testid="episode-cta">
         <h2 className="font-display text-4xl sm:text-5xl tracking-wide leading-[0.95]">

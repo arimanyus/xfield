@@ -95,7 +95,7 @@ EPISODE_SYSTEM = (
     ' "near_options": ["4 distinct headline prophecies for NEAR_YEAR, each on a different specific from their posts"],\n'
     ' "far_options": [{"year": <integer between FAR_MIN and FAR_MAX>, "text": "headline prophecy"}, ...] (4 options),\n'
     ' "subtitle": "one line of dialogue from the still, max 90 chars, prefixed with the speaker in caps, e.g. MR. BURNS: Excellent. Another man posting through it.",\n'
-    ' "scene": "1-2 sentences describing the still: Springfield setting, the cast members by name, what they and the person are doing. No on-screen text.",\n'
+    ' "scene": "1-2 sentences describing the still. It must STAGE the already-happened moment literally, not a generic group shot: the Springfield setting, the cast members by name, and one clear visual action with props that mirrors the receipt post so the frame reads as the prediction without any text. No on-screen text.",\n'
     ' "scene_visual": "the same still described for an illustrator who has never seen the show: no character names, no show or brand names, no place names. Describe the setting and each character purely visually (e.g. a bald overweight yellow man in a white polo shirt). 1-2 sentences.",\n'
     ' "character": "visual description of the Simpsons-style version of this person: hair, glasses, facial hair, outfit, expression. Max 40 words. Use hints from bio/posts about their gear or style, otherwise invent something fitting the labels."\n'
     "}"
@@ -449,22 +449,30 @@ def compose_card(ep: dict, still: bytes | None) -> bytes:
     for y in range(0, H, 3):
         d.line([(0, y), (W, y)], fill=(0, 0, 0, 34))
 
-    osd = _font("VT323-Regular.ttf", 40)
+    osd = _font("VT323-Regular.ttf", 44)
     aired = datetime.strptime(ep["aired_date"], "%Y-%m-%d").strftime("%m.%d.%Y")
-    _shadow(d, (36, 24), f"THE SIMPSONS  S{ep['season']:02d}E{ep['episode']:02d}", osd, YELLOW)
-    _shadow(d, (36, 62), f"AIRED {aired}", osd, WHITE)
+    _shadow(d, (36, 22), f"THE SIMPSONS  S{ep['season']:02d}E{ep['episode']:02d}", osd, YELLOW)
+    _shadow(d, (36, 64), f"AIRED {aired}", osd, WHITE)
     d.ellipse([W - 156, 36, W - 136, 56], fill=(239, 68, 68, 255))
-    _shadow(d, (W - 122, 24), "PLAY", osd, WHITE)
+    _shadow(d, (W - 122, 22), "PLAY", osd, WHITE)
 
-    sub_font = _font("Outfit-Regular.ttf", 36)
-    lines = _wrap(d, ep["subtitle"], sub_font, W - 180)[:2]
-    line_h, bottom_h = 46, 58
-    bar_h = 26 + line_h * len(lines)
-    d.rectangle([0, H - bottom_h - bar_h, W, H - bottom_h], fill=(0, 0, 0, 200))
-    y = H - bottom_h - bar_h + 12
+    sub_font = _font("Outfit-Regular.ttf", 40)
+    speaker, _, line = ep["subtitle"].partition(": ")
+    if not line:
+        speaker, line = "", ep["subtitle"]
+    lines = _wrap(d, line.strip(), sub_font, W - 160)[:2]
+    line_h, bottom_h = 50, 58
+    bar_h = 28 + line_h * len(lines) + (40 if speaker else 0)
+    d.rectangle([0, H - bottom_h - bar_h, W, H - bottom_h], fill=(0, 0, 0, 236))
+    y = H - bottom_h - bar_h + 14
+    if speaker:
+        sp_font = _font("VT323-Regular.ttf", 38)
+        w = d.textlength(speaker.upper(), font=sp_font)
+        _shadow(d, ((W - w) / 2, y), speaker.upper(), sp_font, YELLOW)
+        y += 40
     for ln in lines:
         w = d.textlength(ln, font=sub_font)
-        _shadow(d, ((W - w) / 2, y), ln, sub_font, YELLOW)
+        _shadow(d, ((W - w) / 2, y), ln, sub_font, WHITE)
         y += line_h
 
     d.rectangle([0, H - bottom_h, W, H], fill=(7, 11, 20, 238))
@@ -484,8 +492,7 @@ def compose_card(ep: dict, still: bytes | None) -> bytes:
     return buf.getvalue()
 
 
-async def render_card_for_episode(ep: dict, avatar_url) -> tuple:
-    avatar = await fetch_avatar(avatar_url)
+async def render_card_for_episode(ep: dict, avatar: bytes | None) -> tuple:
     still, used_ref = await generate_still(ep, avatar)
     card = await asyncio.to_thread(compose_card, ep, still)
     kind = "likeness" if still and used_ref else ("generic" if still else "missing")
@@ -495,49 +502,97 @@ async def render_card_for_episode(ep: dict, avatar_url) -> tuple:
 SW = 1080
 INK = (7, 11, 20)
 GREY = (148, 163, 184)
+SLATE = (203, 213, 225)
+TAPE = (250, 204, 21)
 
 
-def compose_share_card(ep: dict, card16: bytes, site_host: str) -> bytes:
+def _circle_avatar(avatar: bytes | None, handle: str, size: int) -> Image.Image:
+    if avatar:
+        try:
+            img = _cover(Image.open(io.BytesIO(avatar)).convert("RGB"), size, size)
+        except Exception:
+            img = None
+    else:
+        img = None
+    if img is None:
+        img = Image.new("RGB", (size, size), TAPE)
+        d = ImageDraw.Draw(img)
+        f = _font("BebasNeue-Regular.ttf", int(size * 0.7))
+        ch = (handle[:1] or "?").upper()
+        w = d.textlength(ch, font=f)
+        d.text(((size - w) / 2, size * 0.1), ch, font=f, fill=INK)
+    mask = Image.new("L", (size * 4, size * 4), 0)
+    ImageDraw.Draw(mask).ellipse([0, 0, size * 4 - 1, size * 4 - 1], fill=255)
+    img.putalpha(mask.resize((size, size), Image.LANCZOS))
+    return img
+
+
+def _block(d, x, y, label, text, font, label_font, max_w, max_lines, accent):
+    lines = _wrap(d, text, font, max_w)[:max_lines]
+    block_h = 32 + 32 * len(lines)
+    d.rectangle([x, y + 4, x + 3, y + block_h], fill=TAPE if accent else (71, 85, 105))
+    d.text((x + 18, y), label, font=label_font, fill=TAPE if accent else SLATE)
+    y += 32
+    for ln in lines:
+        d.text((x + 18, y), ln, font=font, fill=(241, 245, 249))
+        y += 32
+    return y
+
+
+def compose_share_card(ep: dict, card16: bytes, site_host: str, avatar: bytes | None = None) -> bytes:
     top_h = round(SW * 9 / 16)
-    canvas = Image.new("RGB", (SW, 1700), INK)
+    canvas = Image.new("RGB", (SW, 2000), INK)
     canvas.paste(Image.open(io.BytesIO(card16)).convert("RGB").resize((SW, top_h), Image.LANCZOS), (0, 0))
     d = ImageDraw.Draw(canvas)
-    x, y = 44, top_h + 34
+    x, y = 44, top_h + 28
+    max_w = SW - 2 * x
 
-    title_font = _font("BebasNeue-Regular.ttf", 64)
-    for ln in _wrap(d, f"“{ep['title']}”", title_font, SW - 2 * x)[:2]:
-        d.text((x, y), ln, font=title_font, fill=(250, 204, 21))
-        y += 64
+    d.text((x, y), "THE SIMPSONS PREDICTED", font=_font("BebasNeue-Regular.ttf", 44), fill=(248, 250, 252))
+    y += 44
+    d.text((x - 2, y - 6), f"@{ep['handle'].upper()}", font=_font("BebasNeue-Regular.ttf", 100), fill=TAPE)
+    y += 96
     osd = _font("VT323-Regular.ttf", 28)
-    cast = [c.upper() for c in (ep.get("cast") or [])[:3]]
-    starring = "STARRING " + (", ".join(cast) + " & " if cast else "") + f"@{ep['handle'].upper()}"
-    while d.textlength(starring, font=osd) > SW - 2 * x and len(starring) > 20:
-        starring = starring[:-2] + "…"
-    d.text((x, y + 6), starring, font=osd, fill=GREY)
+    aired = datetime.strptime(ep["aired_date"], "%Y-%m-%d").strftime("%b %d, %Y").upper()
+    sub = f"S{ep['season']:02d}E{ep['episode']:02d}  “{ep['title']}”  ·  AIRED {aired}"
+    while d.textlength(sub, font=osd) > max_w and len(sub) > 30:
+        sub = sub[:-2].rstrip() + "…"
+    d.text((x, y), sub, font=osd, fill=GREY)
     y += 50
 
+    body = _font("Outfit-Regular.ttf", 25)
     label_font = _font("VT323-Regular.ttf", 30)
-    body = _font("Outfit-Regular.ttf", 27)
-    blocks = [("ALREADY HAPPENED", ep["already_happened"], True),
-              (f"COMING {ep['coming_near']['year']}", ep["coming_near"]["text"], False),
-              (f"COMING {ep['coming_far']['year']}", ep["coming_far"]["text"], False)]
-    for label, text, accent in blocks:
-        lines = _wrap(d, text, body, SW - x - 70)[:3]
-        block_h = 30 + 34 * len(lines)
-        d.rectangle([x, y + 4, x + 3, y + block_h], fill=(250, 204, 21) if accent else (71, 85, 105))
-        d.text((x + 18, y), label, font=label_font, fill=(250, 204, 21) if accent else (203, 213, 225))
-        y += 32
-        for ln in lines:
-            d.text((x + 18, y), ln, font=body, fill=(241, 245, 249))
-            y += 34
-        y += 26
+    y = _block(d, x, y, f"AIRED {ep['aired_year']}", ep["already_happened"], body, label_font, max_w - 70, 3, True) + 18
 
-    total_h = max(1350, y + 70)
-    d.line([(x, total_h - 60), (SW - x, total_h - 60)], fill=(250, 204, 21), width=1)
+    now_year = datetime.now().year
+    d.rectangle([x, y + 4, x + 3, y + 32], fill=(71, 85, 105))
+    d.text((x + 18, y), f"CAME TRUE {now_year}", font=label_font, fill=SLATE)
+    y += 40
+    receipt = ep.get("evidence") or ep["already_happened"]
+    r_lines = _wrap(d, receipt, body, max_w - 40)[:3]
+    box_h = 76 + 32 * len(r_lines) + 14
+    d.rounded_rectangle([x, y, x + max_w, y + box_h], radius=14, fill=(15, 23, 42), outline=(51, 65, 85), width=2)
+    av = _circle_avatar(avatar, ep["handle"], 52)
+    canvas.paste(av, (x + 16, y + 14), av)
+    name = _clamp(ep.get("display_name") or ep["handle"], 28)
+    d.text((x + 82, y + 12), name, font=_font("Outfit-Regular.ttf", 26), fill=(248, 250, 252))
+    d.text((x + 82, y + 42), f"@{ep['handle']}", font=osd, fill=GREY)
+    ry = y + 76
+    for ln in r_lines:
+        d.text((x + 18, ry), ln, font=body, fill=(241, 245, 249))
+        ry += 32
+    y += box_h + 26
+
+    d.line([(x, y), (SW - x, y)], fill=(51, 65, 85), width=1)
+    y += 20
+    for block in (ep["coming_near"], ep["coming_far"]):
+        y = _block(d, x, y, f"COMING {block['year']}", block["text"], body, label_font, max_w - 70, 3, False) + 16
+
+    total_h = max(1350, y + 64)
+    d.line([(x, total_h - 60), (SW - x, total_h - 60)], fill=TAPE, width=1)
     d.text((x, total_h - 48), f"@{ep['handle']}", font=osd, fill=(248, 250, 252))
     brand_font = _font("BebasNeue-Regular.ttf", 30)
     bw = d.textlength("ALREADY AIRED", font=brand_font)
-    d.text((SW - x - bw, total_h - 50), "ALREADY AIRED", font=brand_font, fill=(250, 204, 21))
+    d.text((SW - x - bw, total_h - 50), "ALREADY AIRED", font=brand_font, fill=TAPE)
     mid = f"FIND YOURS · {site_host}"
     mw = d.textlength(mid, font=osd)
     if mw < SW - 2 * x - bw - 220:

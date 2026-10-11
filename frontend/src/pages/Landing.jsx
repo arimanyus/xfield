@@ -38,12 +38,12 @@ export default function Landing() {
             <span className="text-red-500 animate-blink">●</span> 30 years of Simpsons predictions
           </p>
           <h1 className="font-display text-5xl sm:text-6xl lg:text-7xl leading-[0.92] mt-4 tracking-wide" data-testid="hero-title">
-            THE SIMPSONS DID IT TO THE WORLD.
+            THE SIMPSONS PREDICTED TRUMP.
             <br />
-            <span className="text-tape">NOW IT'S YOUR TURN.</span>
+            <span className="text-tape">THEY PREDICTED YOU TOO.</span>
           </h1>
           <p className="mt-5 text-slate-300 text-base sm:text-lg max-w-xl" data-testid="hero-sub">
-            Type an X handle. We find the lost Simpsons episode that predicted them.
+            Type an X handle. Get the lost episode, the receipt, and two dated prophecies.
           </p>
           <HandleForm className="mt-8" idPrefix="hero" />
         </div>

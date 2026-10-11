@@ -19,7 +19,7 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import storage  # noqa: E402
-from generator import compose_share_card, extract_labels, render_card_for_episode, write_episode  # noqa: E402
+from generator import compose_share_card, extract_labels, fetch_avatar, render_card_for_episode, write_episode  # noqa: E402
 from predictions import CATEGORIES, PREDICTIONS  # noqa: E402
 from safety import contains_blocked  # noqa: E402
 from xreader import is_valid_handle, normalize_handle, read_handle  # noqa: E402
@@ -196,8 +196,9 @@ async def _store(path: str, data: bytes, local_name: str) -> str:
 
 async def image_job(ep_id: str, ep: dict, avatar_url, site_host: str):
     try:
-        card, kind = await render_card_for_episode(ep, avatar_url)
-        share = await asyncio.to_thread(compose_share_card, ep, card, site_host)
+        avatar = await fetch_avatar(avatar_url)
+        card, kind = await render_card_for_episode(ep, avatar)
+        share = await asyncio.to_thread(compose_share_card, ep, card, site_host, avatar)
     except Exception:
         logger.exception("card render failed for %s", ep_id)
         await db.episodes.update_one({"id": ep_id}, {"$set": {"image_status": "failed"}})
@@ -219,7 +220,7 @@ async def existing_episode(handle: str):
     recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
     return await db.episodes.find_one(
         {"handle_lower": handle.lower(), "hidden": False,
-         "$or": [{"text_status": "ready"}, {"text_status": "pending", "created_at": {"$gte": recent}}]},
+         "$or": [{"text_status": {"$in": ["ready", None]}}, {"text_status": "pending", "created_at": {"$gte": recent}}]},
         {"_id": 0}, sort=[("created_at", -1)])
 
 

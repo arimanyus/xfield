@@ -125,16 +125,22 @@ export const ShareBar = ({ ep, onShared }) => {
   };
 
   return (
-    <div className="mt-5" data-testid="share-bar">
-      <div className="flex flex-wrap gap-2 sm:gap-3">
-        <button type="button" onClick={shareToX} disabled={busy} data-testid="share-x-btn" className="btn-tape inline-flex items-center gap-2 flex-1 sm:flex-none justify-center">
-          <Share className="w-5 h-5" /> {busy ? "Preparing card…" : "Share to X"}
+    <div className="mt-6" data-testid="share-bar">
+      <button
+        type="button"
+        onClick={shareToX}
+        disabled={busy}
+        data-testid="share-x-btn"
+        className="btn-tape w-full text-2xl sm:text-3xl py-4 inline-flex items-center justify-center gap-3"
+      >
+        <Share className="w-6 h-6 sm:w-7 sm:h-7" /> {busy ? "Preparing card…" : "Share to X"}
+      </button>
+      <div className="mt-3 flex flex-wrap items-center gap-x-5 gap-y-2 font-osd text-lg text-slate-400">
+        <button type="button" onClick={copyLink} data-testid="copy-link-btn" className="inline-flex items-center gap-1.5 hover:text-tape transition-colors">
+          <Link2 className="w-4 h-4" /> Copy link
         </button>
-        <button type="button" onClick={copyLink} data-testid="copy-link-btn" className="btn-ghost inline-flex items-center gap-2">
-          <Link2 className="w-5 h-5" /> Copy link
-        </button>
-        <button type="button" onClick={download} disabled={!ready || busy} data-testid="download-btn" className="btn-ghost inline-flex items-center gap-2 disabled:opacity-40">
-          <Download className="w-5 h-5" /> {ready ? "Download card" : "Card developing…"}
+        <button type="button" onClick={download} disabled={!ready || busy} data-testid="download-btn" className="inline-flex items-center gap-1.5 hover:text-tape transition-colors disabled:opacity-40">
+          <Download className="w-4 h-4" /> {ready ? "Download card" : "Card developing…"}
         </button>
       </div>
       {ready && (
