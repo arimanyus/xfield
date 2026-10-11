@@ -26,6 +26,7 @@ KEY = os.environ["EMERGENT_LLM_KEY"]
 TEXT_MODEL = os.environ["TEXT_MODEL"]
 LABEL_MODEL = os.environ["LABEL_MODEL"]
 IMAGE_MODEL = os.environ["IMAGE_MODEL"]
+WRITER_EFFORT = os.environ.get("WRITER_EFFORT", "medium")
 
 DEFAULT_LABELS = {"role": "poster", "vibe": "chronically online", "obsession": "the timeline"}
 
@@ -43,37 +44,79 @@ CAST = ("Homer Simpson, Marge Simpson, Bart Simpson, Lisa Simpson, Maggie, Mr. B
         "Lenny and Carl, Barney Gumble, Professor Frink, Sideshow Bob, Grampa Simpson, Patty and Selma, Groundskeeper Willie, "
         "Apu, Dr. Nick, Lionel Hutz, Troy McClure, Disco Stu, Duffman, Mayor Quimby, Otto, Edna Krabappel")
 
+PROPHECY_RULES = (
+    "WHY THE REAL PREDICTIONS ARE FAMOUS: each one is a CONCRETE EVENT with a proper noun and a consequence that sounded "
+    "absurd when it aired and became a headline later. That is the bar. A prophecy here is a news headline from the future "
+    "about this person, never a description of their habits.\n"
+    "PROPHECY RULES\n"
+    "1. Event, not behaviour. Something happens TO them or BECAUSE of them out in the world: an acquisition, a lawsuit, a "
+    "Senate hearing, a bankruptcy, a Netflix docuseries, a recall, an award, a ban, a merger, a cabinet post, a stadium "
+    "naming, a cult, a court ruling, an ETF, a museum exhibit, a Wikipedia edit war, a Costco product. BANNED: \"will post\", "
+    "\"will tweet\", \"keeps\", \"continues\", \"still\", \"spends every day\", \"the same X seventeen times\", or anything that "
+    "merely extends what they already do.\n"
+    "2. Specific or dead. Every prophecy contains at least TWO of: a proper noun from their actual life (their company, "
+    "product, project, newsletter, employer, podcast, rival, city, gear, a person they mention), a hard number (dollars, "
+    "followers, a version, a count, a percentage), a named institution (the SEC, Fox News, Harvard, the Vatican, Delaware "
+    "Chancery Court, Costco, the Nobel committee, the Louvre), or a phrase from one of their posts turned into something official "
+    "(a law, a ticker, a plaque, a diagnosis the AMA rejects).\n"
+    "3. The Simpsons test: in the prophecy year, could someone screenshot it next to a real headline and say \"they called it\"? "
+    "If it only works as a joke about their personality, it fails.\n"
+    "4. Savage. The event is a humiliation disguised as a milestone, or a milestone that exposes the delusion. No compliments, "
+    "no softening, no wink. Cruel, precise, quotable, within the hard rules.\n"
+    "5. Form: ONE sentence, max 150 characters, present-tense headline style that starts with the verb or the event "
+    "(\"Sells Nomad List to Marriott for $40M after…\", \"Is subpoenaed by the SEC over…\", \"Becomes the first man to…\"). "
+    "Never start with \"He will\", \"She will\", \"They will\", \"The character\".\n"
+    "6. Near year = plausible-absurd. Far year = bigger, stranger, civilization-scale, still anchored to their real thing.\n"
+    "ALREADY HAPPENED (the receipt): one sentence, max 180 characters, past tense, recapping what the episode showed when it "
+    "aired: a NAMED Simpsons character doing, beat for beat, the exact thing this person later did in one specific real post. "
+    "Don't restate the post; the evidence quote is the receipt. \"evidence\" must be a verbatim excerpt (max 90 chars) copied "
+    "from one of the posts given, never paraphrased."
+)
+
 EPISODE_SYSTEM = (
     "You are the head writer of a parody archive of lost episodes of THE SIMPSONS: the Fox animated series famous for "
-    "predicting the future (President Trump in 2000, Disney buying Fox in 1998, the smartwatch in 1995). Each lost episode "
-    "predicted a real X (Twitter) user years before they existed online. Write it as a real Simpsons episode: Springfield "
-    "settings (Moe's Tavern, the Kwik-E-Mart, the nuclear plant, Springfield Elementary, Channel 6 News, the Android's "
-    "Dungeon, 742 Evergreen Terrace), running gags, Kent Brockman segments, Mr. Burns schemes, chalkboard gags, couch gags. "
-    f"Use the actual characters by name — {CAST} — reacting to a new Springfield character who is this person.\n"
-    "Given the user's bio, labels and real posts, write the lost episode that predicted them.\n"
+    "predicting the future (President Trump, aired 2000; Disney buying Fox, 1998; the smartwatch, 1995; the Higgs boson mass, "
+    "1998; Lady Gaga's Super Bowl halftime, 2012). Each lost episode predicted a real X (Twitter) user years before they "
+    "existed online. Write it as a real Simpsons episode: Springfield settings (Moe's Tavern, the Kwik-E-Mart, the nuclear "
+    "plant, Springfield Elementary, Channel 6 News, the Android's Dungeon, 742 Evergreen Terrace), running gags, Kent Brockman "
+    f"segments, Mr. Burns schemes. Use the actual characters by name — {CAST} — reacting to a new Springfield character who is "
+    "this person.\n"
     f"{SAFETY}\n"
-    "Comedy style: specific, observational, deadpan, quotable, in the voice of the show's golden era. The funniest line "
-    "quotes or paraphrases something they actually posted and lets a Simpsons character react to it.\n"
-    'Spice "savage" (the default): go for the throat. No compliments, no softening, no "but honestly they\'re great". '
-    "Mock the ego, the delusion, the engagement bait, the recycled takes, the product nobody asked for, the follower count "
-    "versus the self-image. Cruel, precise, quotable, and still within the hard rules. "
-    'Spice "roast": the same jokes with a wink, affectionate instead of lethal.\n'
+    f"{PROPHECY_RULES}\n"
+    "Comedy style: specific, observational, deadpan, quotable, golden-era voice. Mine the posts for proper nouns, numbers, "
+    "products, rivals, claims and catchphrases and build every line on them.\n"
     "Reply with ONLY a JSON object, no markdown fences, with exactly these keys:\n"
     "{\n"
     ' "title": "Simpsons-style episode title spoofing their life, 3-7 words, Title Case (puns on film/book titles welcome)",\n'
     ' "aired_date": "YYYY-MM-DD between 1996-01-01 and 2004-12-31",\n'
     ' "episode_number": <integer 1-24>,\n'
     ' "cast": ["2 to 4 real Simpsons character names who appear in the episode"],\n'
-    ' "already_happened": "1-2 sentences, max 200 characters, present tense: what the episode showed that has now come true about them, grounded in a specific real post or bio detail, with a Simpsons character involved",\n'
-    ' "evidence": "short verbatim or lightly trimmed quote (max 90 chars) from one of their real posts that proves it; empty string if no posts were given",\n'
-    ' "coming_near": {"year": NEAR_YEAR, "text": "1 sentence, max 160 chars, a specific brutal prophecy for that year"},\n'
-    ' "coming_far": {"year": <integer between FAR_MIN and FAR_MAX>, "text": "1 sentence, max 160 chars, a bigger, stranger prophecy"},\n'
+    ' "already_happened_options": [{"text": "receipt recap as specified", "evidence": "verbatim excerpt of the matching post"}, {...}] (2 options, each built on a DIFFERENT post),\n'
+    ' "near_options": ["4 distinct headline prophecies for NEAR_YEAR, each on a different specific from their posts"],\n'
+    ' "far_options": [{"year": <integer between FAR_MIN and FAR_MAX>, "text": "headline prophecy"}, ...] (4 options),\n'
     ' "subtitle": "one line of dialogue from the still, max 90 chars, prefixed with the speaker in caps, e.g. MR. BURNS: Excellent. Another man posting through it.",\n'
     ' "scene": "1-2 sentences describing the still: Springfield setting, the cast members by name, what they and the person are doing. No on-screen text.",\n'
     ' "scene_visual": "the same still described for an illustrator who has never seen the show: no character names, no show or brand names, no place names. Describe the setting and each character purely visually (e.g. a bald overweight yellow man in a white polo shirt). 1-2 sentences.",\n'
     ' "character": "visual description of the Simpsons-style version of this person: hair, glasses, facial hair, outfit, expression. Max 40 words. Use hints from bio/posts about their gear or style, otherwise invent something fitting the labels."\n'
     "}"
 )
+
+CRITIC_SYSTEM = (
+    "You are the showrunner doing the final pass on a lost SIMPSONS episode script about a real X user. You get their bio, "
+    "real posts and the writers' candidate lines. Pick and sharpen.\n"
+    f"{SAFETY}\n"
+    f"{PROPHECY_RULES}\n"
+    "Score every candidate 0-10 on: (a) SPECIFIC: names their actual company/product/project/number/phrase from the posts and "
+    "could not be about another user; (b) HEADLINE-SHAPED: a concrete event in the world, not a behaviour that continues; "
+    "(c) SAVAGE: humiliates with precision; (d) SIMPSONS TEST. Reject anything that breaks rule 1 or 5.\n"
+    "Pick the best near and far prophecy and rewrite each tighter: one sentence, max 150 chars, headline present tense, "
+    "keep every specific, sharpen the twist. If no candidate scores at least 7 on both (a) and (b), write a new one from the "
+    "posts that does. Pick the best already_happened option (the one whose evidence is really in the posts and whose scene "
+    "mirrors it beat for beat); tighten it to max 180 chars and keep the evidence a verbatim excerpt.\n"
+    'Reply with ONLY JSON: {"already_happened": "...", "evidence": "...", "coming_near": "...", "coming_far": {"year": N, "text": "..."}}'
+)
+
+BANNED_RE = re.compile(r"^(he|she|they|the character)\b|\b(will (post|tweet)|keeps?|continues?|still|every day|seventeen times)\b", re.I)
 
 LABEL_SYSTEM = (
     "You label X (Twitter) users for a comedy app. Reply ONLY with a JSON object: "
@@ -85,9 +128,12 @@ LABEL_SYSTEM = (
 )
 
 
-async def _llm_text(model: str, system: str, user: str, max_tokens: int) -> str:
+async def _llm_text(model: str, system: str, user: str, max_tokens: int, effort: str | None = None) -> str:
+    params = {"max_tokens": max_tokens}
+    if effort:
+        params.update(reasoning_effort=effort, allowed_openai_params=["reasoning_effort"])
     chat = (LlmChat(api_key=KEY, session_id=f"aa-{uuid.uuid4()}", system_message=system)
-            .with_model("anthropic", model).with_params(max_tokens=max_tokens))
+            .with_model("anthropic", model).with_params(**params))
     parts = []
     async for ev in chat.stream_message(UserMessage(text=user)):
         if isinstance(ev, TextDelta):
@@ -109,12 +155,14 @@ def _posts_block(profile: dict) -> str:
     posts = profile.get("posts") or []
     if not posts:
         return "(no posts could be read)"
-    return "\n".join(f"{i + 1}. {p['text']}" for i, p in enumerate(posts[:20]))
+    return "\n".join(f"{i + 1}. {p['text']}" for i, p in enumerate(posts[:25]))
 
 
 def _profile_block(profile: dict) -> str:
+    followers = profile.get("followers")
     return (f"Handle: @{profile['handle']}\nName: {profile.get('name') or profile['handle']}\n"
             f"Bio: {profile.get('bio') or '(empty)'}\nLocation: {profile.get('location') or '(unknown)'}\n"
+            f"Followers: {f'{followers:,}' if isinstance(followers, int) else '(unknown)'}\n"
             f"Their original posts (a mix of their most popular and most recent):\n{_posts_block(profile)}")
 
 
@@ -134,29 +182,77 @@ def _clamp(s, n):
     return s if len(s) <= n else s[: n - 1].rstrip() + "…"
 
 
+def _norm(s: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", str(s or "").lower()).strip()
+
+
+def _verify_evidence(evidence: str, profile: dict) -> str:
+    posts = [p["text"] for p in (profile.get("posts") or []) if p.get("text")]
+    ev = str(evidence or "").strip().strip('"“”\'‘’')
+    if not posts:
+        return _clamp(ev, 110)
+    nev = _norm(ev)
+    if nev and any(nev in _norm(p) for p in posts):
+        return _clamp(ev, 110)
+    words = set(nev.split())
+    best = max(posts, key=lambda p: len(words & set(_norm(p).split())) / (len(words) or 1))
+    overlap = len(words & set(_norm(best).split())) / (len(words) or 1)
+    logger.info("evidence not verbatim (overlap %.2f); using closest post", overlap)
+    return _clamp(re.sub(r"\s+", " ", best).strip(), 110)
+
+
+def _pick(options, bad=BANNED_RE):
+    texts = [str((o or {}).get("text") if isinstance(o, dict) else o or "").strip() for o in (options or [])]
+    texts = [t for t in texts if t]
+    return next((t for t in texts if not bad.search(t)), texts[0] if texts else "")
+
+
+async def _critic(draft: dict, user: str) -> dict:
+    cands = {k: draft.get(k) for k in ("already_happened_options", "near_options", "far_options")}
+    prompt = f"{user}\n\nWRITERS' DRAFT (title “{draft.get('title')}”, cast {draft.get('cast')}):\n{json.dumps(cands, ensure_ascii=False, indent=1)}\n\nDo the final pass now."
+    raw = await asyncio.wait_for(_llm_text(TEXT_MODEL, CRITIC_SYSTEM, prompt, 900, WRITER_EFFORT), timeout=40)
+    out = _json(raw)
+    if not out.get("coming_near") or not (out.get("coming_far") or {}).get("text"):
+        raise ValueError("critic returned incomplete lines")
+    return out
+
+
 async def write_episode(profile: dict, labels: dict, spice: str, found_by) -> dict:
     today = date.today()
     near, far_min, far_max = today.year + 1, today.year + 3, today.year + 7
     system = (EPISODE_SYSTEM.replace("NEAR_YEAR", str(near))
               .replace("FAR_MIN", str(far_min)).replace("FAR_MAX", str(far_max)))
-    user = (f"Today is {today.isoformat()}.\nSpice level: {spice}.\n"
+    user = (f"Today is {today.isoformat()}. Near prophecy year: {near}. Far prophecy years: {far_min}-{far_max}.\n"
             f"Labels (confirmed by the person who submitted this): role = {labels['role']}; vibe = {labels['vibe']}; "
             f"obsession = {labels['obsession']}.\n"
-            + (f"Submitted by @{found_by} who wants to roast their friend.\n" if found_by else "Submitted by the person themselves.\n")
-            + _profile_block(profile) + "\nWrite the episode JSON now.")
+            + (f"Submitted by @{found_by} who wants to destroy their friend.\n" if found_by else "Submitted by the person themselves.\n")
+            + _profile_block(profile))
     data, raw = None, ""
     for attempt, model in enumerate((TEXT_MODEL, TEXT_MODEL, LABEL_MODEL), start=1):
         try:
-            raw = await asyncio.wait_for(_llm_text(model, system, user, 1500), timeout=45)
+            raw = await asyncio.wait_for(_llm_text(model, system, user + "\nWrite the episode JSON now.", 3000,
+                                                   WRITER_EFFORT if model == TEXT_MODEL else None), timeout=60)
             data = _json(raw)
-            if not data.get("already_happened"):
-                raise ValueError("missing already_happened")
+            if not data.get("near_options") or not data.get("far_options") or not data.get("already_happened_options"):
+                raise ValueError("missing candidate lists")
             break
         except Exception as e:
             logger.warning("episode write attempt %d via %s failed: %s | raw=%r", attempt, model, e, (raw or "")[:300])
             data = None
     if data is None:
         raise RuntimeError("episode writer returned no usable JSON after 3 attempts")
+
+    ah_opts = [o for o in (data.get("already_happened_options") or []) if isinstance(o, dict)]
+    final = {"already_happened": _pick(ah_opts, re.compile(r"$^")), "evidence": (ah_opts[0] if ah_opts else {}).get("evidence", ""),
+             "coming_near": _pick(data.get("near_options")), "coming_far": {}}
+    far_first = next((o for o in (data.get("far_options") or []) if isinstance(o, dict) and not BANNED_RE.search(str(o.get("text", "")))),
+                     (data.get("far_options") or [{}])[0])
+    final["coming_far"] = far_first if isinstance(far_first, dict) else {"text": str(far_first)}
+    try:
+        final = await _critic(data, user)
+        logger.info("critic pass applied")
+    except Exception as e:
+        logger.warning("critic pass failed, using first clean candidates: %s", e)
 
     try:
         aired = datetime.strptime(str(data.get("aired_date", "")), "%Y-%m-%d").date()
@@ -176,7 +272,9 @@ async def write_episode(profile: dict, labels: dict, spice: str, found_by) -> di
             y = default
         return max(lo, min(y, hi))
 
-    cn, cf = data.get("coming_near") or {}, data.get("coming_far") or {}
+    cf = final.get("coming_far") or {}
+    cn_text = final.get("coming_near")
+    cn_text = cn_text.get("text") if isinstance(cn_text, dict) else cn_text
     cast = [str(c).strip()[:40] for c in (data.get("cast") or []) if str(c).strip()][:4]
     return {
         "title": _clamp(data.get("title") or "The One Nobody Saw Coming", 70),
@@ -185,10 +283,10 @@ async def write_episode(profile: dict, labels: dict, spice: str, found_by) -> di
         "aired_date": aired.isoformat(),
         "aired_year": aired.year,
         "cast": cast,
-        "already_happened": _clamp(data.get("already_happened"), 240),
-        "evidence": _clamp(str(data.get("evidence") or "").strip().strip('"“”\'‘’'), 110),
-        "coming_near": {"year": near, "text": _clamp(cn.get("text"), 190)},
-        "coming_far": {"year": year_of(cf, far_min + 2, far_min, far_max), "text": _clamp(cf.get("text"), 190)},
+        "already_happened": _clamp(final.get("already_happened"), 220),
+        "evidence": _verify_evidence(final.get("evidence"), profile),
+        "coming_near": {"year": near, "text": _clamp(cn_text, 170)},
+        "coming_far": {"year": year_of(cf, far_min + 2, far_min, far_max), "text": _clamp(cf.get("text"), 170)},
         "subtitle": _clamp(data.get("subtitle") or "HOMER: I should not have posted that.", 110),
         "scene": _clamp(data.get("scene"), 400),
         "scene_visual": _clamp(data.get("scene_visual"), 400),

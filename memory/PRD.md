@@ -68,7 +68,14 @@ Growth loops: share link unfurls to the card image on X; "prophesy a friend" tag
 - Roast option removed entirely: `SpiceToggle` deleted, API accepts only `spice: "savage"` (422 otherwise), no `spice` URL params.
 - Copy cut hard across the site: hero sub is one sentence, how-it-works section removed, strip/section headings shortened, confirm screen drops bio + hint, taps reason is one line, share hint replaced by a tiny "Preview card" link, countdown/friend/CTA/timeline/leaderboard descriptions removed, footer is one line.
 
-## Known limitations / risks
+### Iteration 7 — Prediction quality rewrite (user: "predictions are really not good enough")
+- Diagnosis: prophecies were vague behaviour jokes ("will post the same manifesto seventeen times"), not prediction-shaped; `already_happened` restated the tweet.
+- `generator.py`: new `PROPHECY_RULES` (event-not-behaviour, ≥2 specifics from their real posts, headline present tense, banned openings, "Simpsons test", savage). Writer now returns candidates (2 receipts, 4 near, 4 far); a **critic pass** (`CRITIC_SYSTEM`, same model) scores them and returns the sharpest, tightened lines; `_pick`/`BANNED_RE` fallback if the critic fails. `_verify_evidence` guarantees the evidence quote is a verbatim excerpt of a real post (else swaps in the closest post). Profile block now includes follower count and all 25 posts.
+- Found & fixed: Claude Sonnet 5.5 was spending the whole `max_tokens` budget on hidden reasoning → empty output → silent Haiku fallback. Fixed with `reasoning_effort` (`WRITER_EFFORT`, default `medium`, passed via `allowed_openai_params`) + `max_tokens` 3000. Writer+critic ≈ 15s total.
+- `backend/scripts_try_write.py <handle>` runs the writer against a cached profile for prompt tuning without burning rate limit/images.
+- Self-tested on cached @levelsio/@pmarca/@paulg + one live E2E episode (`/ep/kZDnuYGZ`): episode page and share card render fine at the new lengths.
+
+
 - nitter.cf is a community mirror and can throttle/vanish; chain + env-swappable mirror + paid slot mitigate.
 - Gemini often declines real-person likeness → generic character (`still_kind: generic`); expected.
 - Share counts are client-reported (no verification). "found by" credit unverified.
