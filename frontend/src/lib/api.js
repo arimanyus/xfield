@@ -50,7 +50,7 @@ export const airedLabel = (iso) => {
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" });
 };
 
-export const shareText = () => "Find yours";
+export const shareText = (ep, tag) => (tag ? `The Simpsons predicted @${ep.handle}. Find yours` : "Find yours");
 
 export const isMobile = () => typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
 

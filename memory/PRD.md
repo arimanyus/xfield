@@ -117,6 +117,9 @@ Growth loops: share link unfurls to the card image on X; "prophesy a friend" tag
 - Card v8: prophecies 44px Bold (max 2 lines) using new **short prophecies** (`coming_near_short` / `coming_far_short`, ≤85 chars) that the critic now returns alongside the full text; then/now columns 38px Bold (caption ≤3 lines, receipt ≤4 lines, frame 2.6:1); chips 36px. Relative text size went from ~2.3% to ~3.3% of card width (≈ X's own post text at feed size).
 - Backfill: `shorten_prophecy()` (Sonnet, effort low, max_tokens 1500 — Sonnet with small max_tokens returns empty because hidden reasoning eats the budget) run by `scripts_rerender_cards.py` for all 19 episodes. Emoji stripped from card text (font has no glyphs).
 
+### Iteration 17 — Tag a friend
+- Share dialog has a "Tag @handle in the post" toggle (`share-tag-toggle`), default ON when the episode was found by someone else (`found_by`), OFF otherwise. Post text becomes "The Simpsons predicted @handle. Find yours" + link; mobile native share uses the same default. Verified via composer URL.
+
 ## Known limitations / risks
 - nitter.cf is a community mirror and can throttle/vanish; chain + env-swappable mirror + paid slot mitigate.
 - Gemini often declines real-person likeness → generic character (`still_kind: generic`); expected.

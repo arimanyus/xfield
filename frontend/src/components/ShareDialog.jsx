@@ -14,7 +14,7 @@ const Step = ({ n, done, active, children, testid }) => (
   </li>
 );
 
-export const ShareDialog = ({ ep, open, onOpenChange, copied, opened, pasteKey, onCopy, onOpenX, onDownload, onCopyLink }) => (
+export const ShareDialog = ({ ep, open, onOpenChange, copied, opened, pasteKey, tag, onTag, onCopy, onOpenX, onDownload, onCopyLink }) => (
   <Dialog open={open} onOpenChange={onOpenChange}>
     <DialogContent className="bg-ink-2 border-tape/30 p-0 overflow-hidden max-w-4xl w-[calc(100vw-2rem)] rounded-none" data-testid="share-dialog">
       <DialogTitle className="sr-only">Share to X</DialogTitle>
@@ -24,6 +24,21 @@ export const ShareDialog = ({ ep, open, onOpenChange, copied, opened, pasteKey, 
         </div>
         <div className="p-6 sm:p-8 flex flex-col">
           <div className="osd">Share to X</div>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={tag}
+            onClick={() => onTag(!tag)}
+            data-testid="share-tag-toggle"
+            className="mt-5 inline-flex items-center gap-3 text-left group"
+          >
+            <span className={`w-6 h-6 grid place-items-center border transition-colors ${tag ? "bg-tape border-tape text-ink" : "border-white/30 text-transparent group-hover:border-tape"}`}>
+              <Check className="w-4 h-4" strokeWidth={3} />
+            </span>
+            <span className="text-lg sm:text-xl text-slate-100">
+              Tag <span className="font-osd text-tape">@{ep.handle}</span> in the post
+            </span>
+          </button>
           <ol className="mt-6 space-y-5">
             <Step n="1" done={copied} active={!copied} testid="share-step-copy">
               <span className="text-lg sm:text-xl text-slate-100">{copied ? "Card copied" : "Copy the card"}</span>

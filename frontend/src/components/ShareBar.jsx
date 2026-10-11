@@ -45,9 +45,10 @@ export const ShareBar = ({ ep, onShared }) => {
   const [open, setOpen] = useState(false);
   const [copied, setCopied] = useState(false);
   const [opened, setOpened] = useState(false);
+  const [tag, setTag] = useState(Boolean(ep.found_by));
   const png = useRef(null);
   const link = ep.share_url;
-  const text = shareText(ep);
+  const text = shareText(ep, tag);
   const fileName = `the-simpsons-predicted-${ep.handle}-${seCode(ep)}.jpg`;
 
   useEffect(() => {
@@ -151,6 +152,8 @@ export const ShareBar = ({ ep, onShared }) => {
           copied={copied}
           opened={opened}
           pasteKey={pasteKey}
+          tag={tag}
+          onTag={setTag}
           onCopy={copyCard}
           onOpenX={openX}
           onDownload={download}
