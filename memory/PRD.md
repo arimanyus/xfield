@@ -93,6 +93,11 @@ Growth loops: share link unfurls to the card image on X; "prophesy a friend" tag
 - **Share card redesign** (`compose_share_card(ep, card16, host, avatar)`): still → "THE SIMPSONS PREDICTED / @HANDLE" headline → episode code/title/aired → "AIRED {year}" block → "CAME TRUE {now}" receipt box rendered like an X post (circular avatar, name, @handle, verbatim quote) → COMING blocks → footer. 1080×≥1350.
 - Tested: iteration_6 (backend 10/10 + full UI incl. dialog/clipboard, mobile order, redirects, taps). New-handle auto-generate path (@elonmusk) verified by hand.
 
+### Iteration 11 — Readable share card (user: "X card is hardly readable. USE bold texts, more colors, less text")
+- Root cause: `assets/Outfit-Regular.ttf` is the Outfit *variable* font; Pillow rendered it at the default **Thin** instance. `_font()` now sets the variation (SemiBold default, Bold where used) → all Outfit text in stills/cards is bold.
+- Share card v3: still → "THE SIMPSONS PREDICTED / @HANDLE" → green **CAME TRUE {year}** chip + green-outlined receipt box (avatar, bold name, quote) → orange **COMING {near}** and sky-blue **COMING {far}** sections with colored bars; 32px SemiBold body, max 3 lines each with ellipsis; dropped the episode-code/title line and the "AIRED" paragraph (less text). `card_url` carries `?v=3` to bust the immutable cache.
+- `scripts_rerender_cards.py <host> [handles…]` re-renders stored share cards from the stored 16:9 still (ran for all existing episodes).
+
 ## Known limitations / risks
 - nitter.cf is a community mirror and can throttle/vanish; chain + env-swappable mirror + paid slot mitigate.
 - Gemini often declines real-person likeness → generic character (`still_kind: generic`); expected.
