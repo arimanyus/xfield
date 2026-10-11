@@ -102,6 +102,10 @@ Growth loops: share link unfurls to the card image on X; "prophesy a friend" tag
 - Card v4: added a yellow **AIRED {year}** section (new `aired_short` ≤70-char caption from the critic; backfilled for old episodes via a Haiku `shorten_aired` call) right above the green **CAME TRUE** receipt, so the pair reads as "episode showed X → they did X".
 - `_draw_subtitle` extracted (Bold 40px, opaque bar); `refresh_subtitle(card16, ep)` repaints the subtitle bar on already-composed stills — re-render script now refreshes stills + share cards + `aired_short` for all ready episodes. `image_url?v=2`, `card_url?v=4` cache-busters.
 
+### Iteration 13 — Poppy card + multi-line post text
+- Card v5: full-width Simpsons-yellow title band (ink text), then filled rounded panels with dark text — sky-blue AIRED, white X-post receipt with green CAME TRUE chip, orange COMING near, pink COMING far — on the ink background. `card_url?v=5`. All existing cards re-rendered.
+- `shareText` now uses line breaks: "The Simpsons predicted @h in YYYY.\nS12E14 “Title”\n\nComing 2027: <prophecy clipped to fit 280 incl. link>" (+ "\n\nExplain yourself." in friend mode).
+
 ## Known limitations / risks
 - nitter.cf is a community mirror and can throttle/vanish; chain + env-swappable mirror + paid slot mitigate.
 - Gemini often declines real-person likeness → generic character (`still_kind: generic`); expected.

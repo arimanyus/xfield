@@ -556,83 +556,82 @@ def _clip_lines(d, text, font, max_w, n):
     return lines[: n - 1] + [last + "…"]
 
 
-def _chip(d, x, y, label, color):
+def _chip(d, x, y, label, bg, fg=INK):
     f = _font("BebasNeue-Regular.ttf", 32)
     w = d.textlength(label, font=f)
-    d.rounded_rectangle([x, y, x + w + 28, y + 40], radius=6, fill=color)
-    d.text((x + 14, y + 5), label, font=f, fill=INK)
+    d.rounded_rectangle([x, y, x + w + 28, y + 40], radius=6, fill=bg)
+    d.text((x + 14, y + 5), label, font=f, fill=fg)
     return y + 40
 
 
 GREEN = (34, 197, 94)
 ORANGE = (249, 115, 22)
 SKY = (56, 189, 248)
+PINK = (244, 114, 182)
+PAD = 24
+
+
+def _panel(d, x, y, max_w, color, label, lines, body):
+    h = PAD + 40 + 14 + 40 * len(lines) + PAD
+    d.rounded_rectangle([x, y, x + max_w, y + h], radius=18, fill=color)
+    _chip(d, x + PAD, y + PAD, label, INK, color)
+    ly = y + PAD + 54
+    for ln in lines:
+        d.text((x + PAD, ly), ln, font=body, fill=INK)
+        ly += 40
+    return y + h
 
 
 def compose_share_card(ep: dict, card16: bytes, site_host: str, avatar: bytes | None = None) -> bytes:
     top_h = round(SW * 9 / 16)
-    canvas = Image.new("RGB", (SW, 2000), INK)
+    canvas = Image.new("RGB", (SW, 2200), INK)
     canvas.paste(Image.open(io.BytesIO(card16)).convert("RGB").resize((SW, top_h), Image.LANCZOS), (0, 0))
     d = ImageDraw.Draw(canvas)
-    x, y = 48, top_h + 30
+    x = 40
     max_w = SW - 2 * x
 
-    d.text((x, y), "THE SIMPSONS PREDICTED", font=_font("BebasNeue-Regular.ttf", 46), fill=(248, 250, 252))
-    y += 46
-    d.text((x - 2, y - 8), f"@{ep['handle'].upper()}", font=_font("BebasNeue-Regular.ttf", 96), fill=TAPE)
-    y += 104
+    band_h = 170
+    d.rectangle([0, top_h, SW, top_h + band_h], fill=TAPE)
+    d.text((x, top_h + 18), "THE SIMPSONS PREDICTED", font=_font("BebasNeue-Regular.ttf", 46), fill=INK)
+    d.text((x - 2, top_h + 56), f"@{ep['handle'].upper()}", font=_font("BebasNeue-Regular.ttf", 104), fill=INK)
+    y = top_h + band_h + 28
 
     body = _font("Outfit-Regular.ttf", 32, "SemiBold")
     osd = _font("VT323-Regular.ttf", 28)
 
-    aired_lines = _clip_lines(d, ep.get("aired_short") or ep["already_happened"], body, max_w - 40, 2)
-    sec_h = 52 + 40 * len(aired_lines)
-    d.rounded_rectangle([x, y, x + 10, y + sec_h - 6], radius=4, fill=TAPE)
-    _chip(d, x + 28, y, f"AIRED {ep['aired_year']}", TAPE)
-    ly = y + 52
-    for ln in aired_lines:
-        d.text((x + 28, ly), ln, font=body, fill=(248, 250, 252))
-        ly += 40
-    y += sec_h + 26
+    aired_lines = _clip_lines(d, ep.get("aired_short") or ep["already_happened"], body, max_w - 2 * PAD, 2)
+    y = _panel(d, x, y, max_w, SKY, f"AIRED {ep['aired_year']}", aired_lines, body) + 18
 
-    _chip(d, x, y, f"CAME TRUE {datetime.now().year}", GREEN)
-    y += 52
     receipt = ep.get("evidence") or ep["already_happened"]
-    r_lines = _clip_lines(d, receipt, body, max_w - 48, 3)
-    box_h = 92 + 40 * len(r_lines) + 22
-    d.rounded_rectangle([x, y, x + max_w, y + box_h], radius=16, fill=(9, 38, 26), outline=GREEN, width=3)
-    av = _circle_avatar(avatar, ep["handle"], 60)
-    canvas.paste(av, (x + 20, y + 18), av)
+    r_lines = _clip_lines(d, receipt, body, max_w - 2 * PAD, 3)
+    box_h = PAD + 40 + 14 + 64 + 14 + 40 * len(r_lines) + PAD
+    d.rounded_rectangle([x, y, x + max_w, y + box_h], radius=18, fill=(255, 255, 255))
+    _chip(d, x + PAD, y + PAD, f"CAME TRUE {datetime.now().year}", GREEN, INK)
+    ay = y + PAD + 54
+    av = _circle_avatar(avatar, ep["handle"], 64)
+    canvas.paste(av, (x + PAD, ay), av)
     name = _clamp(ep.get("display_name") or ep["handle"], 26)
-    d.text((x + 96, y + 14), name, font=_font("Outfit-Regular.ttf", 30, "Bold"), fill=(248, 250, 252))
-    d.text((x + 96, y + 50), f"@{ep['handle']}", font=osd, fill=(134, 239, 172))
-    ry = y + 92
+    d.text((x + PAD + 80, ay), name, font=_font("Outfit-Regular.ttf", 30, "Bold"), fill=INK)
+    d.text((x + PAD + 80, ay + 36), f"@{ep['handle']}", font=osd, fill=(100, 116, 139))
+    ry = ay + 78
     for ln in r_lines:
-        d.text((x + 22, ry), ln, font=body, fill=(248, 250, 252))
+        d.text((x + PAD, ry), ln, font=body, fill=INK)
         ry += 40
-    y += box_h + 30
+    y += box_h + 18
 
-    for block, color in ((ep["coming_near"], ORANGE), (ep["coming_far"], SKY)):
-        lines = _clip_lines(d, block["text"], body, max_w - 40, 3)
-        sec_h = 52 + 40 * len(lines)
-        d.rounded_rectangle([x, y, x + 10, y + sec_h - 6], radius=4, fill=color)
-        _chip(d, x + 28, y, f"COMING {block['year']}", color)
-        ly = y + 52
-        for ln in lines:
-            d.text((x + 28, ly), ln, font=body, fill=(248, 250, 252))
-            ly += 40
-        y += sec_h + 26
+    for block, color in ((ep["coming_near"], ORANGE), (ep["coming_far"], PINK)):
+        lines = _clip_lines(d, block["text"], body, max_w - 2 * PAD, 3)
+        y = _panel(d, x, y, max_w, color, f"COMING {block['year']}", lines, body) + 18
 
-    total_h = max(1350, y + 60)
-    d.line([(x, total_h - 62), (SW - x, total_h - 62)], fill=TAPE, width=2)
-    d.text((x, total_h - 48), f"@{ep['handle']}", font=osd, fill=(248, 250, 252))
+    total_h = max(1350, y + 62)
+    d.text((x, total_h - 50), f"@{ep['handle']}", font=osd, fill=(248, 250, 252))
     brand_font = _font("BebasNeue-Regular.ttf", 32)
     bw = d.textlength("ALREADY AIRED", font=brand_font)
-    d.text((SW - x - bw, total_h - 52), "ALREADY AIRED", font=brand_font, fill=TAPE)
+    d.text((SW - x - bw, total_h - 54), "ALREADY AIRED", font=brand_font, fill=TAPE)
     mid = f"FIND YOURS · {site_host}"
     mw = d.textlength(mid, font=osd)
     if mw < SW - 2 * x - bw - 220:
-        d.text(((SW - mw) / 2, total_h - 48), mid, font=osd, fill=GREY)
+        d.text(((SW - mw) / 2, total_h - 50), mid, font=osd, fill=GREY)
 
     out = canvas.crop((0, 0, SW, total_h))
     buf = io.BytesIO()
