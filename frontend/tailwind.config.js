@@ -52,7 +52,7 @@ module.exports = {
         marquee: "marquee 45s linear infinite",
         blink: "blink 1s steps(1) infinite",
         rise: "rise 0.5s ease-out both",
-        "tv-on": "tv-on 0.6s cubic-bezier(.2,.8,.2,1) both",
+        "tv-on": "tv-on 0.35s cubic-bezier(.2,.8,.2,1) both",
         jitter: "jitter 0.12s steps(2) infinite",
         tracking: "tracking 3.5s linear infinite",
       },

@@ -48,6 +48,14 @@ Growth loops: share link unfurls to the card image on X; "prophesy a friend" tag
 - Prompt hardened with an explicit forbidden-names list (Homer, Bart, Springfield, …) after one generated title used "Homer".
 - Tested: 6/6 backend + all new UI flows (iteration_2); mobile nav logo wrap fixed.
 
+### Iteration 3–4 — "Archive hiccuped" / Cloudflare bug + reliable X reading (user-reported)
+- Root causes: one empty Claude response with no retry (→ 502 → error panel) and a synchronous 10–30s POST exposed to Cloudflare/proxy timeouts.
+- Episode generation is now a background job: `POST /api/episodes` returns in ~1–3s with `text_status: pending`; `episode_job` writes text (3 attempts: sonnet → sonnet → haiku, 45s each, strict JSON check) then renders the image. Episode page polls every 2s: "SEARCHING THE ARCHIVE…" → card → still. `POST /api/episodes/{id}/retry` re-runs a failed write (no rate-limit charge, cached profile only); UI shows "TAPE DAMAGED" + Try again. Lists exclude pending/failed episodes (`PUBLIC` filter).
+- X reading, new order: **X guest GraphQL API** (`from_xguest`: guest token → UserByScreenName → UserTweets, ~25 original posts incl. most popular, `source: "x"`) → Nitter mirrors (`NITTER_INSTANCES`, Cloudflare-challenge detection, 8s per request) → X syndication → twitterapi.io (paid, off until `TWITTERAPI_IO_KEY`) → FxTwitter profile-only → three taps. Overall read capped at 55s.
+- Paste-your-posts UI removed per user feedback (backend still accepts optional `posts_text`, API-only).
+- Tested: iteration_3 (10/10 backend + UI) and iteration_4 (7/7 backend + UI).
+- Risk notes: X GraphQL query IDs rotate occasionally (overridable via `X_GQL_USER_OP` / `X_GQL_TWEETS_OP`); guest tokens have per-token/IP quotas (token auto-refreshes on 401/403/429). If both X and the mirror fail, adding a twitterapi.io key turns on the paid fallback.
+
 ## Known limitations / risks
 - nitter.cf is a community mirror and can throttle/vanish; chain + env-swappable mirror + paid slot mitigate.
 - Gemini often declines real-person likeness → generic character (`still_kind: generic`); expected.

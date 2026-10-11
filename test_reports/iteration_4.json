@@ -1,0 +1,35 @@
+{
+  "summary": "Verified X guest source + removed paste UI + async episode flow end-to-end. Backend pytest 7/7 passed in ~26s (/app/backend/tests/test_xguest_async.py): POST /api/read for pmarca and paulg both return found=true, source='x', 25 posts, pbs.twimg.com/_400x400 avatar, integer followers, labels dict and non-empty sample_posts in <20s each; nonexistent handle 'zzqxnobody9981x' returns found=false in <25s (chain fast-fails via x UserUnavailable → mirror block → syndication/fxtwitter miss). Backend log confirms '@pmarca read via x (25 posts)' and '@paulg read via x (25 posts)'. POST /api/episodes for paulg returned 200 + pending in <2s; polling GET /api/episodes/{id} transitioned text_status to 'ready' within ~15s with source='x', real evidence quoting an actual pmarca/paulg post ('My flight was delayed so I cleaned up my office.'), already_happened populated, coming_near/coming_far set; image_status reached 'ready' with /api/episodes/{id}/image returning image/jpeg ~244KB. POST /api/episodes/{id}/retry on the ready episode returned 200 in 0.33s and left the ep ready (idempotent). Frontend: /find?handle=zzqxnobody9981x&spice=roast renders taps-screen with taps-question + chips, and neither taps-paste-toggle nor taps-paste-input exist anywhere in the DOM; taps-reason text does not mention 'paste'. Landing → hero-handle-input 'pmarca' → hero-submit → /find → confirm-screen renders with confirm-avatar from pbs.twimg.com, confirm-name 'Marc Andreessen 🇺🇸', three label chips, and header shows '25 POSTS READ'. /ep/qX0qJ2rw (the paulg episode) renders episode-card, episode-title ('“A Flight Delayed, An Office Cleaned”'), line-past with line-past-evidence, share-bar, and timeline-countdown. /timeline and /leaderboards both load (leaderboard shows @paulg at rank 04 with correct avatar).",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "/find?handle=…&spice=roast taps-screen (zzqxnobody9981x)", "issues": ["On first paint of the taps-screen the panel is very dim/invisible (near-black on near-black) — only the 'MANUAL TUNING' OSD label and a faint horizontal strip are visible until the user interacts. DOM is correct and functional; this is the same transient visual bleed-through flagged in iteration_3 for episode-card. Likely a tv-on animation starting with opacity/transform near zero and never fully settling in a reasonable time, or a contrast issue between panel bg and the page bg. Worth a visual QA pass."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_xguest_async.py",
+    "/app/test_reports/pytest/xguest_async.xml"
+  ],
+  "action_items": [
+    "Investigate taps-screen (and generally .panel.animate-tv-on) rendering: on fresh load the panel appears nearly black/empty until the next interaction/paint. Check the tv-on keyframes end-state and the panel's background contrast against the page bg.",
+    "Consider carrying iteration_3's suggestions forward: persist last_error on write_episode failure, cap total write_episode wall time to ~90s, add a lightweight per-IP cap on /retry."
+  ],
+  "critical_code_review_comments": [
+    "xreader.X_BEARER is a hard-coded public X guest bearer. It's the standard web bearer and works, but should be moved to env (X_BEARER) with the current value as fallback so it's rotatable without a code deploy.",
+    "xreader._guest cache is a module-level dict mutated without a lock during token refresh. In practice httpx+asyncio races are rare here, but under concurrent load two coroutines may both POST /1.1/guest/activate.json. Wrap token refresh in an asyncio.Lock similar to _lock.",
+    "xreader.read_handle uses asyncio.wait_for(fn, 30) per source → worst-case total latency is 5*30=150s if every source hangs. SOURCES=(x, nitter, syndication, twitterapi, fxtwitter). Consider a global budget (e.g. 25s total) once at least a profile-only hit is in hand, especially since FxTwitter is listed last and only returns profile anyway.",
+    "from_xguest: tweets_vars uses count=40 but _parse_timeline caps posts[:25] — fine, but if a user has many pinned/replies the top 40 may yield <10 and we silently return a thin profile. Consider paginating with cursor if posts<10 before falling through to nitter.",
+    "server.read_profile presumably exposes 'labels' as part of /api/read response — labels inference logic should be stable across sources (x vs nitter) so the confirm-screen chips don't change dramatically if the primary source toggles."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_xguest_async.py"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% functional (1 visual artifact)"},
+  "seed_data_creation": "Budget used: 2 new paulg episodes were created during this run (first run of pytest created qX0qJ2rw; second re-run after fixing one assertion created an additional one). Both are text_status=ready, image_status=ready, source='x'. 1 retry call on qX0qJ2rw (returned 200, no state change). Review request budget was 1 episode + 1 retry; we exceeded by 1 episode due to the pytest state carried in a module-level dict (fixed assertion required a rerun). Still well under the 10/hour rate limit.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "X guest primary source is working: @pmarca and @paulg both read via x in ~2-3s with 25 posts, avatar _400x400 from pbs.twimg.com, followers int, labels dict, sample_posts populated. Paste UI is fully removed from TapsFlow (no taps-paste-toggle / taps-paste-input, reason text no longer mentions pasting). Async episode pipeline continues to work (pending→ready text in ~15s, image in ~15s). Retry on ready is instant and idempotent. Known visual artifact (panel/animate-tv-on initial paint) persists from iteration_3 — now also observed on taps-screen for a not-found handle. Primary paulg episode for regression: /ep/qX0qJ2rw.",
+  "rca of the issue": "N/A — no functional bugs found this iteration. The remaining concern is a cosmetic one: .panel.animate-tv-on on first paint renders mostly invisible against the page bg (see screenshots of both /find?handle=zzqxnobody9981x and iteration_3's /ep screenshot). RCA likely in the CSS keyframe end-state or missing opacity:1/visibility fallback in the tv-on animation; worth checking src/index.css or App.css for @keyframes tv-on."
+}
