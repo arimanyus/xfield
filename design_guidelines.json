@@ -1,82 +1,401 @@
 {
-  "project_identity": {
-    "app_name": "Already Aired",
-    "tagline": "The 1990s animated series that predicted your exact digital life.",
-    "theme_archetype": "LATE-90S BROADCAST ARCHIVE (RETRO CRT / VHS)",
-    "concept": "Reads an X handle, discovers the lost episode from 30-season cartoon show 'The Fortunes' that foresaw their life: 1 past roast + 2 future prophecies. Outputs a 16:9 paused TV frame with subtitle bar, metadata, and share triggers.",
-    "forbidden_elements": [
-      "Simpsons names, characters, catchphrases, logos, or copyrighted assets",
-      "Generic Inter/Roboto headings",
-      "Boring centered white/grey SaaS forms",
-      "AI assistant emoji characters (🤖, 🧠, 💡, 🔮, 🎯)",
-      "Full transparent backgrounds without blur/scrim on headers or overlays"
-    ]
-  },
-  "visual_theme_and_colors": {
-    "mode": "dark",
-    "palette": {
-      "background_deep": "#070B14",
-      "background_card": "#0F172A",
-      "background_crt_overlay": "rgba(10, 15, 28, 0.85)",
-      "primary_accent": "#FACC15",
-      "primary_accent_hover": "#EAB308",
-      "text_primary": "#F8FAFC",
-      "text_secondary": "#94A3B8",
-      "text_vhs_green": "#22C55E",
-      "text_vhs_cyan": "#06B6D4",
-      "text_vhs_red": "#EF4444",
-      "border_crt": "rgba(250, 204, 21, 0.2)",
-      "border_subtle": "rgba(255, 255, 255, 0.1)"
-    },
-    "effects": {
-      "scanlines": "repeating-linear-gradient(0deg, rgba(0,0,0,0.3) 0px, rgba(0,0,0,0.3) 1px, transparent 1px, transparent 3px)",
-      "crt_bloom": "0 0 12px rgba(250, 204, 21, 0.35)",
-      "vhs_tracking_bar": "h-1 bg-yellow-400/40 blur-[1px] animate-pulse",
-      "glassmorphism_nav": "backdrop-blur-xl bg-[#070B14]/80 border-b border-yellow-500/20"
-    }
-  },
-  "typography": {
-    "font_family_heading": "Bebas Neue, Impact, Barlow Condensed, sans-serif",
-    "font_family_osd_mono": "VT323, Courier New, monospace",
-    "font_family_body": "Outfit, Plus Jakarta Sans, sans-serif",
-    "scale": {
-      "h1_hero": "text-4xl sm:text-5xl lg:text-6xl tracking-tight uppercase font-black",
-      "h2_section": "text-2xl sm:text-3xl lg:text-4xl uppercase tracking-wide",
-      "h3_card": "text-xl sm:text-2xl font-bold",
-      "osd_label": "text-xs sm:text-sm font-mono uppercase tracking-[0.2em] text-yellow-400",
-      "body": "text-base sm:text-lg leading-relaxed"
-    }
-  },
-  "layout_and_spacing": {
-    "container": "max-w-6xl mx-auto px-4 sm:px-6 lg:px-8",
-    "mobile_first": true,
-    "card_aspect_ratio": "aspect-video (16:9 4:3 broadcast frame)",
-    "bento_grid": "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6"
-  },
-  "key_features_and_flows": [
-    "Navbar with Logo ('ALREADY AIRED'), Search Handle Quick-Input, Leaderboards link, Recent Ticker link",
-    "Landing Hero: Handle Input with (@) prefix, 'Find My Episode' button, Spice Toggle (Roast / Savage)",
-    "Recent Episodes Live Ticker: Marquee auto-scrolling recent generated prophecies with episode stills and handles",
-    "Analysis Loading State: 'Reading @handle...' with 3 personality tags extracted/editable ('builder', 'chronically online', 'AI obsessed')",
-    "3-Tap Fallback Flow: Quick option selector if handle API is throttled or user inputs custom details",
-    "Archive Searching Generation State: TV static flicker animation, rolling season/episode numbers, typing text effect, TV channel switch wipe",
-    "Episode Output Card (Hero Object): 16:9 paused VHS/TV capture frame, yellow subtitle bar at bottom, episode metadata badge (Season, Ep #, Air Date 1999), 3 prophecy cards (ALREADY HAPPENED, COMING NEXT YEAR, COMING 2029-2032)",
-    "Action/Share Bar: One-click Share to X with pre-filled viral text, Copy direct link, Download high-res PNG card preview, 'Prophesy a Friend' CTA",
-    "Public Episode View (/ep/:id): Dedicated page for sharing links with big 'Find Your Episode' sticky CTA",
-    "Handle Profile Page (/u/:handle): Profile header with avatar, total prophecies, grid of all aired episodes for this user",
-    "Leaderboards Page: 3 tabs ('Most Prophesied Handles', 'Top Prophets', 'Most Shared Episodes')",
-    "Report Episode Button: Modal dialog to report inaccurate or offensive prophecies",
-    "Light/Dark Theme Switcher: CRT Amber Dark Mode vs Vintage Broadcast CRT Light Mode"
+  "project_name": "Already Aired - Simpsons Predictions Timeline",
+  "archetype": "Pastel & Soft Cartoon Brutalism (Springfield Sky & Simpsons Yellow)",
+  "emotional_tone": "Playful, Nostalgic, Astonishing, Cartoonish, High-Legibility Pop",
+  "design_principles": [
+    "Fusion over Imitation: Springfield intro sky aesthetics combined with bold cartoon brutalism, thick wobbly/chunky black borders, and playful comic cards.",
+    "Content is King & High Contrast Legibility: Big, ultra-readable typography, minimal copy clutter, bold statistical callouts, zero text-density fatigue.",
+    "Zero Dark Navy CRT: Full transformation from dark VHS mode to vibrant sunny blue sky, Simpsons yellow (#FFD90F), and bright candy accent colors.",
+    "Interactive Timeline Clarity: Seamless sorting, category filtering, and visual gap badges (e.g., '16 Years Early') for 24 real documented predictions."
   ],
-  "image_urls": {
-    "retro_tv_frame": "https://images.unsplash.com/photo-1722080668729-3fd4e3c88b5e?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHw0fHxyZXRybyUyMHllbGxvdyUyMGNhcnRvb24lMjBDUlQlMjBzY3JlZW4lMjBWSFMlMjB0ZWxldmlzaW9ufGVufDB8fHx8MTc5MTYzNTQ0M3ww&ixlib=rb-4.1.0&q=85",
-    "tv_stack": "https://images.unsplash.com/photo-1749209901692-fc86e51b22a1?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwzfHxyZXRybyUyMHllbGxvdyUyMGNhcnRvb24lMjBDUlQlMjBzY3JlZW4lMjBWSFMlMjB0ZWxldmlzaW9ufGVufDB8fHx8MTc5MTYzNTQ0M3ww&ixlib=rb-4.1.0&q=85",
-    "vhs_screen": "https://images.unsplash.com/photo-1692731974074-03e7ef257a79?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NTY2NzV8MHwxfHNlYXJjaHwyfHxyZXRybyUyMHllbGxvdyUyMGNhcnRvb24lMjBDUlQlMjBzY3JlZW4lMjBWSFMlMjB0ZWxldmlzaW9ufGVufDB8fHx8MTc5MTYzNTQ0M3ww&ixlib=rb-4.1.0&q=85"
+  "typography": {
+    "font_families": {
+      "display": "'Luckiest Guy', 'Fredoka', 'Bungee', cursive, sans-serif",
+      "heading": "'Fredoka', 'Titan One', 'Outfit', sans-serif",
+      "body": "'Nunito', 'Plus Jakarta Sans', sans-serif",
+      "mono": "'JetBrains Mono', monospace"
+    },
+    "google_fonts_embed": "https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Luckiest+Guy&family=Nunito:wght@400;600;700;800;900&display=swap",
+    "scale": {
+      "h1_hero": "text-4xl sm:text-6xl lg:text-7xl font-extrabold tracking-wide uppercase drop-shadow-[4px_4px_0px_#000000]",
+      "h2_section": "text-3xl sm:text-4xl lg:text-5xl font-black tracking-tight drop-shadow-[3px_3px_0px_#000000]",
+      "h3_card": "text-xl sm:text-2xl font-bold tracking-tight text-slate-900",
+      "badge_text": "text-xs sm:text-sm font-black uppercase tracking-wider",
+      "body_text": "text-base sm:text-lg font-semibold text-slate-800 leading-relaxed",
+      "stat_number": "text-3xl sm:text-5xl font-black text-slate-900 drop-shadow-[2px_2px_0px_#FFFFFF]"
+    }
   },
-  "UNIVERSAL GUIDELINES FOR MAIN AGENT": [
-    "All interactive elements MUST include data-testid attributes (e.g. data-testid=\"handle-input\", data-testid=\"generate-btn\", data-testid=\"share-x-btn\").",
-    "Never use generic centered plain white layouts — lean heavily into the dark CRT navy background with electric yellow highlights and scanline texture overlays.",
-    "Ensure high contrast on all text: white/yellow readable text over dark semi-opaque surfaces.",
-    "Include subtle micro-animations: hover scale, pulse on VHS timestamps, typing animation during generation, scanline shimmer."
+  "colors": {
+    "primary_simpsons_yellow": "#FFD90F",
+    "primary_yellow_hover": "#F2C700",
+    "springfield_sky_light": "#7DD3FC",
+    "springfield_sky_main": "#38BDF8",
+    "springfield_sky_deep": "#0284C7",
+    "cloud_white": "#FFFFFF",
+    "outline_black": "#000000",
+    "card_bg_light": "#FFFDF0",
+    "card_bg_featured": "#FFF59D",
+    "text_main": "#0F172A",
+    "categories": {
+      "tech": { "bg": "#E0F2FE", "border": "#0284C7", "text": "#0369A1", "badge": "#38BDF8" },
+      "politics": { "bg": "#FEE2E2", "border": "#DC2626", "text": "#B91C1C", "badge": "#EF4444" },
+      "science": { "bg": "#DCFCE7", "border": "#16A34A", "text": "#15803D", "badge": "#22C55E" },
+      "sports": { "bg": "#FEF3C7", "border": "#D97706", "text": "#B45309", "badge": "#F59E0B" },
+      "culture": { "bg": "#F3E8FF", "border": "#9333EA", "text": "#7E22CE", "badge": "#A855F7" },
+      "business": { "bg": "#FFEDD5", "border": "#EA580C", "text": "#C2410C", "badge": "#F97316" }
+    }
+  },
+  "surfaces_and_borders": {
+    "cartoon_card": "bg-[#FFFDF0] border-4 border-black rounded-3xl p-6 shadow-[6px_6px_0px_0px_#000000] hover:shadow-[10px_10px_0px_0px_#000000] hover:-translate-y-1.5 transition-all duration-200",
+    "featured_card": "bg-[#FFD90F] border-4 border-black rounded-3xl p-6 shadow-[8px_8px_0px_0px_#000000] hover:shadow-[12px_12px_0px_0px_#000000] hover:-translate-y-1.5 transition-all duration-200",
+    "pill_button_active": "bg-[#FFD90F] text-black border-3 border-black font-extrabold shadow-[4px_4px_0px_0px_#000000] translate-y-[-2px]",
+    "pill_button_inactive": "bg-white text-slate-800 border-3 border-black font-bold shadow-[3px_3px_0px_0px_#000000] hover:bg-yellow-100 hover:translate-y-[-2px] transition-all",
+    "header_bar": "sticky top-0 z-50 bg-[#38BDF8]/90 backdrop-blur-md border-b-4 border-black px-4 py-3 shadow-[0_4px_0px_rgba(0,0,0,1)]",
+    "timeline_spine": "w-3 bg-black rounded-full shadow-[2px_2px_0px_#FFD90F]"
+  },
+  "visual_enhancers": {
+    "clouds_background": "Animated floating fluffy SVG clouds over a blue sky gradient (`from-[#7DD3FC] via-[#38BDF8] to-[#0284C7]`) with customizable speed and subtle drift.",
+    "cartoon_halftone_dots": "Subtle yellow/blue radial dot pattern in background section transitions (`background-image: radial-gradient(#000000 10%, transparent 11%)`).",
+    "speech_bubble_badge": "Relative position container with a small triangular SVG beak pointing toward the gap marker or episode tag.",
+    "springfield_hills_footer": "Layered SVG green hills vector background above footer with bright yellow text."
+  },
+  "components_structure": {
+    "HeaderNav": "Includes Springfield-styled logo title 'ALREADY AIRED', quick prediction count pill, theme music toggle icon, and direct scroll navigation.",
+    "HeroSection": "Bright cloud sky background, massive 3D-styled yellow title 'ALREADY AIRED', tag line '24 Times The Simpsons Predicted The Future', and key statistics ticker bar.",
+    "StatsBar": "Cartoon stat widgets: Total Predictions (24), Average Gap (12.4 Years), Longest Gap (29 Years - S02E18), Top Category (Tech & Politics).",
+    "FilterBar": "Category selector chips ('All', 'Tech', 'Politics', 'Science', 'Sports', 'Culture', 'Business'), Search bar with thick wobbly black outline, and Sort Toggle ('Chronological Came True' vs 'Aired Date' vs 'Gap Length').",
+    "PredictionTimeline": "Vertical central spine on desktop (cards alternating left/right) and left spine on mobile. Each node features a yellow donut bullet point with thick black outline.",
+    "PredictionCard": "Card displaying Episode Code (e.g. S11E17), Episode Title, Year Aired (1998), Year Came True (2016), Gap pill ('18 Years Early'), Category tag, Bold headline, Concise summary, and detail expand modal button.",
+    "DetailModal": "Thick black outline modal popping up with high-contrast information, episode trivia, real-life outcome comparison, and sharing clip feature.",
+    "Footer": "Fan site legal disclaimer banner ('Fan creation. Not affiliated with Fox, Disney, or The Simpsons.'), SVG cloud horizon, and back-to-top button."
+  },
+  "predictions_dataset": [
+    {
+      "id": "trump-presidency",
+      "episode_code": "S11E17",
+      "episode_title": "Bart to the Future",
+      "aired_year": 2000,
+      "came_true_year": 2016,
+      "gap_years": "16 years early",
+      "category": "politics",
+      "headline": "Donald Trump Becomes President",
+      "detail": "Lisa becomes president after Donald Trump leaves office, leaving the country broke. Trump officially took office 16 years later.",
+      "featured": true,
+      "icon_name": "Landmark"
+    },
+    {
+      "id": "smartwatch",
+      "episode_code": "S06E19",
+      "episode_title": "Lisa's Wedding",
+      "aired_year": 1995,
+      "came_true_year": 2014,
+      "gap_years": "19 years early",
+      "category": "tech",
+      "headline": "Smartwatches & Voice Calling",
+      "detail": "Hugh Parkfield uses a wristwatch device to make phone calls and talk to his watch, predicting the Apple Watch nearly two decades early.",
+      "featured": true,
+      "icon_name": "Watch"
+    },
+    {
+      "id": "faulty-voting-machines",
+      "episode_code": "S20E04",
+      "episode_title": "Treehouse of Horror XIX",
+      "aired_year": 2008,
+      "came_true_year": 2012,
+      "gap_years": "4 years early",
+      "category": "politics",
+      "headline": "Faulty Electronic Voting Machines",
+      "detail": "Homer tries to vote for Barack Obama, but the voting machine flips his vote to John McCain. In 2012, Pennsylvania voting machines did exactly that.",
+      "featured": false,
+      "icon_name": "Vote"
+    },
+    {
+      "id": "higgs-boson",
+      "episode_code": "S10E02",
+      "episode_title": "The Wizard of Evergreen Terrace",
+      "aired_year": 1998,
+      "came_true_year": 2012,
+      "gap_years": "14 years early",
+      "category": "science",
+      "headline": "Mass of the Higgs Boson Particle",
+      "detail": "Homer writes an equation on a chalkboard that accurately predicted the mass of the God particle (Higgs Boson) 14 years before CERN discovered it.",
+      "featured": true,
+      "icon_name": "Atom"
+    },
+    {
+      "id": "disney-buys-fox",
+      "episode_code": "S10E05",
+      "episode_title": "When You Dish Upon a Star",
+      "aired_year": 1998,
+      "came_true_year": 2017,
+      "gap_years": "19 years early",
+      "category": "business",
+      "headline": "Disney Acquires 20th Century Fox",
+      "detail": "A sign outside 20th Century Fox studios shows 'A Division of Walt Disney Co.'. Disney acquired 21st Century Fox for $71.3B in 2017.",
+      "featured": true,
+      "icon_name": "Building2"
+    },
+    {
+      "id": "autocorrect",
+      "episode_code": "S06E08",
+      "episode_title": "Lisa on Ice",
+      "aired_year": 1994,
+      "came_true_year": 2007,
+      "gap_years": "13 years early",
+      "category": "tech",
+      "headline": "Autocorrect Failures ('Beat Up Martin')",
+      "detail": "Kearney writes 'Beat up Martin' on an Apple Newton, which autocorrects to 'Eat up Martha'. Apple engineers famously used this scene as motivation while building the iPhone keyboard.",
+      "featured": false,
+      "icon_name": "Smartphone"
+    },
+    {
+      "id": "facetime-video-calls",
+      "episode_code": "S06E19",
+      "episode_title": "Lisa's Wedding",
+      "aired_year": 1995,
+      "came_true_year": 2010,
+      "gap_years": "15 years early",
+      "category": "tech",
+      "headline": "Video Calling on Rotary Screens",
+      "detail": "Lisa communicates with Marge via a screen mounted on a phone unit, predicting FaceTime and Skype video conferencing.",
+      "featured": false,
+      "icon_name": "Video"
+    },
+    {
+      "id": "siegfried-roy-tiger",
+      "episode_code": "S05E10",
+      "episode_title": "$pringfield",
+      "aired_year": 1993,
+      "came_true_year": 2003,
+      "gap_years": "10 years early",
+      "category": "culture",
+      "headline": "White Tiger Attack on Performers",
+      "detail": "Gunter & Ernst are attacked by their white tiger in Mr. Burns' casino. Ten years later, Roy Horn of Siegfried & Roy was tragically attacked on stage by a white tiger.",
+      "featured": false,
+      "icon_name": "Flame"
+    },
+    {
+      "id": "horse-meat-scandal",
+      "episode_code": "S05E17",
+      "episode_title": "Sweet Seymour Skinner's Baadasssss Song",
+      "aired_year": 1994,
+      "came_true_year": 2013,
+      "gap_years": "19 years early",
+      "category": "culture",
+      "headline": "Horse Meat in School Lunches",
+      "detail": "Lunchlady Doris pours 'assorted horse parts' into school lunches. In 2013, a major European scandal broke out involving horse meat labeled as beef.",
+      "featured": false,
+      "icon_name": "Utensils"
+    },
+    {
+      "id": "fifa-corruption",
+      "episode_code": "S25E16",
+      "episode_title": "You Don't Have to Live Like a Referee",
+      "aired_year": 2014,
+      "came_true_year": 2015,
+      "gap_years": "1 year early",
+      "category": "sports",
+      "headline": "FIFA Corruption & World Cup Arrests",
+      "detail": "The World Football Federation executive is arrested for corruption in Springfield. Just one year later, FIFA officials were arrested by federal agents in Zurich.",
+      "featured": true,
+      "icon_name": "Trophy"
+    },
+    {
+      "id": "super-bowl-champions",
+      "episode_code": "S03E14",
+      "episode_title": "Lisa the Greek",
+      "aired_year": 1992,
+      "came_true_year": 1992,
+      "gap_years": "Predicted exact winner",
+      "category": "sports",
+      "headline": "Washington & Dallas Super Bowl Wins",
+      "detail": "Lisa accurately predicted the Washington Redskins winning Super Bowl XXVI, and when re-dubbed for later years, correctly predicted the Cowboys winning XXVII and XXVIII.",
+      "featured": false,
+      "icon_name": "Award"
+    },
+    {
+      "id": "farmville-yard-work",
+      "episode_code": "S09E12",
+      "episode_title": "Bart Carny",
+      "aired_year": 1998,
+      "came_true_year": 2009,
+      "gap_years": "11 years early",
+      "category": "tech",
+      "headline": "Virtual Yard Work & VR Farming",
+      "detail": "Kids lining up to play 'Yard Work Simulator' in VR, predicting the obsession with casual farming games like FarmVille and Job Simulator.",
+      "featured": false,
+      "icon_name": "Gamepad2"
+    },
+    {
+      "id": "ebola-outbreak",
+      "episode_code": "S09E03",
+      "episode_title": "Lisa's Sax",
+      "aired_year": 1997,
+      "came_true_year": 2014,
+      "gap_years": "17 years early",
+      "category": "science",
+      "headline": "Ebola Virus Book & Outbreak",
+      "detail": "Marge holds a book titled 'Curious George and the Ebola Virus'. The major international West African Ebola outbreak occurred in 2014.",
+      "featured": false,
+      "icon_name": "BookOpen"
+    },
+    {
+      "id": "shard-london",
+      "episode_code": "S06E19",
+      "episode_title": "Lisa's Wedding",
+      "aired_year": 1995,
+      "came_true_year": 2012,
+      "gap_years": "17 years early",
+      "category": "culture",
+      "headline": "The Shard Building in London",
+      "detail": "When Lisa visits London, a skyscraper identical in design and location to The Shard is visible near Tower Bridge—14 years before construction even began.",
+      "featured": false,
+      "icon_name": "Building"
+    },
+    {
+      "id": "three-eyed-fish",
+      "episode_code": "S02E04",
+      "episode_title": "Two Cars in Every Garage and Three Eyes on Every Fish",
+      "aired_year": 1990,
+      "came_true_year": 2011,
+      "gap_years": "21 years early",
+      "category": "science",
+      "headline": "Blinky the Three-Eyed Mutant Fish",
+      "detail": "Bart catches a three-eyed fish named Blinky near the nuclear power plant. Fishermen in Argentina caught a real three-eyed wolf fish near a nuclear plant in 2011.",
+      "featured": true,
+      "icon_name": "Fish"
+    },
+    {
+      "id": "beatles-fan-mail",
+      "episode_code": "S02E18",
+      "episode_title": "Brush with Greatness",
+      "aired_year": 1991,
+      "came_true_year": 2013,
+      "gap_years": "22 years early",
+      "category": "culture",
+      "headline": "Ringo Starr Replies to Decades-Old Fan Mail",
+      "detail": "Ringo Starr responds to Marge's fan mail 50 years later. In 2013, Paul McCartney actually replied to two fans who sent fan mail 50 years prior.",
+      "featured": false,
+      "icon_name": "Mail"
+    },
+    {
+      "id": "vr-goggles-food",
+      "episode_code": "S11E17",
+      "episode_title": "Bart to the Future",
+      "aired_year": 2000,
+      "came_true_year": 2021,
+      "gap_years": "21 years early",
+      "category": "tech",
+      "headline": "Virtual Reality Eating & Metaverse",
+      "detail": "Homer and Marge eat digital food using VR headsets and feeding tubes, predicting modern VR headsets and metaverse culinary experiences.",
+      "featured": false,
+      "icon_name": "Glasses"
+    },
+    {
+      "id": "censoring-michelangelo-david",
+      "episode_code": "S02E09",
+      "episode_title": "Itchy & Scratchy & Marge",
+      "aired_year": 1990,
+      "came_true_year": 2016,
+      "gap_years": "26 years early",
+      "category": "culture",
+      "headline": "Protests Over Michelangelo's David Nudity",
+      "detail": "Springfield residents protest against the nude David statue. In 2016, Russian campaigners held a vote on whether to clothe a replica of David in St. Petersburg.",
+      "featured": false,
+      "icon_name": "ShieldAlert"
+    },
+    {
+      "id": "apple-vision-pro",
+      "episode_code": "S28E02",
+      "episode_title": "Friends and Family",
+      "aired_year": 2016,
+      "came_true_year": 2024,
+      "gap_years": "8 years early",
+      "category": "tech",
+      "headline": "Headset Bumping & Spatial Computing",
+      "detail": "Mr. Burns hires Homer's family to act as his VR family, showing people walking into lampposts while wearing headsets—mirroring 2024 Vision Pro viral videos.",
+      "featured": false,
+      "icon_name": "Headphones"
+    },
+    {
+      "id": "submersible-implosion",
+      "episode_code": "S17E10",
+      "episode_title": "Homer's Paternity Coot",
+      "aired_year": 2006,
+      "came_true_year": 2023,
+      "gap_years": "17 years early",
+      "category": "culture",
+      "headline": "Deep Sea Submersible Oxygen Emergency",
+      "detail": "Homer travels deep underwater in a sub to find lost treasure and runs out of oxygen trapped in coral. In 2023, the Titan sub tragedy captured worldwide attention.",
+      "featured": false,
+      "icon_name": "Anchor"
+    },
+    {
+      "id": "cybertruck-design",
+      "episode_code": "S02E15",
+      "episode_title": "Oh Brother, Where Art Thou?",
+      "aired_year": 1991,
+      "came_true_year": 2019,
+      "gap_years": "28 years early",
+      "category": "tech",
+      "headline": "Angular Car Design 'The Homer'",
+      "detail": "Homer designs a bizarre, angular car with custom specs that bankrupts his brother. Tech fans drew immediate comparisons when Tesla unveiled the angular Cybertruck.",
+      "featured": false,
+      "icon_name": "Car"
+    },
+    {
+      "id": "grease-theft",
+      "episode_code": "S10E01",
+      "episode_title": "Lard of the Dance",
+      "aired_year": 1998,
+      "came_true_year": 2008,
+      "gap_years": "10 years early",
+      "category": "business",
+      "headline": "Stealing Restaurant Cooking Oil / Grease",
+      "detail": "Homer and Bart steal grease from school kitchens to sell for profit. A decade later, rising biofuel prices led to a real-world crime wave of restaurant grease thefts.",
+      "featured": false,
+      "icon_name": "Droplet"
+    },
+    {
+      "id": "sierpinski-triangle-donut",
+      "episode_code": "S26E10",
+      "episode_title": "The Man Who Came to Be Dinner",
+      "aired_year": 2015,
+      "came_true_year": 2021,
+      "gap_years": "6 years early",
+      "category": "science",
+      "headline": "Mathematical Geometry In Animation",
+      "detail": "Show writers included complex mathematical equations for topology and string theory that were later published in academic physics journals.",
+      "featured": false,
+      "icon_name": "Brain"
+    },
+    {
+      "id": "lady-gaga-super-bowl",
+      "episode_code": "S23E22",
+      "episode_title": "Lisa Goes Gaga",
+      "aired_year": 2012,
+      "came_true_year": 2017,
+      "gap_years": "5 years early",
+      "category": "culture",
+      "headline": "Lady Gaga Harness Aerial Performance",
+      "detail": "Lady Gaga flies into a stadium suspended by cables in a bedazzled outfit. Five years later, her actual Super Bowl LI halftime show featured the exact same aerial entrance.",
+      "featured": true,
+      "icon_name": "Sparkles"
+    }
+  ],
+  "accessibility": {
+    "contrast_ratio": "AA/AAA compliant: Text is solid black (#0F172A) on high-contrast yellow (#FFD90F), white (#FFFFFF), or soft pastels.",
+    "motion_reduction": "Respects prefers-reduced-motion by disabling cloud animation and card lift effects.",
+    "testing_attributes": "All interactive elements (buttons, chips, card expanders, search inputs, modal triggers) MUST include descriptive `data-testid` attributes (e.g. data-testid='prediction-card-trump-presidency', data-testid='category-chip-politics')."
+  },
+  "instructions_to_main_agent": [
+    "1. Completely strip all dark navy CRT VHS styles from App.css and index.css.",
+    "2. Inject the Google Fonts URL for 'Luckiest Guy', 'Fredoka', and 'Nunito' into index.html or index.css.",
+    "3. Set the HTML/body background to Springfield sky blue gradient (#38BDF8) with floating CSS/SVG clouds.",
+    "4. Use thick wobbly cartoon borders (border-4 border-black) and hard drop shadows (shadow-[4px_4px_0px_#000] or shadow-[6px_6px_0px_#000]) for cards, buttons, and badges.",
+    "5. Render a single-page timeline containing all 24 predictions provided in the dataset with instant category filter chips and instant search.",
+    "6. Keep font sizes large (headings 3xl-6xl, body lg-xl, badges bold base) to satisfy the user's high legibility request.",
+    "7. Include a fan disclaimer footer at the bottom ('Fan site. Not affiliated with Fox, Disney, or The Simpsons').",
+    "8. Ensure every key UI component has data-testid attributes for reliable testing."
   ]
 }
