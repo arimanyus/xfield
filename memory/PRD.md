@@ -21,6 +21,7 @@
 ## Implemented
 - Phase 1 MVP + iterations 2–17 (old dark VHS app with X-handle episodes) — see git history.
 - **2026-06 — Full rewrite**: Springfield-sky cartoon static timeline (24 predictions, category filters, stats, deep links, hills footer, OG meta). Old pages/components deleted. Tested: iteration_7 (frontend 100%).
+- **2026-06 — Card pictures** (user: actual Simpsons family is OK): every card now opens with a big 16:9 Simpsons-style scene (`public/art/cards/{id}.webp`, 960×540, lazy-loaded), drawn once with FLUX dev via the universal key by `backend/scripts_card_art.py` (scene prompts per id; skips existing files — delete a file and rerun with its id to redraw). Round category icon now overlaps the picture's bottom-left. Self-tested desktop + mobile (24/24 images).
 
 ## Backlog / next
 - Wait for user feedback on the static timeline before re-introducing any user angle.
