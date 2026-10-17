@@ -9,7 +9,7 @@ const group = (list) => {
 
 const YearBubble = ({ year }) => (
   <div className="relative z-10 flex md:justify-center" data-testid={`year-${year}`}>
-    <span className="font-display text-3xl sm:text-4xl leading-none bg-simp border-4 border-ink rounded-full px-5 pt-3 pb-1.5 -rotate-3 shadow-[4px_5px_0_#111]">
+    <span className="font-display text-3xl sm:text-4xl leading-none bg-simp border-4 border-ink rounded-full px-5 pt-3 pb-1.5 -rotate-3">
       {year}
     </span>
   </div>

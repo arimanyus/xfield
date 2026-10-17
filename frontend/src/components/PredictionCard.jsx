@@ -34,7 +34,7 @@ export const PredictionCard = ({ p, tilt }) => {
 
       <div className="px-1 sm:px-2">
         <div className="flex items-end gap-3 -mt-7 relative">
-          <span className="shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-full border-4 border-ink grid place-items-center shadow-[3px_3px_0_#111]" style={{ background: color }}>
+          <span className="shrink-0 w-14 h-14 sm:w-16 sm:h-16 rounded-full border-4 border-ink grid place-items-center" style={{ background: color }}>
             <Icon className="w-7 h-7 sm:w-8 sm:h-8" strokeWidth={2.5} />
           </span>
           <div className="font-head font-bold text-sm sm:text-base uppercase tracking-wide text-ink/70 pb-1 min-w-0" data-testid={`prediction-episode-${p.id}`}>

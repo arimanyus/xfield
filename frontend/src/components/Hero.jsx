@@ -19,7 +19,7 @@ export const Hero = ({ count }) => (
           <br />
           SAW IT COMING.
         </h1>
-        <p className="mt-6 font-head font-bold text-xl sm:text-2xl text-white [text-shadow:2px_2px_0_#111]" data-testid="hero-subtitle">
+        <p className="mt-6 font-head font-bold text-xl sm:text-2xl text-white [text-shadow:0_2px_10px_rgba(0,40,90,0.35)]" data-testid="hero-subtitle">
           {count} times a cartoon called the future. Years early.
         </p>
         <a href="#timeline" className="btn-toon mt-8" data-testid="hero-cta">
@@ -27,7 +27,7 @@ export const Hero = ({ count }) => (
         </a>
       </div>
       <div className="relative mx-auto w-64 sm:w-80 md:w-full max-w-md">
-        <img src="/art/tv.webp" alt="Cartoon TV showing a crystal ball" className="w-full animate-bob drop-shadow-[8px_10px_0_rgba(0,0,0,0.25)]" data-testid="hero-tv-art" />
+        <img src="/art/tv.webp" alt="Cartoon TV showing a crystal ball" className="w-full animate-bob" data-testid="hero-tv-art" />
         <img src="/art/donut.webp" alt="" className="absolute -bottom-4 -left-6 w-24 sm:w-32 animate-spin-slow" aria-hidden="true" />
       </div>
     </div>

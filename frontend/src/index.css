@@ -73,9 +73,7 @@
     background: var(--toon-bg, #fffdf0);
     border: 4px solid #111;
     border-radius: var(--toon-r, 28px);
-    box-shadow: 6px 7px 0 #111;
     filter: url(#wobble);
-    transition: box-shadow 0.2s ease;
   }
   .toon-lift {
     transition: transform 0.2s ease;
@@ -83,41 +81,27 @@
   .toon-lift:hover {
     transform: translateY(-4px) rotate(0deg) !important;
   }
-  .toon-lift:hover::before {
-    box-shadow: 10px 12px 0 #111;
-  }
   .title-toon {
     @apply font-display text-simp;
     letter-spacing: 0.02em;
     text-shadow:
       3px 0 0 #111, -3px 0 0 #111, 0 3px 0 #111, 0 -3px 0 #111,
-      2px 2px 0 #111, -2px -2px 0 #111, 2px -2px 0 #111, -2px 2px 0 #111,
-      6px 7px 0 #111, 5px 8px 0 #111;
+      2px 2px 0 #111, -2px -2px 0 #111, 2px -2px 0 #111, -2px 2px 0 #111;
   }
   .title-toon-sm {
     @apply font-display text-simp;
     text-shadow:
       2px 0 0 #111, -2px 0 0 #111, 0 2px 0 #111, 0 -2px 0 #111,
-      2px 2px 0 #111, -2px -2px 0 #111, 2px -2px 0 #111, -2px 2px 0 #111,
-      4px 4px 0 #111;
+      2px 2px 0 #111, -2px -2px 0 #111, 2px -2px 0 #111, -2px 2px 0 #111;
   }
   .btn-toon {
-    @apply inline-flex items-center gap-2 font-display text-xl sm:text-2xl bg-simp text-ink border-4 border-ink rounded-full px-7 pt-[14px] pb-[10px] transition-[transform,box-shadow,background-color] duration-150 hover:bg-simp-dark hover:-translate-y-1 active:translate-y-0.5;
-    box-shadow: 5px 6px 0 #111;
-  }
-  .btn-toon:hover {
-    box-shadow: 7px 9px 0 #111;
-  }
-  .btn-toon:active {
-    box-shadow: 2px 3px 0 #111;
+    @apply inline-flex items-center gap-2 font-display text-xl sm:text-2xl bg-simp text-ink border-4 border-ink rounded-full px-7 pt-[14px] pb-[10px] transition-[transform,background-color] duration-150 hover:bg-simp-dark hover:-translate-y-1 active:translate-y-0.5;
   }
   .chip-toon {
     @apply shrink-0 inline-flex items-center gap-2 font-head font-bold uppercase text-base sm:text-lg bg-white text-ink border-[3px] border-ink rounded-full px-4 py-1.5 transition-[transform,background-color,box-shadow] duration-150 hover:-translate-y-0.5;
-    box-shadow: 3px 3px 0 #111;
   }
   .sticker {
     @apply inline-block font-display text-ink border-[3px] border-ink rounded-2xl px-3 pt-[7px] pb-[4px] leading-none;
-    box-shadow: 3px 4px 0 #111;
   }
   .no-scrollbar {
     scrollbar-width: none;
