@@ -1,0 +1,26 @@
+{
+  "summary": "Full backend + frontend test of the new Springfield, X town feature. Backend: 17 pytest cases (test_town_backend.py) — all critical endpoints pass (town shape+unchanged diff, finished/reserved residents, 404 unknown, card.jpg JPEG 3:4 for finished + 404 for reserved, share page HTML with og/twitter cards for bots and 302 for browsers, move-in happy/already/invalid/not_found/lights_on, admin check without/with key, hide/restore roundtrip including town removal + resident 404 + move-in 403). Frontend: town map renders with houses, landmarks, Town Hall, stat stickers, ticker, move-in bar, fan disclaimer; finished house click opens resident-sheet (title, tier, neighbourhood, brought, neighbours×8, share, x-link); clicking a neighbour switches the sheet; search opens with search-input, prefix shows search-result-{k} + search-move-in-button for unknown; reserved sheet shows resident-move-in-button; arrival sheet at /h/levelsio?arrive=1 shows title '@levelsio's street', 3 arrival-tagged-* buttons, tapping one opens the reserved resident-sheet with MOVE IN; /h/<unknown> shows '@x isn\\'t in town yet.' with move-in button; move-in with a non-existent handle shows move-in-progress then move-in-error 'There's no X account called @...'; Town Hall landmark navigates to /timeline which still renders 24 prediction cards and back-to-town-link; owner mode via /?admin=KEY strips the param and exposes resident-hide-button on sheets. Mobile 390x844: zero horizontal overflow; header, search, ticker, move-in bar and sheet all fit the viewport.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_town_backend.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py is 651 lines — approaching the 700-line soft cap; consider splitting the move-in job runner, admin, share-page and card routes into separate modules for maintainability.",
+    "CORS is configured with allow_credentials=True while allow_origins defaults to '*' (via CORS_ORIGINS env). Browsers reject credentials with wildcard origins; set explicit origins in prod to avoid surprises.",
+    "GET /api/town returns the full residents array on every version change — fine for current scale (~45 residents) but will grow linearly. Consider ETag/If-None-Match or delta diffs when the town grows past a few hundred residents.",
+    "fetch_avatar() silently clears AVATAR_CACHE at 600 entries (hard cutover). Prefer an LRU to avoid cold-start thrash when many cards are rendered in parallel.",
+    "move-in error code 'failed' is a generic bucket — UI maps every non-'not_found' error to a single toast. Surfacing 'blocked' / 'rate-limited' / 'read_failed' separately in the UI would help users.",
+    "Ticker events use key 'h' (handle) only; adding a canonical 'k' (lowercased key) in the event payload would make client-side matching robust against case changes."
+  ],
+  "updated_files": ["/app/backend/tests/test_town_backend.py"],
+  "success_rate": {"backend": "100% (17/17 critical cases pass; one 'lights_on' re-run skipped only because the preferred reserved handles were already lit during the first pass — the first run confirmed the lights_on ticker event and finished state at the same x,y)", "frontend": "100%"},
+  "test_credentials": "Owner X-Admin-Key: seQiVzVB_MXusJKQlgSsQll5ppdq2CxX (used sparingly, no wrong-key attempts).",
+  "seed_data_creation": "None. Reused the existing finished residents (levelsio, arseneeth, naval, paulg, sama) and reserved residents. One live lights-on move-in for @elonmusk was triggered by the pytest suite (ticker now contains that lights_on event); this is production-relevant town data.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend pytest at /app/backend/tests/test_town_backend.py is the regression suite — run with REACT_APP_BACKEND_URL set. 'lights_on' test auto-skips if all preferred reserved handles are already finished; pick a fresh reserved handle (check /api/town for s=='r') before re-running. Admin key is in /app/memory/test_credentials.md — never spam wrong keys (5/15min lockout). Town already has 44 residents / 4 neighbourhoods including Moe's Dao Alley, Cooling Tower Cove, Channel 6 Heights, Sector 7-AGI.",
+  "rca of the issue": "N/A — no issues found."
+}
