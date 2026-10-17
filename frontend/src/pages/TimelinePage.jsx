@@ -4,6 +4,7 @@ import { PREDICTIONS } from "@/data/predictions";
 import { Hero } from "@/components/Hero";
 import { FilterChips } from "@/components/FilterChips";
 import { Timeline } from "@/components/Timeline";
+import { Footer } from "@/components/Footer";
 
 export default function TimelinePage() {
   const [cat, setCat] = useState("all");
@@ -27,6 +28,7 @@ export default function TimelinePage() {
         <FilterChips value={cat} onChange={setCat} />
         <Timeline items={items} />
       </main>
+      <Footer />
     </>
   );
 }

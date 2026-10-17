@@ -7,9 +7,9 @@ export const Hero = ({ count }) => (
       <a href="#top" className="title-toon-sm text-2xl sm:text-3xl" data-testid="logo">
         ALREADY AIRED
       </a>
-      <span className="sticker bg-white text-base sm:text-lg -rotate-2" data-testid="hero-count-pill">
-        {count} PREDICTIONS
-      </span>
+      <a href="/" className="sticker bg-white text-base sm:text-lg -rotate-2 hover:bg-simp transition-colors" data-testid="back-to-town-link">
+        BACK TO SPRINGFIELD
+      </a>
     </div>
 
     <div className="grid md:grid-cols-[1.25fr_1fr] items-center gap-6 md:gap-10 pt-10 sm:pt-16 pb-10">

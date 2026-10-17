@@ -6,6 +6,7 @@ import os
 import re
 import time
 import xml.etree.ElementTree as ET
+from collections import Counter
 from urllib.parse import unquote
 
 import httpx
@@ -58,9 +59,13 @@ def nitter_pic(url: str) -> str:
     return url
 
 
-def empty(handle: str, source=None) -> dict:
-    return {"handle": handle, "name": handle, "bio": "", "avatar_url": None, "location": "",
-            "followers": None, "posts": [], "source": source, "found": False, "protected": False}
+class Throttled(Exception):
+    pass
+
+
+def empty(handle: str, source=None, throttled: bool = False) -> dict:
+    return {"handle": handle, "name": handle, "bio": "", "avatar_url": None, "location": "", "followers": None,
+            "posts": [], "circle": [], "source": source, "found": False, "protected": False, "throttled": throttled}
 
 
 X_API = "https://api.x.com"
@@ -146,34 +151,143 @@ def _parse_timeline(data: dict, own_handle: str) -> list:
     return posts[:25]
 
 
-async def from_xguest(client: httpx.AsyncClient, handle: str):
+W_REPLY, W_QUOTE, W_MENTION = 3, 2, 1
+
+
+def _user_of(tweet: dict):
+    u = ((tweet.get("core") or {}).get("user_results") or {}).get("result") or {}
+    leg, core = u.get("legacy") or {}, u.get("core") or {}
+    sn = core.get("screen_name") or leg.get("screen_name")
+    if not sn:
+        return None
+    av = (u.get("avatar") or {}).get("image_url") or leg.get("profile_image_url_https") or ""
+    return {"handle": sn, "name": core.get("name") or leg.get("name") or sn,
+            "avatar_url": av.replace("_normal", "_400x400") or None,
+            "protected": bool(leg.get("protected") or (u.get("privacy") or {}).get("protected"))}
+
+
+def _walk_tweets(o, out: list):
+    if isinstance(o, dict):
+        if o.get("__typename") == "Tweet" and "legacy" in o:
+            out.append(o)
+        for v in o.values():
+            _walk_tweets(v, out)
+    elif isinstance(o, list):
+        for v in o:
+            _walk_tweets(v, out)
+
+
+def _stub(handle: str, name: str = None) -> dict:
+    return {"handle": handle, "name": name or handle, "avatar_url": None, "protected": False}
+
+
+def parse_circle(data: dict, own_handle: str) -> list:
+    tweets, own = [], own_handle.lower()
+    _walk_tweets(data, tweets)
+    users, seen, score = {}, set(), Counter()
+    for t in tweets:
+        if u := _user_of(t):
+            users.setdefault(u["handle"].lower(), u)
+    for t in tweets:
+        leg = t["legacy"]
+        tid = leg.get("id_str") or t.get("rest_id")
+        u = _user_of(t)
+        if not u or u["handle"].lower() != own or tid in seen:
+            continue
+        seen.add(tid)
+        if leg.get("retweeted_status_result") or (leg.get("full_text") or "").startswith("RT @"):
+            continue
+        reply = leg.get("in_reply_to_screen_name") or ""
+        if reply and reply.lower() != own:
+            score[reply.lower()] += W_REPLY
+            users.setdefault(reply.lower(), _stub(reply))
+        for m in (leg.get("entities") or {}).get("user_mentions") or []:
+            sn = m.get("screen_name") or ""
+            if sn and sn.lower() not in (own, reply.lower()):
+                score[sn.lower()] += W_MENTION
+                users.setdefault(sn.lower(), _stub(sn, m.get("name")))
+        q = (t.get("quoted_status_result") or {}).get("result") or {}
+        q = q.get("tweet") or q if q.get("__typename") == "TweetWithVisibilityResults" else q
+        qu = _user_of(q) if q else None
+        if qu and qu["handle"].lower() != own:
+            score[qu["handle"].lower()] += W_QUOTE
+    ranked = sorted(score.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [{**users[k], "weight": w} for k, w in ranked if not users[k].get("protected")][:14]
+
+
+async def _user_by_screen_name(client: httpx.AsyncClient, handle: str):
     token = await guest_token(client)
     variables = {"screen_name": handle, "withSafetyModeUserFields": True}
     r = await _gql(client, token, X_OP_USER, "UserByScreenName", variables, X_FEATURES_USER)
     if r.status_code in (401, 403, 429):
         token = await guest_token(client, force=True)
         r = await _gql(client, token, X_OP_USER, "UserByScreenName", variables, X_FEATURES_USER)
+    if r.status_code == 429:
+        raise Throttled(handle)
     if r.status_code != 200:
         logger.warning("x guest UserByScreenName HTTP %s for @%s", r.status_code, handle)
-        return None
+        return None, token
     result = (((r.json().get("data") or {}).get("user") or {}).get("result") or {})
     if not result or result.get("__typename") == "UserUnavailable" or not result.get("rest_id"):
-        return None
+        return "missing", token
+    return result, token
+
+
+def _profile_from_result(result: dict, handle: str) -> dict:
     legacy, core = result.get("legacy") or {}, result.get("core") or {}
     name = core.get("name") or legacy.get("name") or handle
     screen = core.get("screen_name") or legacy.get("screen_name") or handle
     avatar = ((result.get("avatar") or {}).get("image_url") or legacy.get("profile_image_url_https") or "")
-    base = {"handle": screen, "name": name, "bio": clean_text(legacy.get("description") or ""),
-            "avatar_url": avatar.replace("_normal", "_400x400") or None,
-            "location": (result.get("location") or {}).get("location") or legacy.get("location") or "",
-            "followers": legacy.get("followers_count"), "posts": [], "source": "x", "found": True, "protected": False}
+    out = {"handle": screen, "name": name, "bio": clean_text(legacy.get("description") or ""),
+           "avatar_url": avatar.replace("_normal", "_400x400") or None,
+           "location": (result.get("location") or {}).get("location") or legacy.get("location") or "",
+           "followers": legacy.get("followers_count"), "posts": [], "circle": [], "source": "x", "found": True,
+           "protected": False, "throttled": False}
     if legacy.get("protected") or (result.get("privacy") or {}).get("protected"):
-        return {**base, "found": False, "protected": True}
+        return {**out, "found": False, "protected": True}
+    return out
+
+
+async def read_profile_only(handle: str) -> dict:
+    async with httpx.AsyncClient(timeout=10, headers={"User-Agent": UA, "Accept": "*/*"}, follow_redirects=True) as client:
+        throttled = False
+        try:
+            result, _ = await asyncio.wait_for(_user_by_screen_name(client, handle), timeout=20)
+            if result == "missing":
+                return empty(handle, "x")
+            if result:
+                return _profile_from_result(result, handle)
+        except Throttled:
+            throttled = True
+        except Exception as e:
+            logger.warning("profile-only read failed for @%s: %s", handle, e)
+        try:
+            res = await asyncio.wait_for(from_fxtwitter(client, handle), timeout=15)
+            if res:
+                return {**res, "circle": [], "throttled": False}
+        except Exception as e:
+            logger.warning("fxtwitter profile failed for @%s: %s", handle, e)
+        return empty(handle, throttled=throttled)
+
+
+async def from_xguest(client: httpx.AsyncClient, handle: str):
+    result, token = await _user_by_screen_name(client, handle)
+    if result == "missing":
+        return "missing"
+    if not result:
+        return None
+    base = _profile_from_result(result, handle)
+    if base["protected"]:
+        return base
     tweets_vars = {"userId": result["rest_id"], "count": 40, "includePromotedContent": False,
                    "withQuickPromoteEligibilityTweetFields": False, "withVoice": True, "withV2Timeline": True}
     r2 = await _gql(client, token, X_OP_TWEETS, "UserTweets", tweets_vars, X_FEATURES_TWEETS)
+    if r2.status_code == 429:
+        raise Throttled(handle)
     if r2.status_code == 200:
-        base["posts"] = _parse_timeline(r2.json(), screen)
+        data = r2.json()
+        base["posts"] = _parse_timeline(data, base["handle"])
+        base["circle"] = parse_circle(data, base["handle"])
     else:
         logger.warning("x guest UserTweets HTTP %s for @%s (profile only)", r2.status_code, handle)
     return base
@@ -326,18 +440,23 @@ SOURCES = (from_xguest, from_nitter, from_syndication, from_twitterapi, from_fxt
 
 
 async def read_handle(handle: str) -> dict:
+    throttled = False
     async with httpx.AsyncClient(timeout=10, headers={"User-Agent": UA, "Accept": "*/*"}, follow_redirects=True) as client:
         for fn in SOURCES:
             try:
                 res = await asyncio.wait_for(fn(client, handle), timeout=30)
+            except Throttled:
+                logger.warning("%s throttled for @%s", fn.__name__, handle)
+                throttled, res = True, None
             except Exception as e:
                 logger.warning("%s failed for @%s: %s", fn.__name__, handle, e)
                 res = None
+            if res == "missing":
+                return empty(handle, fn.__name__)
             if res:
-                if res.get("protected"):
-                    logger.info("@%s is protected (via %s)", handle, res["source"])
-                    return res
-                logger.info("@%s read via %s (%d posts)", handle, res["source"], len(res["posts"]))
+                res.setdefault("circle", [])
+                res.setdefault("throttled", False)
+                logger.info("@%s read via %s (%d posts, %d in circle)", handle, res["source"], len(res["posts"]), len(res["circle"]))
                 return res
     logger.warning("@%s: every source failed or blocked", handle)
-    return empty(handle)
+    return empty(handle, throttled=throttled)

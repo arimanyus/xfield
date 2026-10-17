@@ -1,15 +1,20 @@
 import asyncio
+import hashlib
 import html
+import json
 import logging
 import os
 import re
 import secrets
+import uuid
+from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Optional
 
+import httpx
 from dotenv import load_dotenv
-from fastapi import APIRouter, FastAPI, HTTPException, Query, Request, Response
+from fastapi import APIRouter, FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from pydantic import BaseModel, Field
@@ -18,29 +23,56 @@ from starlette.middleware.cors import CORSMiddleware
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-import storage  # noqa: E402
-from generator import compose_share_card, extract_labels, fetch_avatar, render_card_for_episode, write_episode  # noqa: E402
-from predictions import CATEGORIES, PREDICTIONS  # noqa: E402
+from emergentintegrations.llm.chat import LlmChat, UserMessage  # noqa: E402
+
+import town  # noqa: E402
 from safety import contains_blocked  # noqa: E402
-from xreader import is_valid_handle, normalize_handle, read_handle  # noqa: E402
+from town_card import render_card  # noqa: E402
+from xreader import is_valid_handle, normalize_handle, read_handle, read_profile_only  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("server")
 
 client = AsyncIOMotorClient(os.environ["MONGO_URL"])
 db = client[os.environ["DB_NAME"]]
-MEDIA_DIR = ROOT_DIR / "media"
-MEDIA_DIR.mkdir(exist_ok=True)
-EPISODES_PER_HOUR = int(os.environ["EPISODES_PER_HOUR"])
+LLM_KEY = os.environ["EMERGENT_LLM_KEY"]
+NAMING_MODEL = os.environ["TEXT_MODEL"]
+ADMIN_KEY = os.environ["ADMIN_KEY"]
+MOVEINS_PER_HOUR = int(os.environ["MOVEINS_PER_HOUR"])
+CARD_DIR = ROOT_DIR / "media" / "cards"
+CARD_DIR.mkdir(parents=True, exist_ok=True)
+CIRCLE_SIZE = 8
+READ_TTL = timedelta(days=7)
+ACTIVE_JOB = ("queued", "reading", "traffic", "building")
 BOT_RE = re.compile(r"twitterbot|facebookexternalhit|slackbot|discordbot|whatsapp|telegrambot|linkedinbot|googlebot|"
                     r"bingbot|embedly|pinterest|redditbot|applebot|skypeuripreview|vkshare|iframely|quora link preview", re.I)
+LANDMARKS = {
+    "power_plant": ("Power Plant", "tech, AI, engineering, programming, science, hardware"),
+    "moes": ("Moe's Tavern", "crypto, trading, betting, memes, shitposting, nightlife"),
+    "kwik_e_mart": ("Kwik-E-Mart", "founders, startups, business, VC, marketing, indie hackers, e-commerce"),
+    "krusty_studios": ("Krusty Studios", "media, entertainment, comedy, film, TV, music, creators, influencers"),
+    "elementary": ("Springfield Elementary", "education, academia, research, books, writing, history, philosophy"),
+    "stadium": ("Springfield Stadium", "sports, fitness, football, basketball, athletes"),
+    "comic_shop": ("Android's Dungeon", "gaming, comics, anime, sci-fi, fandoms, nerd culture"),
+    "lard_lad": ("Lard Lad Donuts", "food, lifestyle, travel, fashion, health, family, everything else"),
+    "channel6": ("Channel 6 News", "news, politics, journalism, government, policy, geopolitics"),
+}
+FALLBACK_NAMES = ["Evergreen Terrace", "Spalding Way", "Pressboard Estates", "Sunny Shores", "Walnut Street",
+                  "Little Bavaria", "Shelbyville Border", "Rich Texan Ranch", "Squidport", "Lower Springfield"]
 
 app = FastAPI()
-api_router = APIRouter(prefix="/api")
+api = APIRouter(prefix="/api")
+TOWN_LOCK = asyncio.Lock()
+NAMING_LOCK = asyncio.Lock()
+AVATAR_CACHE: dict = {}
 
 
-def now_iso():
-    return datetime.now(timezone.utc).isoformat()
+def now() -> datetime:
+    return datetime.now(timezone.utc)
+
+
+def now_iso() -> str:
+    return now().isoformat()
 
 
 def public_base(request: Request) -> str:
@@ -57,376 +89,502 @@ def client_ip(request: Request) -> str:
     return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown")
 
 
-class ReadRequest(BaseModel):
-    handle: str = Field(min_length=1, max_length=120)
-
-
-class Labels(BaseModel):
-    role: str = Field(min_length=1, max_length=40)
-    vibe: str = Field(min_length=1, max_length=40)
-    obsession: str = Field(min_length=1, max_length=40)
-
-
-class CreateEpisodeRequest(BaseModel):
-    handle: str = Field(min_length=1, max_length=120)
-    found_by: Optional[str] = Field(default=None, max_length=120)
-    spice: Literal["savage"] = "savage"
-    fresh: bool = False
-    labels: Labels
-    posts_text: Optional[str] = Field(default=None, max_length=3000)
-
-
-class ShareRequest(BaseModel):
-    channel: str = Field(default="x", max_length=20)
-
-
-class ReportRequest(BaseModel):
-    reason: Optional[str] = Field(default=None, max_length=300)
-
-
 def clean_handle(raw: str) -> str:
     h = normalize_handle(raw)
     if not is_valid_handle(h):
         raise HTTPException(400, "That doesn't look like an X handle (letters, numbers, underscore, max 15).")
     if contains_blocked(h):
-        raise HTTPException(400, "That handle can't be used here.")
+        raise HTTPException(400, "That handle can't move into Springfield.")
     return h
 
 
-async def get_profile(handle: str, cache_only: bool = False) -> dict:
+class MoveInRequest(BaseModel):
+    handle: str = Field(min_length=1, max_length=120)
+    by: Optional[str] = Field(default=None, max_length=120)
+
+
+class HideRequest(BaseModel):
+    hidden: bool = True
+
+
+async def bump():
+    await db.meta.update_one({"_id": "town"}, {"$inc": {"version": 1}}, upsert=True)
+
+
+async def town_version() -> int:
+    doc = await db.meta.find_one({"_id": "town"})
+    return (doc or {}).get("version", 0)
+
+
+# ---------- X reads (cached) ----------
+
+async def get_profile(handle: str) -> dict:
     key = handle.lower()
     doc = await db.profiles.find_one({"handle_lower": key}, {"_id": 0})
-    if doc:
-        if cache_only:
-            return doc["data"]
-        age = datetime.now(timezone.utc) - datetime.fromisoformat(doc["fetched_at"])
-        ttl = timedelta(days=7) if doc["data"].get("found") else timedelta(hours=1)
-        if age < ttl:
+    if doc and "circle" in doc["data"]:
+        age = now() - datetime.fromisoformat(doc["fetched_at"])
+        if age < (READ_TTL if doc["data"].get("found") else timedelta(hours=1)):
             return doc["data"]
     try:
-        data = await asyncio.wait_for(read_handle(handle), timeout=55)
+        data = await asyncio.wait_for(read_handle(handle), timeout=60)
     except Exception as e:
-        logger.warning("read_handle timed out/failed for @%s: %s", handle, e)
-        from xreader import empty
-        data = empty(handle)
-    if data["found"] or not doc:
+        logger.warning("read_handle failed for @%s: %s", handle, e)
+        data = {"handle": handle, "found": False, "protected": False, "throttled": True, "circle": [], "posts": []}
+    if not data.get("throttled"):
         await db.profiles.update_one({"handle_lower": key},
                                      {"$set": {"handle_lower": key, "data": data, "fetched_at": now_iso()}}, upsert=True)
-        return data
-    return doc["data"]
+    return data
 
 
-def ep_public(doc: dict, base: str) -> dict:
-    text_status = doc.get("text_status", "ready")
-    return {
-        "id": doc["id"], "handle": doc["handle"], "display_name": doc.get("display_name"),
-        "avatar_url": doc.get("avatar_url"), "found_by": doc.get("found_by"), "spice": doc["spice"],
-        "labels": doc["labels"], "season": doc.get("season"), "episode": doc.get("episode"),
-        "aired_date": doc.get("aired_date"), "aired_year": doc.get("aired_year"), "title": doc.get("title"),
-        "cast": doc.get("cast") or [],
-        "already_happened": doc.get("already_happened"), "evidence": doc.get("evidence", ""),
-        "coming_near": doc.get("coming_near"), "coming_far": doc.get("coming_far"), "subtitle": doc.get("subtitle"),
-        "text_status": text_status, "image_status": doc["image_status"], "still_kind": doc.get("still_kind"),
-        "image_url": f"{base}/api/episodes/{doc['id']}/image?v=2" if doc["image_status"] == "ready" else None,
-        "card_url": f"{base}/api/episodes/{doc['id']}/card?v=8" if doc["image_status"] == "ready" else None,
-        "share_url": f"{base}/api/s/{doc['id']}", "shares": doc.get("shares", 0),
-        "source": doc.get("source"), "created_at": doc["created_at"],
-    }
+async def get_profile_lite(handle: str) -> dict:
+    key = handle.lower()
+    doc = await db.profiles_lite.find_one({"k": key}, {"_id": 0})
+    if doc and now() - datetime.fromisoformat(doc["fetched_at"]) < READ_TTL:
+        return doc["data"]
+    data = await read_profile_only(handle)
+    if not data.get("throttled"):
+        await db.profiles_lite.update_one({"k": key}, {"$set": {"k": key, "data": data, "fetched_at": now_iso()}}, upsert=True)
+    return data
 
 
-def ep_tile(doc: dict, base: str) -> dict:
-    return {"id": doc["id"], "handle": doc["handle"], "display_name": doc.get("display_name"),
-            "avatar_url": doc.get("avatar_url"), "found_by": doc.get("found_by"), "season": doc["season"],
-            "episode": doc["episode"], "aired_year": doc["aired_year"], "title": doc["title"],
-            "already_happened": doc["already_happened"], "shares": doc.get("shares", 0),
-            "image_url": f"{base}/api/episodes/{doc['id']}/image" if doc["image_status"] == "ready" else None,
-            "created_at": doc["created_at"]}
+# ---------- move in ----------
+
+async def set_job(k: str, state: str, code: str = None, **extra):
+    await db.jobs.update_one({"k": k}, {"$set": {"state": state, "code": code, "updated_at": now_iso(), **extra}}, upsert=True)
+
+
+def job_public(job: dict) -> dict:
+    return {"handle": job["h"], "state": job["state"], "code": job.get("code")}
 
 
 async def check_rate(ip: str):
-    since = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
-    n = await db.gen_events.count_documents({"ip": ip, "ts": {"$gte": since}})
-    if n >= EPISODES_PER_HOUR:
-        raise HTTPException(429, "The archive is closed for you for an hour — too many episodes pulled. Come back soon.")
-    await db.gen_events.insert_one({"ip": ip, "ts": now_iso()})
+    since = now() - timedelta(hours=1)
+    if await db.movein_events.count_documents({"ip": ip, "ts": {"$gte": since}}) >= MOVEINS_PER_HOUR:
+        raise HTTPException(429, "The moving trucks are all out. Try again in a bit.")
+    await db.movein_events.insert_one({"ip": ip, "ts": now()})
 
 
-PUBLIC = {"hidden": False, "text_status": {"$nin": ["pending", "failed"]}}
+async def prepare_circle(k: str, profile: dict) -> list:
+    hidden = {d["k"] async for d in db.residents.find({"hidden": True}, {"_id": 0, "k": 1})}
+    raw = []
+    for c in profile.get("circle") or []:
+        ck = c["handle"].lower()
+        if ck == k or ck in hidden or not is_valid_handle(c["handle"]) or contains_blocked(c["handle"], c.get("name") or ""):
+            continue
+        raw.append(dict(c))
+    raw = raw[:CIRCLE_SIZE + 4]
+    existing = {d["k"]: d async for d in db.residents.find({"k": {"$in": [c["handle"].lower() for c in raw]}}, {"_id": 0})}
+    sem = asyncio.Semaphore(3)
+
+    async def fill(c):
+        ck = c["handle"].lower()
+        if ck in existing:
+            c["avatar_url"] = c.get("avatar_url") or existing[ck].get("avatar_url")
+            c["ok"] = True
+            return
+        if c.get("avatar_url"):
+            c["ok"] = True
+            return
+        async with sem:
+            p = await get_profile_lite(c["handle"])
+        if p.get("throttled"):
+            c["ok"] = True
+        elif p.get("found"):
+            c.update(handle=p["handle"], name=p.get("name") or c["handle"], avatar_url=p.get("avatar_url"), ok=True)
+        else:
+            c["ok"] = False
+
+    await asyncio.gather(*[fill(c) for c in raw])
+    return [c for c in raw if c.get("ok")][:CIRCLE_SIZE]
 
 
-def parse_pasted(text) -> list:
-    if not text:
-        return []
-    out = []
-    for line in re.split(r"\n+", text):
-        line = line.strip(" \t-•*>")
-        if len(line) >= 4:
-            out.append(line[:300])
-    return out[:12]
+async def occupancy() -> tuple:
+    docs = await db.residents.find({}, {"_id": 0, "k": 1, "x": 1, "y": 1}).to_list(None)
+    occupied = {(d["x"], d["y"]) for d in docs}
+    pos = {d["k"]: (d["x"], d["y"]) for d in docs}
+    taken = {town.TOWN_HALL_BLOCK}
+    async for nb in db.neighbourhoods.find({"active": True}, {"_id": 0, "bx": 1, "by": 1}):
+        taken.add((nb["bx"], nb["by"]))
+    for b in taken:
+        occupied.update(town.block_plots(*b))
+    return occupied, pos, taken
 
 
-def with_pasted(profile: dict, pasted: list) -> dict:
-    if not pasted:
-        return profile
-    posts = [{"text": t, "date": "", "pinned": False} for t in pasted] + list(profile.get("posts") or [])
-    return {**profile, "posts": posts, "found": True, "source": profile.get("source") or "pasted"}
+async def place_move_in(k: str, profile: dict, circle: list, by: Optional[str]):
+    occupied, pos, _ = await occupancy()
+    owner = await db.residents.find_one({"k": k}, {"_id": 0})
+    was_reserved = bool(owner and owner["status"] == "reserved")
+    if owner:
+        ox, oy = owner["x"], owner["y"]
+    else:
+        placed = [(pos[c["handle"].lower()], c["weight"]) for c in circle if c["handle"].lower() in pos]
+        if placed:
+            tw = sum(w for _, w in placed)
+            target = (sum(p[0] * w for p, w in placed) / tw, sum(p[1] * w for p, w in placed) / tw)
+        else:
+            target = town.frontier_target(k, occupied)
+        ox, oy = town.nearest_free_plot(*target, occupied)
+        occupied.add((ox, oy))
+    by_k = owner.get("by") if owner else (by if by and by != k else None)
+    by_doc = await db.residents.find_one({"k": by_k}, {"_id": 0, "h": 1}) if by_k else None
+    posts = [p["text"][:160] for p in (profile.get("posts") or [])[:6]]
+    await db.residents.update_one({"k": k}, {"$set": {
+        "h": profile["handle"], "name": profile.get("name") or profile["handle"], "avatar_url": profile.get("avatar_url"),
+        "bio": profile.get("bio", ""), "followers": profile.get("followers"), "posts": posts, "status": "finished",
+        "circle": [{"k": c["handle"].lower(), "w": c["weight"]} for c in circle], "read_at": now_iso(),
+        "finished_at": (owner or {}).get("finished_at") or now_iso(), "x": ox, "y": oy,
+    }, "$setOnInsert": {"k": k, "hidden": False, "by": by_k, "by_h": (by_doc or {}).get("h"), "nb": None,
+                        "created_at": now_iso()}}, upsert=True)
+    new_reserved = 0
+    for c in sorted(circle, key=lambda c: -c["weight"]):
+        ck = c["handle"].lower()
+        if ck in pos:
+            if c.get("avatar_url"):
+                await db.residents.update_one({"k": ck, "avatar_url": None}, {"$set": {"avatar_url": c["avatar_url"]}})
+            continue
+        p = town.nearest_free_plot(ox, oy, occupied)
+        occupied.add(p)
+        pos[ck] = p
+        await db.residents.insert_one({
+            "k": ck, "h": c["handle"], "name": c.get("name") or c["handle"], "avatar_url": c.get("avatar_url"),
+            "bio": "", "status": "reserved", "hidden": False, "x": p[0], "y": p[1], "by": k, "by_h": profile["handle"],
+            "circle": [], "nb": None, "created_at": now_iso()})
+        new_reserved += 1
+    await db.events.insert_one({"type": "lights_on" if was_reserved else "moved_in", "h": profile["handle"],
+                                "by_h": (owner or {}).get("by_h") or (by_doc or {}).get("h"), "n": new_reserved,
+                                "at": now_iso()})
 
 
-async def episode_job(ep_id: str, profile: dict, labels: dict, spice: str, found_by, site_host: str):
+async def refresh_neighbourhoods() -> list:
+    docs = await db.residents.find({"hidden": False}, {"_id": 0, "k": 1, "x": 1, "y": 1, "status": 1, "circle": 1, "nb": 1}).to_list(None)
+    keys = {d["k"] for d in docs}
+    pos = {d["k"]: (d["x"], d["y"]) for d in docs}
+    edges, indeg = defaultdict(dict), Counter()
+    for d in docs:
+        if d["status"] != "finished":
+            continue
+        for c in d.get("circle") or []:
+            m = c["k"]
+            if m in keys and m != d["k"]:
+                w = float(c.get("w", 1))
+                edges[d["k"]][m] = edges[d["k"]].get(m, 0) + w
+                edges[m][d["k"]] = edges[m].get(d["k"], 0) + w
+                indeg[m] += 1
+    groups = town.clusters(sorted(keys), edges)
+    active = await db.neighbourhoods.find({"active": True}, {"_id": 0}).to_list(None)
+    by_anchor = {nb["anchor"]: nb for nb in active}
+    occupied, _, taken = await occupancy()
+    assign, sizes, created = {}, {}, []
+    for g in sorted(groups, key=lambda g: (-len(g), min(g))):
+        anchors = sorted((by_anchor[k] for k in g if k in by_anchor), key=lambda nb: nb["created_at"])
+        if anchors:
+            nb = anchors[0]
+        elif len(g) >= town.MIN_NEIGHBOURHOOD:
+            anchor = max(g, key=lambda k: (indeg[k], -town.hval(k)))
+            cx = sum(pos[k][0] for k in g) / len(g)
+            cy = sum(pos[k][1] for k in g) / len(g)
+            b = town.free_block_near(cx, cy, occupied, taken)
+            if not b:
+                continue
+            nb = {"id": secrets.token_urlsafe(5), "anchor": anchor, "bx": b[0], "by": b[1], "landmark": None,
+                  "name": None, "named": False, "active": True, "size": len(g), "created_at": now_iso()}
+            await db.neighbourhoods.insert_one(dict(nb))
+            taken.add(b)
+            occupied.update(town.block_plots(*b))
+            created.append(nb["id"])
+            by_anchor[anchor] = nb
+        else:
+            continue
+        sizes[nb["id"]] = len(g)
+        for k in g:
+            assign[k] = nb["id"]
+    for nb in active:
+        if nb["id"] not in sizes:
+            await db.neighbourhoods.update_one({"id": nb["id"]}, {"$set": {"active": False}})
+    for nb_id, size in sizes.items():
+        await db.neighbourhoods.update_one({"id": nb_id}, {"$set": {"size": size}})
+    changes = defaultdict(list)
+    for d in docs:
+        if d.get("nb") != assign.get(d["k"]):
+            changes[assign.get(d["k"])].append(d["k"])
+    for nb_id, ks in changes.items():
+        await db.residents.update_many({"k": {"$in": ks}}, {"$set": {"nb": nb_id}})
+    return created
+
+
+NAMING_SYSTEM = (
+    "You run the planning office of a cartoon Springfield on X. A new neighbourhood formed from a group of X accounts "
+    "who talk to each other. Pick the one landmark that fits what they post about, and invent a short, funny, "
+    "Simpsons-flavoured neighbourhood name built around that landmark (e.g. 'Power Plant Heights', 'Moe's Back Alley', "
+    "'Kwik-E Corners'). Max 3 words, max 24 characters, no handles, no real people's names, nothing mean or crude. "
+    "Match the topic list literally: crypto, web3, DAOs and trading always get moes; AI and engineering get power_plant; "
+    "only founders and business talk gets kwik_e_mart. Spread landmarks around town: avoid the ones already used a lot "
+    "unless they are clearly the best fit. "
+    "Reply with JSON only: {\"landmark\": \"<key>\", \"name\": \"<name>\"}.\nLandmark keys:\n"
+    + "\n".join(f"- {k}: {label} ({topics})" for k, (label, topics) in LANDMARKS.items())
+)
+
+
+def _fallback_name(nb_id: str) -> str:
+    return FALLBACK_NAMES[town.hval(nb_id) % len(FALLBACK_NAMES)]
+
+
+async def name_neighbourhood(nb_id: str):
+    async with NAMING_LOCK:
+        await _name_neighbourhood(nb_id)
+
+
+async def _name_neighbourhood(nb_id: str):
+    members = await db.residents.find({"nb": nb_id, "hidden": False},
+                                      {"_id": 0, "h": 1, "name": 1, "bio": 1, "posts": 1, "status": 1}).to_list(40)
+    members.sort(key=lambda m: m["status"] != "finished")
+    lines = []
+    for m in members[:24]:
+        line = f"@{m['h']} ({m.get('name') or ''}) bio: {(m.get('bio') or '')[:160]}"
+        if m.get("posts"):
+            line += " | posts: " + " / ".join(m["posts"][:4])
+        lines.append(line[:700])
+    landmark, name = "lard_lad", _fallback_name(nb_id)
     try:
-        ep = await write_episode(profile, labels, spice, found_by)
-    except Exception:
-        logger.exception("episode writing failed for %s (@%s)", ep_id, profile.get("handle"))
-        await db.episodes.update_one({"id": ep_id}, {"$set": {"text_status": "failed"}})
-        return
-    await db.episodes.update_one({"id": ep_id}, {"$set": {**ep, "text_status": "ready"}})
-    doc = await db.episodes.find_one({"id": ep_id}, {"_id": 0})
-    await image_job(ep_id, doc, profile.get("avatar_url"), site_host)
-
-
-async def _store(path: str, data: bytes, local_name: str) -> str:
-    try:
-        await asyncio.to_thread(storage.put_object, path, data, "image/jpeg")
-        return "storage"
+        chat = LlmChat(api_key=LLM_KEY, session_id=f"nb-{uuid.uuid4()}", system_message=NAMING_SYSTEM).with_model("anthropic", NAMING_MODEL)
+        used = Counter([n["landmark"] async for n in db.neighbourhoods.find({"active": True, "named": True}, {"_id": 0, "landmark": 1})])
+        used_line = ", ".join(f"{k} x{v}" for k, v in used.most_common()) or "none yet"
+        prompt = f"Landmarks already in town: {used_line}\n\nResidents:\n" + "\n".join(lines)
+        raw = await asyncio.wait_for(chat.send_message(UserMessage(text=prompt)), timeout=40)
+        m = re.search(r"\{.*\}", raw, re.S)
+        out = json.loads(m.group(0)) if m else {}
+        if out.get("landmark") in LANDMARKS:
+            landmark = out["landmark"]
+        cand = re.sub(r"[^A-Za-z0-9 '\-&.]", "", str(out.get("name") or "")).strip()
+        if cand and len(cand) <= 26 and "@" not in cand and not contains_blocked(cand):
+            name = cand
     except Exception as e:
-        logger.warning("object storage failed (%s); saving locally", e)
-        (MEDIA_DIR / local_name).write_bytes(data)
-        return "local"
+        logger.warning("neighbourhood naming failed for %s: %s", nb_id, e)
+    await db.neighbourhoods.update_one({"id": nb_id}, {"$set": {"landmark": landmark, "name": name, "named": True}})
+    await bump()
 
 
-async def image_job(ep_id: str, ep: dict, avatar_url, site_host: str):
+async def run_move_in(k: str, h: str, by: Optional[str]):
     try:
-        avatar = await fetch_avatar(avatar_url)
-        card, kind = await render_card_for_episode(ep, avatar)
-        share = await asyncio.to_thread(compose_share_card, ep, card, site_host, avatar)
+        await set_job(k, "reading")
+        profile = None
+        for attempt in range(4):
+            profile = await get_profile(h)
+            if not profile.get("throttled"):
+                break
+            await set_job(k, "traffic")
+            await asyncio.sleep(12 * (attempt + 1))
+        if not profile.get("found"):
+            code = "protected" if profile.get("protected") else ("traffic" if profile.get("throttled") else "not_found")
+            return await set_job(k, "error", code)
+        if contains_blocked(profile["handle"], profile.get("name") or ""):
+            return await set_job(k, "error", "blocked")
+        await set_job(k, "building", h=profile["handle"])
+        circle = await prepare_circle(k, profile)
+        async with TOWN_LOCK:
+            await place_move_in(k, profile, circle, by)
+            created = await refresh_neighbourhoods()
+            await bump()
+        for nb_id in created:
+            asyncio.create_task(name_neighbourhood(nb_id))
+        await set_job(k, "done")
     except Exception:
-        logger.exception("card render failed for %s", ep_id)
-        await db.episodes.update_one({"id": ep_id}, {"$set": {"image_status": "failed"}})
-        return
-    path = f"{storage.APP_NAME}/cards/{ep_id}.jpg"
-    card_path = f"{storage.APP_NAME}/cards/{ep_id}-share.jpg"
-    store = await _store(path, card, f"{ep_id}.jpg")
-    card_store = await _store(card_path, share, f"{ep_id}-share.jpg")
-    await db.episodes.update_one({"id": ep_id}, {"$set": {"image_status": "ready", "image_path": path, "image_store": store,
-                                                          "card_path": card_path, "card_store": card_store, "still_kind": kind}})
+        logger.exception("move-in failed for @%s", h)
+        await set_job(k, "error", "failed")
 
 
-@api_router.get("/")
+@api.get("/")
 async def root():
-    return {"message": "Already Aired archive is online"}
+    return {"message": "Springfield, X is open"}
 
 
-async def existing_episode(handle: str):
-    recent = (datetime.now(timezone.utc) - timedelta(minutes=5)).isoformat()
-    return await db.episodes.find_one(
-        {"handle_lower": handle.lower(), "hidden": False,
-         "$or": [{"text_status": {"$in": ["ready", None]}}, {"text_status": "pending", "created_at": {"$gte": recent}}]},
-        {"_id": 0}, sort=[("created_at", -1)])
-
-
-@api_router.post("/read")
-async def read_profile(body: ReadRequest):
-    handle = clean_handle(body.handle)
-    if existing := await existing_episode(handle):
-        return {"found": True, "handle": existing["handle"], "existing_episode_id": existing["id"]}
-    profile = await get_profile(handle)
-    labels = await extract_labels(profile) if profile["found"] else None
-    posts = profile.get("posts") or []
-    return {"found": profile["found"], "protected": profile.get("protected", False), "handle": profile["handle"],
-            "name": profile.get("name"), "bio": profile.get("bio", ""), "avatar_url": profile.get("avatar_url"),
-            "followers": profile.get("followers"), "post_count": len(posts), "source": profile.get("source"),
-            "labels": labels, "sample_posts": [p["text"][:140] for p in posts[:3]]}
-
-
-@api_router.post("/episodes")
-async def create_episode(body: CreateEpisodeRequest, request: Request):
-    handle = clean_handle(body.handle)
-    found_by = clean_handle(body.found_by) if body.found_by else None
-    if found_by and found_by.lower() == handle.lower():
-        found_by = None
-    labels = {k: v.strip().lower() for k, v in body.labels.model_dump().items()}
-    if contains_blocked(*labels.values()):
-        raise HTTPException(400, "Those answers can't be used here.")
-    if not body.fresh and (existing := await existing_episode(handle)):
-        return ep_public(existing, public_base(request))
+@api.post("/move-in")
+async def move_in(body: MoveInRequest, request: Request):
+    h = clean_handle(body.handle)
+    k = h.lower()
+    by = None
+    if body.by:
+        b = normalize_handle(body.by)
+        by = b.lower() if is_valid_handle(b) else None
+    res = await db.residents.find_one({"k": k}, {"_id": 0})
+    if res and res.get("hidden"):
+        raise HTTPException(403, "That house isn't available.")
+    if res and res["status"] == "finished" and now() - datetime.fromisoformat(res["read_at"]) < READ_TTL:
+        return {"handle": res["h"], "state": "done", "code": "already"}
+    job = await db.jobs.find_one({"k": k}, {"_id": 0})
+    if job and job["state"] in ACTIVE_JOB and now() - datetime.fromisoformat(job["updated_at"]) < timedelta(minutes=3):
+        return job_public(job)
     await check_rate(client_ip(request))
-    pasted = parse_pasted(body.posts_text)
-    if contains_blocked(*pasted):
-        raise HTTPException(400, "Those pasted posts can't be used here.")
-    profile = with_pasted(await get_profile(handle), pasted)
-    ep_id = secrets.token_urlsafe(6)
-    doc = {"id": ep_id, "handle": profile["handle"] if profile["found"] else handle,
-           "handle_lower": handle.lower(), "display_name": profile.get("name") or handle,
-           "avatar_url": profile.get("avatar_url"), "bio": profile.get("bio", ""), "found_by": found_by,
-           "found_by_lower": found_by.lower() if found_by else None, "spice": body.spice, "labels": labels,
-           "pasted_posts": pasted, "source": profile.get("source") or "taps", "text_status": "pending",
-           "image_status": "pending", "shares": 0, "reports": 0, "hidden": False, "created_at": now_iso()}
-    await db.episodes.insert_one(dict(doc))
-    base = public_base(request)
-    asyncio.create_task(episode_job(ep_id, profile, labels, body.spice, found_by, base.split("://", 1)[-1]))
-    return ep_public(doc, base)
+    await db.jobs.update_one({"k": k}, {"$set": {"k": k, "h": h, "state": "queued", "code": None, "by": by,
+                                                 "updated_at": now_iso()}}, upsert=True)
+    asyncio.create_task(run_move_in(k, h, by))
+    return {"handle": h, "state": "queued", "code": None}
 
 
-@api_router.post("/episodes/{ep_id}/retry")
-async def retry_episode(ep_id: str, request: Request):
-    doc = await db.episodes.find_one({"id": ep_id, "hidden": False}, {"_id": 0})
+@api.get("/move-in/{handle}")
+async def move_in_status(handle: str):
+    job = await db.jobs.find_one({"k": normalize_handle(handle).lower()}, {"_id": 0})
+    if not job:
+        raise HTTPException(404, "No move-in for that handle.")
+    return job_public(job)
+
+
+# ---------- town ----------
+
+def inbound_counts(docs: list) -> Counter:
+    keys = {d["k"] for d in docs}
+    indeg = Counter()
+    for d in docs:
+        if d["status"] == "finished":
+            for c in d.get("circle") or []:
+                if c["k"] in keys and c["k"] != d["k"]:
+                    indeg[c["k"]] += 1
+    return indeg
+
+
+TOWN_FIELDS = {"_id": 0, "k": 1, "h": 1, "name": 1, "avatar_url": 1, "status": 1, "x": 1, "y": 1, "by_h": 1, "nb": 1,
+               "circle": 1}
+
+
+@api.get("/town")
+async def get_town(v: Optional[int] = None):
+    version = await town_version()
+    if v is not None and v == version:
+        return {"unchanged": True, "version": version}
+    docs = await db.residents.find({"hidden": False}, TOWN_FIELDS).to_list(None)
+    indeg = inbound_counts(docs)
+    residents = [{"k": d["k"], "h": d["h"], "n": d.get("name") or d["h"], "a": d.get("avatar_url"),
+                  "s": "f" if d["status"] == "finished" else "r", "x": d["x"], "y": d["y"],
+                  "t": town.tier_of(indeg[d["k"]]), "by": d.get("by_h"), "nb": d.get("nb")} for d in docs]
+    nbs = await db.neighbourhoods.find({"active": True}, {"_id": 0, "id": 1, "name": 1, "landmark": 1, "bx": 1, "by": 1,
+                                                          "size": 1, "named": 1}).to_list(None)
+    events = await db.events.find({}, {"_id": 0}).sort("at", -1).to_list(12)
+    finished = sum(1 for r in residents if r["s"] == "f")
+    biggest = max(nbs, key=lambda n: n.get("size", 0), default=None)
+    return {"version": version, "residents": residents, "neighbourhoods": nbs, "ticker": events,
+            "town_hall": {"bx": town.TOWN_HALL_BLOCK[0], "by": town.TOWN_HALL_BLOCK[1]},
+            "stats": {"population": len(residents), "finished": finished, "reserved": len(residents) - finished,
+                      "neighbourhoods": len(nbs),
+                      "biggest": {"name": biggest.get("name"), "size": biggest.get("size")} if biggest and biggest.get("name") else None}}
+
+
+async def load_resident(handle: str) -> dict:
+    doc = await db.residents.find_one({"k": normalize_handle(handle).lower(), "hidden": False}, {"_id": 0})
     if not doc:
-        raise HTTPException(404, "That episode isn't in the archive.")
-    if doc.get("text_status") != "failed":
-        return ep_public(doc, public_base(request))
-    profile = with_pasted(await get_profile(doc["handle"], cache_only=True), doc.get("pasted_posts") or [])
-    await db.episodes.update_one({"id": ep_id}, {"$set": {"text_status": "pending"}})
-    doc["text_status"] = "pending"
-    base = public_base(request)
-    asyncio.create_task(episode_job(ep_id, profile, doc["labels"], doc["spice"], doc.get("found_by"), base.split("://", 1)[-1]))
-    return ep_public(doc, base)
-
-
-async def load_episode(ep_id: str) -> dict:
-    doc = await db.episodes.find_one({"id": ep_id, "hidden": False}, {"_id": 0})
-    if not doc:
-        raise HTTPException(404, "That episode isn't in the archive.")
+        raise HTTPException(404, "Nobody lives there yet.")
     return doc
 
 
-@api_router.get("/episodes/{ep_id}")
-async def get_episode(ep_id: str, request: Request):
-    return ep_public(await load_episode(ep_id), public_base(request))
+async def street(doc: dict) -> dict:
+    all_docs = await db.residents.find({"hidden": False}, {"_id": 0, "k": 1, "status": 1, "circle": 1}).to_list(None)
+    indeg = inbound_counts(all_docs)
+    own = [c["k"] for c in sorted(doc.get("circle") or [], key=lambda c: -c["w"])]
+    inbound = [d["k"] for d in all_docs if d["status"] == "finished" and any(c["k"] == doc["k"] for c in d.get("circle") or [])]
+    order = list(dict.fromkeys(own + inbound))
+    found = {d["k"]: d async for d in db.residents.find({"k": {"$in": order}, "hidden": False},
+                                                        {"_id": 0, "k": 1, "h": 1, "name": 1, "avatar_url": 1, "status": 1})}
+    neighbours = [{"k": k, "h": found[k]["h"], "n": found[k].get("name"), "a": found[k].get("avatar_url"),
+                   "s": "f" if found[k]["status"] == "finished" else "r", "t": town.tier_of(indeg[k])}
+                  for k in order if k in found][:8]
+    tags = [n["h"] for n in neighbours if n["s"] == "r" and n["k"] in own][:3]
+    nb = await db.neighbourhoods.find_one({"id": doc.get("nb"), "active": True}, {"_id": 0}) if doc.get("nb") else None
+    return {"neighbours": neighbours, "tags": tags, "tier": town.tier_of(indeg[doc["k"]]), "inbound": indeg[doc["k"]], "nb": nb}
 
 
-@api_router.get("/episodes/{ep_id}/image")
-async def episode_image(ep_id: str):
-    doc = await db.episodes.find_one({"id": ep_id}, {"_id": 0, "image_status": 1, "image_path": 1, "image_store": 1})
-    if not doc or doc.get("image_status") != "ready":
-        raise HTTPException(404, "Still not ready")
-    return await _serve_image(doc["image_store"], doc["image_path"], f"{ep_id}.jpg")
+def card_payload(doc: dict, st: dict) -> dict:
+    nb = st["nb"] or {}
+    return {"k": doc["k"], "h": doc["h"], "tier": st["tier"], "status": doc["status"], "nb_name": nb.get("name"),
+            "landmark": nb.get("landmark"), "tags": st["tags"],
+            "neighbours": [{"k": n["k"], "h": n["h"], "tier": n["t"], "status": "reserved" if n["s"] == "r" else "finished"}
+                           for n in st["neighbours"]],
+            "avatars": {doc["k"]: doc.get("avatar_url"), **{n["k"]: n["a"] for n in st["neighbours"]}}}
 
 
-@api_router.get("/episodes/{ep_id}/card")
-async def episode_card(ep_id: str):
-    doc = await db.episodes.find_one({"id": ep_id}, {"_id": 0, "image_status": 1, "image_path": 1, "image_store": 1,
-                                                     "card_path": 1, "card_store": 1})
-    if not doc or doc.get("image_status") != "ready":
-        raise HTTPException(404, "Card not ready")
-    if doc.get("card_path"):
-        return await _serve_image(doc["card_store"], doc["card_path"], f"{ep_id}-share.jpg")
-    return await _serve_image(doc["image_store"], doc["image_path"], f"{ep_id}.jpg")
+def card_hash(payload: dict) -> str:
+    return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:10]
 
 
-async def _serve_image(store: str, path: str, local_name: str) -> Response:
-    if store == "local":
-        data = (MEDIA_DIR / local_name).read_bytes()
-    else:
-        data, _ = await asyncio.to_thread(storage.get_object, path)
-    return Response(content=data, media_type="image/jpeg",
-                    headers={"Cache-Control": "public, max-age=31536000, immutable"})
+def share_text(st: dict) -> str:
+    if st["tags"]:
+        return "I'm in Springfield. " + " ".join(f"@{t}" for t in st["tags"]) + " your houses are ready \u2192"
+    return "I'm in Springfield. Come find your house \u2192"
 
 
-@api_router.post("/episodes/{ep_id}/share")
-async def share_episode(ep_id: str, body: ShareRequest):
-    res = await db.episodes.update_one({"id": ep_id}, {"$inc": {"shares": 1}})
-    if not res.matched_count:
-        raise HTTPException(404, "That episode isn't in the archive.")
-    doc = await db.episodes.find_one({"id": ep_id}, {"_id": 0, "shares": 1})
-    return {"shares": doc["shares"]}
-
-
-@api_router.post("/episodes/{ep_id}/report")
-async def report_episode(ep_id: str, body: ReportRequest, request: Request):
-    doc = await db.episodes.find_one({"id": ep_id}, {"_id": 0, "reports": 1})
-    if not doc:
-        raise HTTPException(404, "That episode isn't in the archive.")
-    await db.reports.insert_one({"episode_id": ep_id, "ip": client_ip(request), "reason": body.reason, "ts": now_iso()})
-    reports = doc.get("reports", 0) + 1
-    await db.episodes.update_one({"id": ep_id}, {"$set": {"reports": reports, "hidden": reports >= 3}})
-    return {"reports": reports, "hidden": reports >= 3}
-
-
-@api_router.get("/recent")
-async def recent(request: Request, limit: int = Query(20, ge=1, le=50)):
+@api.get("/residents/{handle}")
+async def resident(handle: str, request: Request):
+    doc = await load_resident(handle)
+    st = await street(doc)
     base = public_base(request)
-    docs = await db.episodes.find(PUBLIC, {"_id": 0}).sort("created_at", -1).to_list(limit)
-    return [ep_tile(d, base) for d in docs]
+    brought = await db.residents.count_documents({"by": doc["k"], "hidden": False})
+    lit = await db.residents.count_documents({"by": doc["k"], "hidden": False, "status": "finished"})
+    nb = st["nb"]
+    v = card_hash(card_payload(doc, st))
+    return {"k": doc["k"], "h": doc["h"], "name": doc.get("name"), "avatar_url": doc.get("avatar_url"),
+            "status": "finished" if doc["status"] == "finished" else "reserved", "x": doc["x"], "y": doc["y"],
+            "tier": st["tier"], "tier_name": town.TIERS[st["tier"]], "inbound": st["inbound"], "by_h": doc.get("by_h"),
+            "neighbourhood": {"id": nb["id"], "name": nb.get("name"), "landmark": nb.get("landmark")} if nb else None,
+            "neighbours": st["neighbours"], "brought": brought, "brought_lit": lit,
+            "share": {"text": share_text(st), "url": f"{base}/api/s/{doc['h']}", "tags": st["tags"]},
+            "card_url": f"{base}/api/residents/{doc['h']}/card.jpg?v={v}" if doc["status"] == "finished" else None}
 
 
-@api_router.get("/handles/{handle}")
-async def handle_page(handle: str, request: Request):
-    h = clean_handle(handle)
+async def fetch_avatar(url: Optional[str]) -> Optional[bytes]:
+    if not url:
+        return None
+    if url in AVATAR_CACHE:
+        return AVATAR_CACHE[url]
+    try:
+        async with httpx.AsyncClient(timeout=6, follow_redirects=True) as c:
+            r = await c.get(url)
+        data = r.content if r.status_code == 200 and r.headers.get("content-type", "").startswith("image") else None
+    except Exception:
+        data = None
+    if len(AVATAR_CACHE) > 600:
+        AVATAR_CACHE.clear()
+    AVATAR_CACHE[url] = data
+    return data
+
+
+@api.get("/residents/{handle}/card.jpg")
+async def resident_card(handle: str, request: Request):
+    doc = await load_resident(handle)
+    if doc["status"] != "finished":
+        raise HTTPException(404, "That house is still under scaffolding.")
+    st = await street(doc)
+    payload = card_payload(doc, st)
+    path = CARD_DIR / f"{doc['k']}-{card_hash(payload)}.jpg"
+    if not path.exists():
+        urls = payload.pop("avatars")
+        blobs = await asyncio.gather(*[fetch_avatar(u) for u in urls.values()])
+        avatars = dict(zip(urls.keys(), blobs))
+        host = public_base(request).split("://", 1)[-1]
+        data = await asyncio.to_thread(render_card, payload, avatars, host)
+        path.write_bytes(data)
+    return Response(content=path.read_bytes(), media_type="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=86400"})
+
+
+@api.get("/s/{handle}")
+async def share_page(handle: str, request: Request):
     base = public_base(request)
-    docs = await db.episodes.find({**PUBLIC, "handle_lower": h.lower()}, {"_id": 0}).sort("created_at", -1).to_list(100)
-    cached = await db.profiles.find_one({"handle_lower": h.lower()}, {"_id": 0})
-    data = (cached or {}).get("data") or {}
-    found_for = await db.episodes.count_documents({**PUBLIC, "found_by_lower": h.lower()})
-    return {"handle": data.get("handle") or (docs[0]["handle"] if docs else h),
-            "name": data.get("name") or (docs[0]["display_name"] if docs else h),
-            "bio": data.get("bio", ""), "avatar_url": data.get("avatar_url") or (docs[0].get("avatar_url") if docs else None),
-            "followers": data.get("followers"), "episode_count": len(docs), "prophet_count": found_for,
-            "episodes": [ep_tile(d, base) for d in docs]}
-
-
-@api_router.get("/leaderboard")
-async def leaderboard(request: Request, type: Literal["prophesied", "prophets", "shared"] = "prophesied",
-                      period: Literal["today", "all"] = "all"):
-    base = public_base(request)
-    match = dict(PUBLIC)
-    if period == "today":
-        start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
-        match["created_at"] = {"$gte": start}
-    if type == "shared":
-        docs = await db.episodes.find(match, {"_id": 0}).sort([("shares", -1), ("created_at", -1)]).to_list(20)
-        return [ep_tile(d, base) for d in docs]
-    group_key = "$handle_lower" if type == "prophesied" else "$found_by_lower"
-    if type == "prophets":
-        match["found_by_lower"] = {"$ne": None}
-    pipeline = [{"$match": match}, {"$sort": {"created_at": -1}},
-                {"$group": {"_id": group_key, "count": {"$sum": 1},
-                            "handle": {"$first": "$handle" if type == "prophesied" else "$found_by"},
-                            "name": {"$first": "$display_name"}, "avatar_url": {"$first": "$avatar_url"},
-                            "latest_id": {"$first": "$id"}, "latest_title": {"$first": "$title"}}},
-                {"$sort": {"count": -1}}, {"$limit": 20}]
-    rows = await db.episodes.aggregate(pipeline).to_list(20)
-    return [{"handle": r["handle"], "name": r["name"] if type == "prophesied" else None,
-             "avatar_url": r["avatar_url"] if type == "prophesied" else None, "count": r["count"],
-             "latest_id": r["latest_id"], "latest_title": r["latest_title"]} for r in rows]
-
-
-@api_router.get("/timeline")
-async def timeline(request: Request):
-    base = public_base(request)
-    confirmed = [{**p, "gap": p["event"] - p["aired"], "status": "confirmed"} for p in PREDICTIONS]
-    confirmed.sort(key=lambda p: (p["event"], p["aired"]))
-    docs = await db.episodes.find(PUBLIC, {"_id": 0}).sort("created_at", -1).to_list(60)
-    pending = []
-    for d in docs:
-        for key in ("coming_near", "coming_far"):
-            p = d[key]
-            pending.append({"year": p["year"], "text": p["text"], "handle": d["handle"], "episode_id": d["id"],
-                            "code": f"S{d['season']:02d}E{d['episode']:02d}", "title": d["title"],
-                            "image_url": f"{base}/api/episodes/{d['id']}/image" if d["image_status"] == "ready" else None,
-                            "created_at": d["created_at"]})
-    pending.sort(key=lambda p: (p["year"], p["created_at"]), reverse=False)
-    return {"confirmed": confirmed, "pending": pending[:60], "categories": CATEGORIES,
-            "pending_total": await db.episodes.count_documents(PUBLIC) * 2}
-
-
-@api_router.get("/s/{ep_id}")
-async def share_page(ep_id: str, request: Request):
-    base = public_base(request)
-    doc = await db.episodes.find_one({"id": ep_id, **PUBLIC}, {"_id": 0})
+    doc = await db.residents.find_one({"k": normalize_handle(handle).lower(), "hidden": False}, {"_id": 0})
     if not doc:
         return RedirectResponse(f"{base}/", status_code=302)
-    target = f"{base}/ep/{ep_id}"
+    target = f"{base}/h/{doc['h']}?arrive=1"
     if not BOT_RE.search(request.headers.get("user-agent", "")):
         return RedirectResponse(target, status_code=302)
-    title = html.escape(f"The Simpsons predicted @{doc['handle']} in {doc['aired_year']}")
-    desc = html.escape(f"S{doc['season']:02d}E{doc['episode']:02d} “{doc['title']}” — {doc['already_happened']}")
-    img = f"{base}/api/episodes/{ep_id}/image"
-    page = f"""<!doctype html><html><head><meta charset="utf-8"><title>{title} · Already Aired</title>
+    st = await street(doc)
+    nb_name = (st["nb"] or {}).get("name") or "Springfield"
+    title = html.escape(f"@{doc['h']} lives in {nb_name}")
+    tags = ", ".join(f"@{t}" for t in st["tags"])
+    desc = html.escape(f"Next to {tags}. Your house is ready." if tags else "Springfield, X: the town built from who talks to whom.")
+    img = f"{base}/api/residents/{doc['h']}/card.jpg?v={card_hash(card_payload(doc, st))}" if doc["status"] == "finished" else ""
+    page = f"""<!doctype html><html><head><meta charset="utf-8"><title>{title} · Springfield, X</title>
 <meta name="description" content="{desc}">
 <meta property="og:type" content="website"><meta property="og:site_name" content="Already Aired">
 <meta property="og:title" content="{title}"><meta property="og:description" content="{desc}">
 <meta property="og:url" content="{target}"><meta property="og:image" content="{img}">
-<meta property="og:image:width" content="1200"><meta property="og:image:height" content="675">
+<meta property="og:image:width" content="1260"><meta property="og:image:height" content="1680">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{title}">
 <meta name="twitter:description" content="{desc}"><meta name="twitter:image" content="{img}">
 <meta http-equiv="refresh" content="0;url={target}"></head>
@@ -434,24 +592,58 @@ async def share_page(ep_id: str, request: Request):
     return HTMLResponse(page)
 
 
-app.include_router(api_router)
+# ---------- owner-only ----------
+
+async def require_admin(request: Request):
+    ip = client_ip(request)
+    if await db.admin_attempts.count_documents({"ip": ip, "ts": {"$gte": now() - timedelta(minutes=15)}}) >= 5:
+        raise HTTPException(429, "Too many wrong keys. Try again in 15 minutes.")
+    key = request.headers.get("x-admin-key", "")
+    if not key or not secrets.compare_digest(key.encode(), ADMIN_KEY.encode()):
+        await db.admin_attempts.insert_one({"ip": ip, "ts": now()})
+        raise HTTPException(403, "Owner key required.")
+
+
+@api.post("/admin/check")
+async def admin_check(request: Request):
+    await require_admin(request)
+    return {"ok": True}
+
+
+@api.post("/admin/residents/{handle}/hide")
+async def admin_hide(handle: str, body: HideRequest, request: Request):
+    await require_admin(request)
+    k = normalize_handle(handle).lower()
+    res = await db.residents.update_one({"k": k}, {"$set": {"hidden": body.hidden}})
+    if not res.matched_count:
+        raise HTTPException(404, "Nobody lives there.")
+    async with TOWN_LOCK:
+        created = await refresh_neighbourhoods()
+        await bump()
+    for nb_id in created:
+        asyncio.create_task(name_neighbourhood(nb_id))
+    return {"handle": handle, "hidden": body.hidden}
+
+
+app.include_router(api)
 app.add_middleware(CORSMiddleware, allow_credentials=True, allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
                    allow_methods=["*"], allow_headers=["*"])
 
 
 @app.on_event("startup")
 async def startup():
-    await db.episodes.create_index("id", unique=True)
-    await db.episodes.create_index([("handle_lower", 1), ("created_at", -1)])
-    await db.episodes.create_index([("found_by_lower", 1), ("created_at", -1)])
-    await db.episodes.create_index("created_at")
+    await db.residents.create_index("k", unique=True)
+    await db.residents.create_index("by")
+    await db.residents.create_index("nb")
+    await db.neighbourhoods.create_index("id", unique=True)
+    await db.events.create_index("at")
+    await db.jobs.create_index("k", unique=True)
     await db.profiles.create_index("handle_lower", unique=True)
-    await db.gen_events.create_index("ts", expireAfterSeconds=7200)
-    try:
-        await asyncio.to_thread(storage.init_storage)
-        logger.info("Object storage initialized")
-    except Exception as e:
-        logger.error("Storage init failed: %s", e)
+    await db.profiles_lite.create_index("k", unique=True)
+    await db.movein_events.create_index("ts", expireAfterSeconds=3600)
+    await db.admin_attempts.create_index("ts", expireAfterSeconds=900)
+    async for nb in db.neighbourhoods.find({"active": True, "named": False}, {"_id": 0, "id": 1}):
+        asyncio.create_task(name_neighbourhood(nb["id"]))
 
 
 @app.on_event("shutdown")

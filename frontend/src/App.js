@@ -2,8 +2,8 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Sky } from "@/components/Sky";
 import { WobbleDefs } from "@/components/WobbleDefs";
-import { Footer } from "@/components/Footer";
 import TimelinePage from "@/pages/TimelinePage";
+import TownPage from "@/pages/TownPage";
 
 export default function App() {
   return (
@@ -12,9 +12,10 @@ export default function App() {
         <WobbleDefs />
         <Sky />
         <Routes>
-          <Route path="*" element={<TimelinePage />} />
+          <Route path="/timeline" element={<TimelinePage />} />
+          <Route path="/h/:handle" element={<TownPage />} />
+          <Route path="*" element={<TownPage />} />
         </Routes>
-        <Footer />
       </div>
     </BrowserRouter>
   );
