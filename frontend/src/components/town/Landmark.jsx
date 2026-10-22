@@ -2,7 +2,7 @@ import { memo } from "react";
 import { P, TW } from "@/lib/iso";
 import META from "@/data/landmarkMeta.json";
 
-const NAME_SIZE = [76, 40, 26];
+const NAME_SIZE = [84, 46, 28];
 
 const Label = ({ x, y, text, size, sub, onClick, testId }) => {
   const w = text.length * size * 0.62 + size * 1.4;

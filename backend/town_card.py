@@ -166,12 +166,44 @@ def _centered(d, text, font, y, fill, stroke=0):
     d.text(((W - tw) / 2, y), text, font=font, fill=fill, stroke_width=stroke, stroke_fill=INK)
 
 
+def _wrap(d, text, font, max_w):
+    lines, cur = [], ""
+    for word in text.split():
+        trial = f"{cur} {word}".strip()
+        if d.textlength(trial, font=font) <= max_w or not cur:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = word
+    return lines + ([cur] if cur else [])
+
+
+def _sign_board(d, text, top):
+    size, max_w = 58, 940
+    while True:
+        font = _font("LuckiestGuy-Regular.ttf", size)
+        lines = _wrap(d, text, font, max_w)
+        if len(lines) <= 2 or size <= 34:
+            break
+        size -= 4
+    lh = size + 14
+    h = lh * len(lines) + 36
+    x0, x1 = W / 2 - 520, W / 2 + 520
+    for px in (x0 + 140, x1 - 140):
+        d.rectangle([px - 12, top + h - 6, px + 12, top + h + 34], fill=(176, 112, 50), outline=INK, width=5)
+    d.rounded_rectangle([x0, top, x1, top + h], radius=22, fill=CREAM, outline=INK, width=7)
+    d.rounded_rectangle([x0 + 14, top + 14, x1 - 14, top + h - 14], radius=14, outline=INK, width=3)
+    for i, line in enumerate(lines):
+        tw = d.textlength(line, font=font)
+        d.text(((W - tw) / 2, top + 22 + i * lh), line, font=font, fill=INK)
+
+
 def render_card(data: dict, avatars: dict, host: str) -> bytes:
     img = Image.new("RGB", (W, H))
     _sky(img)
     d = ImageDraw.Draw(img)
-    title = _font("LuckiestGuy-Regular.ttf", 150)
-    _centered(d, "SPRINGFIELD, X", title, 58, YELLOW, stroke=9)
+    title = _font("LuckiestGuy-Regular.ttf", 170)
+    _centered(d, "XFIELD", title, 48, YELLOW, stroke=10)
     nb_font = _fit(d, (data.get("nb_name") or "The edge of town").upper(), "Fredoka.ttf", 1000, 60, True)
     _pill(img, d, (data.get("nb_name") or "The edge of town").upper(), nb_font, 300, CREAM)
 
@@ -200,16 +232,23 @@ def render_card(data: dict, avatars: dict, host: str) -> bytes:
         av = _circle(avatars.get(n["k"]), size, ring)
         img.paste(av, (int(top[0] - size / 2), int(top[1] - size - 14)), av)
 
-    handle_line = f"@{data['h']} LIVES HERE".upper()
-    _centered(d, handle_line, _fit(d, handle_line, "LuckiestGuy-Regular.ttf", 1150, 104, stroke=7), 1250, YELLOW, stroke=7)
-    tags = data.get("tags") or []
-    if tags:
-        names = [f"@{t}" for t in tags]
-        line = "Next to " + (", ".join(names[:-1]) + " & " + names[-1] if len(names) > 1 else names[0])
+    reserved = data.get("status") == "reserved"
+    handle_line = (f"@{data['h']}, YOUR HOUSE IS READY" if reserved else f"@{data['h']} LIVES HERE").upper()
+    _centered(d, handle_line, _fit(d, handle_line, "LuckiestGuy-Regular.ttf", 1150, 104, stroke=7), 1248, YELLOW, stroke=7)
+    if data.get("sign"):
+        _sign_board(d, data["sign"], 1372)
     else:
-        line = f"{len(data.get('neighbours', []))} neighbours and counting"
-    _centered(d, line, _fit(d, line, "Fredoka.ttf", 1120, 54, True, 4), 1388, (255, 255, 255), stroke=4)
-    _pill(img, d, f"FIND YOUR HOUSE AT {host}".upper(), _fit(d, f"FIND YOUR HOUSE AT {host}".upper(), "Fredoka.ttf", 1040, 46, True), 1560, YELLOW)
+        tags = data.get("tags") or []
+        if reserved:
+            line = "Only you can light it."
+        elif tags:
+            names = [f"@{t}" for t in tags]
+            line = "Next to " + (", ".join(names[:-1]) + " & " + names[-1] if len(names) > 1 else names[0])
+        else:
+            line = f"{len(data.get('neighbours', []))} neighbours and counting"
+        _centered(d, line, _fit(d, line, "Fredoka.ttf", 1120, 54, True, 4), 1388, (255, 255, 255), stroke=4)
+    cta = ("SIGN IN WITH X AT " if reserved else "FIND YOUR HOUSE AT ") + host.upper()
+    _pill(img, d, cta, _fit(d, cta, "Fredoka.ttf", 1040, 46, True), 1590, YELLOW)
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=90)
     return buf.getvalue()

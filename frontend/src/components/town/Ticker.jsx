@@ -1,10 +1,21 @@
 import { useEffect, useState } from "react";
 import { Megaphone } from "lucide-react";
 
-const line = (e) =>
-  e.type === "lights_on"
-    ? `@${e.h}'s lights are on${e.by_h ? ` · moved in by @${e.by_h}` : ""}`
-    : `@${e.h} just moved in${e.n ? ` · ${e.n} houses reserved` : ""}`;
+const plural = (n, one, many) => (n === 1 ? one : many);
+
+const LINES = {
+  lights_on: (e) => `@${e.h} signed in and turned the lights on`,
+  built: (e) => `@${e.h}'s house went up${e.n ? ` · ${e.n} neighbours reserved` : ""}`,
+  moved: (e) => (e.nb_name ? `@${e.h} moved to ${e.nb_name}` : `@${e.h} moved closer to their people`),
+  grew: (e) => `@${e.h}'s circle grew · ${e.n} ${plural(e.n, "house", "houses")} reserved`,
+  tower: (e) => (e.nb_name ? `New tower on ${e.nb_name}: @${e.h}` : `@${e.h}'s place is a tower now`),
+  new_nb: (e) => `New neighbourhood: ${e.name}`,
+  nb_gone: (e) => `${e.name} emptied out`,
+  demolished: (e) => (e.n > 1 ? `${e.n} empty houses came down · ${e.n} spots opened up` : `@${e.h}'s empty house came down · a spot opened up`),
+  census: (e) => `Census No. ${e.issue} is out`,
+};
+
+const line = (e) => (LINES[e.type] || ((x) => `@${x.h} moved in${x.n ? ` · ${x.n} neighbours reserved` : ""}`))(e);
 
 export const Ticker = ({ events }) => {
   const [i, setI] = useState(0);

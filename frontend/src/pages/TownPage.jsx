@@ -1,27 +1,41 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useParams, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
-import { api, getMe, setMe } from "@/lib/api";
+import { api } from "@/lib/api";
 import { useTown } from "@/hooks/useTown";
+import { useAuth } from "@/hooks/useAuth";
 import { useMoveIn } from "@/hooks/useMoveIn";
 import { useTownAnims } from "@/hooks/useTownAnims";
 import { TownMap } from "@/components/town/TownMap";
 import { TownHeader } from "@/components/town/TownHeader";
 import { SearchFly } from "@/components/town/SearchFly";
+import { AuthChip } from "@/components/town/AuthChip";
 import { MoveInBar } from "@/components/town/MoveInBar";
 import { Ticker } from "@/components/town/Ticker";
 import { ResidentSheet } from "@/components/town/ResidentSheet";
 import { ArrivalSheet } from "@/components/town/ArrivalSheet";
+import { TownHallSheet } from "@/components/town/TownHallSheet";
+import { CensusSheet } from "@/components/town/CensusSheet";
+
+const SIGNIN_ERRORS = {
+  off: "Sign in with X is coming soon.",
+  cancelled: "Sign in was cancelled.",
+  expired: "That sign in took too long. Try again.",
+  x_error: "X didn't let us in. Try again.",
+};
 
 export default function TownPage() {
   const { town, error, refresh } = useTown();
-  const { handle: routeHandle } = useParams();
+  const auth = useAuth();
+  const { handle: routeHandle, issue: routeIssue } = useParams();
+  const { pathname } = useLocation();
   const [params, setParams] = useSearchParams();
-  const navigate = useNavigate();
   const map = useRef(null);
-  const [me, setMeState] = useState(getMe());
   const [sel, setSel] = useState(null);
+  const [hall, setHall] = useState(false);
+  const [census, setCensus] = useState(pathname.startsWith("/census") ? Number(routeIssue) || 0 : null);
   const [arrival, setArrival] = useState(params.get("arrive") ? routeHandle : null);
+  const welcome = useRef(Boolean(params.get("welcome")));
   const anims = useTownAnims(town);
   const routed = useRef(false);
 
@@ -30,64 +44,77 @@ export default function TownPage() {
     if (r) map.current?.flyTo(r.x, r.y);
   }, [town]);
 
-  const select = useCallback((k, mode = "view") => { setSel({ k, mode }); fly(k); }, [fly]);
+  const select = useCallback((k, mode = "view") => { setHall(false); setCensus(null); setSel({ k: k.toLowerCase(), mode }); fly(k); }, [fly]);
 
-  const onDone = useCallback(async (h, already) => {
+  const onDone = useCallback(async (h, code) => {
     const data = (await refresh(true)) || town;
-    if (!getMe()) { setMe(h); setMeState(h.toLowerCase()); }
     fly(h, data);
-    setSel({ k: h.toLowerCase(), mode: already ? "view" : "celebrate" });
+    setSel({ k: h.toLowerCase(), mode: code === "lit" ? "celebrate" : code === "reserved" ? "built" : "view" });
   }, [refresh, town, fly]);
   const moveIn = useMoveIn(onDone);
-  const startMoveIn = useCallback((h) => { setSel(null); moveIn.start(h, me && me !== h.toLowerCase() ? me : null); }, [moveIn, me]);
+  const startMoveIn = useCallback((h) => { setSel(null); moveIn.start(h); }, [moveIn]);
 
   useEffect(() => {
     const key = params.get("admin");
-    if (!key) return;
-    api("/admin/check", { method: "POST", headers: { "X-Admin-Key": key } })
-      .then(() => localStorage.setItem("aa_admin", key))
-      .catch(() => localStorage.removeItem("aa_admin"))
-      .finally(() => { params.delete("admin"); setParams(params, { replace: true }); });
+    const signin = params.get("signin");
+    if (signin) moveIn.fail(SIGNIN_ERRORS[signin] || SIGNIN_ERRORS.x_error);
+    if (key) {
+      api("/admin/check", { method: "POST", headers: { "X-Admin-Key": key } })
+        .then(() => localStorage.setItem("aa_admin", key))
+        .catch(() => localStorage.removeItem("aa_admin"));
+    }
+    if (key || signin || params.get("welcome")) {
+      ["admin", "signin", "welcome"].forEach((p) => params.delete(p));
+      setParams(params, { replace: true });
+    }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!town || routed.current || !routeHandle) return;
     routed.current = true;
+    if (welcome.current) { moveIn.watch(routeHandle); return; }
     setTimeout(() => { fly(routeHandle); if (!arrival) setSel({ k: routeHandle.toLowerCase(), mode: "ready" }); }, 300);
-  }, [town, routeHandle, arrival, fly]);
+  }, [town, routeHandle, arrival, fly, moveIn]);
 
   const skipArrival = useCallback(() => { setArrival(null); if (routeHandle) setSel({ k: routeHandle.toLowerCase(), mode: "ready" }); }, [routeHandle]);
-  const pickTagged = (k) => { setArrival(null); setMe(k); setMeState(k); select(k, "ready"); };
 
   if (!town)
     return (
       <div className="fixed inset-0 grid place-items-center" data-testid="town-loading">
         <div className="text-center">
-          <div className="title-toon text-4xl sm:text-6xl">SPRINGFIELD, X</div>
+          <div className="title-toon text-5xl sm:text-7xl">XFIELD</div>
           {error ? <p className="mt-4 font-head font-bold text-xl text-white">{error}</p> : <Loader2 className="w-10 h-10 animate-spin mx-auto mt-6 text-white" strokeWidth={3} />}
         </div>
       </div>
     );
 
+  const full = town.stats.taken >= town.stats.capacity;
+  const openCensus = () => { setSel(null); setHall(false); setCensus(0); };
   return (
     <div className="fixed inset-0 overflow-hidden" data-testid="town-page">
-      <TownMap ref={map} town={town} anims={anims} me={me} onSelect={(k) => select(k)} onTownHall={() => navigate("/timeline")} onBackground={() => setSel(null)} />
-      <TownHeader stats={town.stats} />
-      <SearchFly residents={town.residents} onPick={(k) => select(k)} onMoveIn={startMoveIn} />
-      {!sel && !arrival && (
+      <TownMap ref={map} town={town} anims={anims} me={auth.user?.k} onSelect={(k) => select(k)} onTownHall={() => { setSel(null); setCensus(null); setHall(true); }} onBackground={() => { setSel(null); setHall(false); setCensus(null); }} />
+      <TownHeader stats={town.stats} onCensus={openCensus} />
+      <div className="absolute right-3 top-3 sm:right-5 sm:top-5 z-30 flex items-start gap-2">
+        <AuthChip auth={auth} onMyHouse={(k) => select(k)} />
+        <SearchFly residents={town.residents} onPick={(k) => select(k)} onMoveIn={startMoveIn} />
+      </div>
+      {!sel && !arrival && !hall && census === null && (
         <div className="absolute inset-x-0 bottom-0 z-20 px-3 pb-3 sm:pb-6 flex justify-center pointer-events-none">
           <div className="w-full max-w-xl pointer-events-auto">
             <Ticker events={town.ticker} />
-            <MoveInBar job={moveIn.job} onSubmit={startMoveIn} onReset={moveIn.reset} />
+            <MoveInBar job={moveIn.job} onSubmit={startMoveIn} onReset={moveIn.reset} full={full} />
             <p className="mt-2 text-center font-head font-bold text-xs sm:text-sm text-white/90 [text-shadow:0_1px_4px_rgba(0,40,90,0.5)]" data-testid="fan-disclaimer">
               Fan site. Not affiliated with The Simpsons, Disney or Fox.
             </p>
           </div>
         </div>
       )}
-      {arrival && <ArrivalSheet handle={arrival} onClose={() => setArrival(null)} onSkip={skipArrival} onPickTagged={pickTagged} />}
+      {hall && <TownHallSheet stats={town.stats} onClose={() => setHall(false)} />}
+      {census !== null && !sel && <CensusSheet issue={census} onIssue={setCensus} onClose={() => setCensus(null)} />}
+      {arrival && <ArrivalSheet handle={arrival} onClose={() => setArrival(null)} onSkip={skipArrival} onPickTagged={(k) => { setArrival(null); select(k, "ready"); }} />}
       {sel && !arrival && (
-        <ResidentSheet handle={sel.k} mode={sel.mode} version={town.version} onClose={() => setSel(null)} onPick={(k) => select(k)} onMoveIn={startMoveIn} onHidden={() => { setSel(null); refresh(true); }} />
+        <ResidentSheet handle={sel.k} mode={sel.mode} version={town.version} auth={auth} onClose={() => setSel(null)} onPick={(k) => select(k)}
+          onMoveIn={startMoveIn} onHidden={() => { setSel(null); refresh(true); }} onChanged={() => refresh(true)} />
       )}
     </div>
   );

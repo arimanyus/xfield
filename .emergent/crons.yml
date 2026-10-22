@@ -1,0 +1,15 @@
+crons:
+  - name: weekly-census
+    description: "Publishes the XField weekly census card every Monday at 9am UTC"
+    cron: "0 9 * * 1"
+    endpoint: "{{BASE_URL}}/api/cron/census"
+    method: POST
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    enabled: true
+  - name: town-refresh
+    description: "Re-reads about a seventh of XField houses daily, moves them and clears stale reserved houses"
+    cron: "30 3 * * *"
+    endpoint: "{{BASE_URL}}/api/cron/refresh"
+    method: POST
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    enabled: true

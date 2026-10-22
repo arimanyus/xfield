@@ -2,7 +2,6 @@ import "@/App.css";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { Sky } from "@/components/Sky";
 import { WobbleDefs } from "@/components/WobbleDefs";
-import TimelinePage from "@/pages/TimelinePage";
 import TownPage from "@/pages/TownPage";
 
 export default function App() {
@@ -12,8 +11,9 @@ export default function App() {
         <WobbleDefs />
         <Sky />
         <Routes>
-          <Route path="/timeline" element={<TimelinePage />} />
           <Route path="/h/:handle" element={<TownPage />} />
+          <Route path="/census/:issue" element={<TownPage />} />
+          <Route path="/census" element={<TownPage />} />
           <Route path="*" element={<TownPage />} />
         </Routes>
       </div>

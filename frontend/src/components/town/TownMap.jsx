@@ -1,58 +1,77 @@
 import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
-import { P, WORLD_W, WORLD_H, blockPlots, djb2 } from "@/lib/iso";
+import { P, WORLD_W, WORLD_H, djb2, houseSpot } from "@/lib/iso";
 import { Ground, Tree } from "@/components/town/Ground";
 import { Building } from "@/components/town/Building";
 import { Landmark, LandmarkLabel } from "@/components/town/Landmark";
 
-const floor3 = (v) => Math.floor(v / 3);
-
 function layout(town) {
   const used = new Set();
-  const occupied = new Set();
   const items = [];
   town.residents.forEach((r) => {
-    used.add(`${floor3(r.x)},${floor3(r.y)}`);
-    occupied.add(`${r.x},${r.y}`);
-    items.push({ type: "res", key: r.k, depth: r.x + r.y, r });
+    used.add(`${r.x},${r.y}`);
+    const [hx, hy] = houseSpot(r.x, r.y);
+    items.push({ type: "res", key: r.k, depth: hx + hy, r });
   });
   const hall = town.town_hall;
   [...town.neighbourhoods, { id: "hall", bx: hall.bx, by: hall.by }].forEach((nb) => {
     used.add(`${nb.bx},${nb.by}`);
-    blockPlots(nb.bx, nb.by).forEach((p) => occupied.add(p.join(",")));
-    items.push({ type: nb.id === "hall" ? "hall" : "lm", key: `nb-${nb.id}`, depth: 3 * nb.bx + 3 * nb.by + 2, nb });
+    items.push({ type: nb.id === "hall" ? "hall" : "lm", key: `nb-${nb.id}`, depth: 6 * nb.bx + 6 * nb.by + 2, nb });
   });
-  const island = new Set();
+  const ring = new Set(used);
   used.forEach((s) => {
-    const [bx, by] = s.split(",").map(Number);
-    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) island.add(`${bx + dx},${by + dy}`);
+    const [x, y] = s.split(",").map(Number);
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) ring.add(`${x + dx},${y + dy}`);
   });
-  const blocks = [...island].map((s) => s.split(",").map(Number));
-  blocks.forEach(([bx, by]) =>
-    blockPlots(bx, by).forEach(([i, j]) => {
-      if (!occupied.has(`${i},${j}`) && djb2(`t${i},${j}`) % 3 === 0) items.push({ type: "tree", key: `t${i},${j}`, depth: i + j - 0.1, i, j });
-    }),
-  );
+  const lots = [...ring].map((s) => s.split(",").map(Number));
+  lots.forEach(([x, y]) => {
+    if (used.has(`${x},${y}`)) return;
+    const h = djb2(`t${x},${y}`);
+    [[0.5, 0.6], [1.45, 0.5], [1.0, 1.5]].forEach(([dx, dy], i) => {
+      if ((h >> i) % 3 !== 0) items.push({ type: "tree", key: `t${x},${y},${i}`, depth: 3 * x + dx + 3 * y + dy, tx: 3 * x + dx, ty: 3 * y + dy });
+    });
+  });
   items.sort((a, b) => a.depth - b.depth || (a.key < b.key ? -1 : 1));
-  return { items, blocks };
+  return { items, lots, used };
 }
 
-const levelOf = (s) => (s < 0.35 ? 0 : s < 0.95 ? 1 : 2);
+function fitView(used) {
+  const xs = [];
+  const ys = [];
+  used.forEach((s) => {
+    const [x, y] = s.split(",").map(Number);
+    [[3 * x, 3 * y], [3 * x + 3, 3 * y + 3], [3 * x + 3, 3 * y], [3 * x, 3 * y + 3]].forEach(([a, b]) => {
+      const [px, py] = P(a, b);
+      xs.push(px);
+      ys.push(py);
+    });
+  });
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const w = Math.max(...xs) - Math.min(...xs);
+  const h = Math.max(...ys) - Math.min(...ys) + 300;
+  const scale = Math.max(0.3, Math.min(0.85, Math.min(vw / (w + 200), (vh * 0.8) / (h + 200))));
+  const cx = (Math.max(...xs) + Math.min(...xs)) / 2;
+  const cy = (Math.max(...ys) + Math.min(...ys)) / 2 - 120;
+  return { scale, x: vw / 2 - cx * scale, y: vh * 0.46 - cy * scale };
+}
 
-export const TownMap = forwardRef(function TownMap({ town, anims, me, onSelect, onTownHall, onBackground }, ref) {
+const levelOf = (s) => (s < 0.25 ? 0 : s < 0.7 ? 1 : 2);
+const DEMOLISH = { cls: "demolish" };
+
+export const TownMap = forwardRef(function TownMap({ town, anims: { anims, ghosts }, me, onSelect, onTownHall, onBackground }, ref) {
   const tw = useRef(null);
   const wrap = useRef(null);
   const down = useRef(null);
-  const [level, setLevel] = useState(2);
-  const { items, blocks } = useMemo(() => layout(town), [town]);
-  const [hx, hy] = P(3 * town.town_hall.bx + 1, 3 * town.town_hall.by + 1, 60);
-  const startScale = window.innerWidth < 640 ? 0.55 : 0.75;
+  const { items, lots, used } = useMemo(() => layout(town), [town]);
+  const start = useMemo(() => fitView(used), []); // eslint-disable-line react-hooks/exhaustive-deps
+  const [level, setLevel] = useState(levelOf(start.scale));
 
   useImperativeHandle(ref, () => ({
-    flyTo(i, j, scale = 0.95, ms = 1100) {
-      const [x, y] = P(i + 0.5, j + 0.5, 50);
+    flyTo(x, y, scale = 0.9, ms = 1100) {
+      const [px, py] = P(...houseSpot(x, y), 90);
       const el = wrap.current;
-      tw.current?.setTransform(el.clientWidth / 2 - x * scale, el.clientHeight * 0.34 - y * scale, scale, ms, "easeInOutCubic");
+      tw.current?.setTransform(el.clientWidth / 2 - px * scale, el.clientHeight * 0.3 - py * scale, scale, ms, "easeInOutCubic");
     },
   }));
 
@@ -68,11 +87,11 @@ export const TownMap = forwardRef(function TownMap({ town, anims, me, onSelect, 
     >
       <TransformWrapper
         ref={tw}
-        initialScale={startScale}
-        initialPositionX={window.innerWidth / 2 - hx * startScale}
-        initialPositionY={window.innerHeight * 0.45 - hy * startScale}
+        initialScale={start.scale}
+        initialPositionX={start.x}
+        initialPositionY={start.y}
         minScale={0.08}
-        maxScale={2.4}
+        maxScale={2.2}
         limitToBounds={false}
         wheel={{ step: 0.08 }}
         doubleClick={{ disabled: true }}
@@ -85,21 +104,24 @@ export const TownMap = forwardRef(function TownMap({ town, anims, me, onSelect, 
                 <circle cx="0.5" cy="0.5" r="0.5" />
               </clipPath>
             </defs>
-            <Ground blocks={blocks} />
-            {items.map((it, idx) => {
-              if (it.type === "tree") return <Tree key={it.key} i={it.i} j={it.j} />;
-              if (it.type === "hall")
-                return <Landmark key={it.key} bx={it.nb.bx} by={it.nb.by} kind="town_hall" onClick={onTownHall} testId="landmark-town-hall" />;
-              if (it.type === "lm")
-                return <Landmark key={it.key} bx={it.nb.bx} by={it.nb.by} kind={it.nb.landmark || "lard_lad"} testId={`landmark-${it.nb.id}`} />;
-              const a = anims[it.key];
-              return <Building key={it.key} r={it.r} level={level} anim={a?.cls} delay={a?.delay} mine={me === it.key} onSelect={onSelect} />;
+            <Ground lots={lots} />
+            {items.map((it) => {
+              if (it.type === "tree") return <Tree key={it.key} tx={it.tx} ty={it.ty} />;
+              if (it.type === "hall") return <Landmark key={it.key} bx={it.nb.bx} by={it.nb.by} kind="town_hall" onClick={onTownHall} testId="landmark-town-hall" />;
+              if (it.type === "lm") return <Landmark key={it.key} bx={it.nb.bx} by={it.nb.by} kind={it.nb.landmark || "lard_lad"} testId={`landmark-${it.nb.id}`} />;
+              return <Building key={it.key} r={it.r} level={level} anim={anims[it.key]} mine={me === it.key} onSelect={onSelect} />;
             })}
+            {ghosts.map((r) => <Building key={`ghost-${r.k}`} r={r} level={level} anim={DEMOLISH} ghost />)}
             {items.filter((it) => it.type === "hall" || it.type === "lm").map((it) => (
-              <LandmarkLabel key={`label-${it.key}`} bx={it.nb.bx} by={it.nb.by} level={level}
+              <LandmarkLabel
+                key={`label-${it.key}`}
+                bx={it.nb.bx}
+                by={it.nb.by}
+                level={level}
                 name={it.type === "hall" ? "Town Hall" : it.nb.name || "New neighbourhood"}
-                sub={it.type === "hall" ? "The real predictions" : `${it.nb.size} houses`}
-                onClick={it.type === "hall" ? onTownHall : undefined} />
+                sub={it.type === "hall" ? `${town.stats.taken}/${town.stats.capacity} spots taken` : `${it.nb.size} houses`}
+                onClick={it.type === "hall" ? onTownHall : undefined}
+              />
             ))}
           </svg>
         </TransformComponent>

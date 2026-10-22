@@ -1,19 +1,33 @@
-"""Pure town geometry: plots on an isometric grid, placement, clustering and building tiers."""
+"""Pure town geometry: one house per lot on an isometric grid, placement, clustering and building tiers."""
 import hashlib
 import math
-from collections import defaultdict
+from collections import Counter, defaultdict
 
-TOWN_HALL_BLOCK = (0, 0)
+TOWN_HALL = (0, 0)
 MIN_NEIGHBOURHOOD = 6
+DISSOLVE_BELOW = 3
+TOP_N = 5
+MOVE_MIN_LOTS = 2
 TIERS = ("cottage", "house", "apartment", "tower")
 
 
-def is_plot(x: int, y: int) -> bool:
-    return x % 3 != 2 and y % 3 != 2
+def inbound_counts(docs: list) -> Counter:
+    keys = {d["k"] for d in docs}
+    indeg = Counter()
+    for d in docs:
+        for c in d.get("circle") or []:
+            if c["k"] in keys and c["k"] != d["k"]:
+                indeg[c["k"]] += 1
+    return indeg
 
 
-def block_plots(bx: int, by: int) -> list:
-    return [(3 * bx + i, 3 * by + j) for j in (0, 1) for i in (0, 1)]
+def should_move(old_top: list, new_top: list) -> bool:
+    # Move only when most of the top neighbours changed, so houses don't jitter.
+    if not new_top:
+        return False
+    if not old_top:
+        return True
+    return len(set(new_top) - set(old_top)) / len(new_top) > 0.5
 
 
 def hval(s: str) -> int:
@@ -49,12 +63,12 @@ def ring(cx: int, cy: int, r: int):
         yield cx + r, y
 
 
-def nearest_free_plot(tx: float, ty: float, occupied: set, max_r: int = 200):
+def nearest_free_lot(tx: float, ty: float, occupied: set, max_r: int = 200):
     cx, cy = round(tx), round(ty)
     best = None
     for r in range(max_r):
         for x, y in ring(cx, cy, r):
-            if is_plot(x, y) and (x, y) not in occupied:
+            if (x, y) not in occupied:
                 key = ((x - tx) ** 2 + (y - ty) ** 2, y, x)
                 if best is None or key < best[0]:
                     best = (key, (x, y))
@@ -63,19 +77,9 @@ def nearest_free_plot(tx: float, ty: float, occupied: set, max_r: int = 200):
     return best[1] if best else None
 
 
-def free_block_near(tx: float, ty: float, occupied: set, taken_blocks: set, max_r: int = 80):
-    bx0, by0 = round(tx / 3), round(ty / 3)
-    for r in range(max_r):
-        cands = [b for b in ring(bx0, by0, r)
-                 if b not in taken_blocks and all(p not in occupied for p in block_plots(*b))]
-        if cands:
-            return min(cands, key=lambda b: ((3 * b[0] + 0.5 - tx) ** 2 + (3 * b[1] + 0.5 - ty) ** 2, b[1], b[0]))
-    return None
-
-
 def frontier_target(key: str, occupied: set) -> tuple:
     extent = max((max(abs(x), abs(y)) for x, y in occupied), default=0)
-    radius = extent + 3
+    radius = extent + 2
     angle = math.radians(hval(key) % 360)
     return radius * math.cos(angle), radius * math.sin(angle)
 
