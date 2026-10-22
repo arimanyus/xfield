@@ -21,7 +21,7 @@ export const SearchFly = ({ residents, onPick, onMoveIn }) => {
     <div className="absolute right-0 top-0 z-30 w-[min(92vw,360px)]" data-testid="search-panel">
       <form
         onSubmit={(e) => { e.preventDefault(); if (exact) pick(exact.k); else if (query) { onMoveIn(query); setOpen(false); setQ(""); } }}
-        className="toon flex items-center gap-2 px-3 py-2"
+        className="toon flex items-center gap-2 px-3 h-14"
         style={{ "--toon-bg": "#FFFFFF", "--toon-r": "999px" }}
       >
         <Search className="w-6 h-6 shrink-0" strokeWidth={3} />

@@ -1,8 +1,9 @@
 import { memo, useMemo } from "react";
-import { building, houseSpot, signSpot, P, pts, wrapSign } from "@/lib/iso";
+import { building, houseSpot, pts, wrapSign } from "@/lib/iso";
 import { smallAvatar } from "@/lib/api";
 
 const LABEL = [0, 26, 19];
+const SIGN_FS = 15;
 
 const Pill = ({ y, text, size, fill = "#FFFFFF" }) => {
   const w = text.length * size * 0.6 + size * 1.3;
@@ -14,12 +15,38 @@ const Pill = ({ y, text, size, fill = "#FFFFFF" }) => {
   );
 };
 
-const Badge = ({ r, top, level, mine }) => {
+const SignPost = ({ bottom }) => (
+  <>
+    <line x1={0} y1={bottom} x2={0} y2={-30} stroke="#111" strokeWidth={8} />
+    <line x1={0} y1={bottom} x2={0} y2={-30} stroke="#B07032" strokeWidth={3.5} />
+  </>
+);
+
+const SignBoard = ({ text, bottom, k }) => {
+  const lines = wrapSign(text, 16);
+  const w = Math.max(...lines.map((l) => l.length)) * SIGN_FS * 0.66 + 30;
+  const h = lines.length * (SIGN_FS + 4) + 20;
+  const top = bottom - h;
+  return (
+    <g style={{ pointerEvents: "none" }} data-testid={`lawn-sign-${k}`}>
+      <rect x={-w / 2} y={top} width={w} height={h} rx={8} fill="#FFFDF0" stroke="#111" strokeWidth={4} />
+      <rect x={-w / 2 + 6} y={top + 6} width={w - 12} height={h - 12} rx={4} fill="none" stroke="#111" strokeWidth={1.5} />
+      {lines.map((l, i) => (
+        <text key={i} textAnchor="middle" x={0} y={top + 10 + SIGN_FS + i * (SIGN_FS + 4) - 1} fontFamily="Luckiest Guy" fontSize={SIGN_FS} fill="#111">{l}</text>
+      ))}
+    </g>
+  );
+};
+
+const Badge = ({ r, top, level, mine, sign }) => {
   const ring = mine ? "#FFD90F" : r.s === "r" ? "#FFA94D" : "#FFFFFF";
   const size = LABEL[level];
+  const pillY = -36 - size * 1.35;
+  const signBottom = pillY - size * 0.95 - 10;
   return (
     <g transform={`translate(${top[0]} ${top[1] - 54})`}>
       <line x1={0} y1={30} x2={0} y2={54} stroke="#111" strokeWidth={4} />
+      {sign && <SignPost bottom={signBottom + 4} />}
       <circle r={36} fill={ring} stroke="#111" strokeWidth={4} />
       {r.a ? (
         <image href={smallAvatar(r.a)} x={-29} y={-29} width={58} height={58} clipPath="url(#avatar-clip)" preserveAspectRatio="xMidYMid slice" />
@@ -27,27 +54,8 @@ const Badge = ({ r, top, level, mine }) => {
         <text textAnchor="middle" dominantBaseline="central" fontFamily="Luckiest Guy" fontSize={32} fill="#111">{r.h[0].toUpperCase()}</text>
       )}
       <circle r={29} fill="none" stroke="#111" strokeWidth={3} />
-      {level > 0 && <Pill y={-36 - size * 1.35} text={`@${r.h}`} size={size} fill={r.s === "r" ? "#FFE6CC" : "#FFFFFF"} />}
-    </g>
-  );
-};
-
-const LawnSign = ({ x, y, text }) => {
-  const lines = wrapSign(text);
-  const fs = 15;
-  const w = Math.max(...lines.map((l) => l.length)) * fs * 0.66 + 26;
-  const h = lines.length * (fs + 4) + 18;
-  const [sx, sy] = P(...signSpot(x, y));
-  return (
-    <g transform={`translate(${sx} ${sy})`} style={{ pointerEvents: "none" }}>
-      <line x1={-w / 3} y1={0} x2={-w / 3} y2={-22} stroke="#111" strokeWidth={7} />
-      <line x1={w / 3} y1={0} x2={w / 3} y2={-22} stroke="#111" strokeWidth={7} />
-      <line x1={-w / 3} y1={0} x2={-w / 3} y2={-22} stroke="#B07032" strokeWidth={3} />
-      <line x1={w / 3} y1={0} x2={w / 3} y2={-22} stroke="#B07032" strokeWidth={3} />
-      <rect x={-w / 2} y={-22 - h} width={w} height={h} rx={8} fill="#FFFDF0" stroke="#111" strokeWidth={4} />
-      {lines.map((l, i) => (
-        <text key={i} textAnchor="middle" x={0} y={-22 - h + 12 + fs + i * (fs + 4) - 2} fontFamily="Luckiest Guy" fontSize={fs} fill="#111">{l}</text>
-      ))}
+      {level > 0 && <Pill y={pillY} text={`@${r.h}`} size={size} fill={r.s === "r" ? "#FFE6CC" : "#FFFFFF"} />}
+      {sign && <SignBoard text={sign} bottom={signBottom} k={r.k} />}
     </g>
   );
 };
@@ -79,9 +87,8 @@ export const Building = memo(function Building({ r, level, anim, mine, ghost, on
           ))}
           {geo.antenna && <circle cx={geo.antenna[0]} cy={geo.antenna[1]} r={8} fill="#FF6B6B" stroke="#111" strokeWidth={3} />}
         </g>
-        <Badge r={r} top={geo.top} level={level} mine={mine} />
+        <Badge r={r} top={geo.top} level={level} mine={mine} sign={level === 2 && !ghost ? r.sg : null} />
       </g>
-      {level === 2 && r.sg && !ghost && <LawnSign x={r.x} y={r.y} text={r.sg} />}
     </g>
   );
 });

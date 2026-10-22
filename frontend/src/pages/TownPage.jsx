@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation, useParams, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import { useTown } from "@/hooks/useTown";
@@ -29,6 +29,7 @@ export default function TownPage() {
   const auth = useAuth();
   const { handle: routeHandle, issue: routeIssue } = useParams();
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
   const map = useRef(null);
   const [sel, setSel] = useState(null);
@@ -90,9 +91,10 @@ export default function TownPage() {
 
   const full = town.stats.taken >= town.stats.capacity;
   const openCensus = () => { setSel(null); setHall(false); setCensus(0); };
+  const closeCensus = () => { setCensus(null); if (pathname.startsWith("/census")) navigate("/", { replace: true }); };
   return (
     <div className="fixed inset-0 overflow-hidden" data-testid="town-page">
-      <TownMap ref={map} town={town} anims={anims} me={auth.user?.k} onSelect={(k) => select(k)} onTownHall={() => { setSel(null); setCensus(null); setHall(true); }} onBackground={() => { setSel(null); setHall(false); setCensus(null); }} />
+      <TownMap ref={map} town={town} anims={anims} me={auth.user?.k} onSelect={(k) => select(k)} onTownHall={() => { setSel(null); closeCensus(); setHall(true); }} onBackground={() => { setSel(null); setHall(false); if (census !== null) closeCensus(); }} />
       <TownHeader stats={town.stats} onCensus={openCensus} />
       <div className="absolute right-3 top-3 sm:right-5 sm:top-5 z-30 flex items-start gap-2">
         <AuthChip auth={auth} onMyHouse={(k) => select(k)} />
@@ -103,14 +105,14 @@ export default function TownPage() {
           <div className="w-full max-w-xl pointer-events-auto">
             <Ticker events={town.ticker} />
             <MoveInBar job={moveIn.job} onSubmit={startMoveIn} onReset={moveIn.reset} full={full} />
-            <p className="mt-2 text-center font-head font-bold text-xs sm:text-sm text-white/90 [text-shadow:0_1px_4px_rgba(0,40,90,0.5)]" data-testid="fan-disclaimer">
-              Fan site. Not affiliated with The Simpsons, Disney or Fox.
+            <p className="mt-2 text-center" data-testid="fan-disclaimer">
+              <span className="inline-block bg-white/85 rounded-full px-3 py-0.5 font-head font-bold text-xs sm:text-sm text-ink/80">Fan site. Not affiliated with The Simpsons, Disney or Fox.</span>
             </p>
           </div>
         </div>
       )}
       {hall && <TownHallSheet stats={town.stats} onClose={() => setHall(false)} />}
-      {census !== null && !sel && <CensusSheet issue={census} onIssue={setCensus} onClose={() => setCensus(null)} />}
+      {census !== null && !sel && <CensusSheet issue={census} onIssue={setCensus} onClose={closeCensus} />}
       {arrival && <ArrivalSheet handle={arrival} onClose={() => setArrival(null)} onSkip={skipArrival} onPickTagged={(k) => { setArrival(null); select(k, "ready"); }} />}
       {sel && !arrival && (
         <ResidentSheet handle={sel.k} mode={sel.mode} version={town.version} auth={auth} onClose={() => setSel(null)} onPick={(k) => select(k)}

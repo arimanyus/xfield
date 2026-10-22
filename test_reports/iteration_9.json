@@ -1,0 +1,41 @@
+{
+  "summary": "Round 9 full test of XField: town API, lawn signs + /api/me/sign, Sign in with X (login redirect/PKCE, callback cancelled/expired, fake-session me/logout), cron auth/duplicate, weekly census (list/issue/card/share page/6-day guard), 100-spot cap (409 via temporary fake fill), real move-in (@dhh -> reserved, +8 circle houses), town refresh (stale read house re-read from X and moved back with 'moved' event + nb_name; stale reserved demolished w/ 'demolished' event; pointed-at stale reserved kept). Frontend: header/stats/census button/sign-in chip (desktop 'Sign in with'+X, mobile 'Sign in'), no overlap with search, search open/close, /timeline shows town only, no predictions text, ?signin=cancelled/expired messages + param removed, reserved sheet ('Reserved for @naval' on map click, IS THIS YOU? SIGN IN WITH X -> x.com/i/oauth2/authorize), lawn sign tone chips switch text, owner flow with fake session (verified badge, PUT THIS ON MY LAWN saves 200, ON LAWN moves, sign out works), census sheet at 1920x800 and 390x800 (card 1260x1680, older/newer disabled, share -> x.com/intent/post text 'XField Census No. 1:' url /api/c/1, close returns move-in bar), /census and /census/1 deep links, house move animation ('moving' class with --dx/--dy) and ghost-house demolish both observed. All backend tests pass (31/31). Main problem is visual: lawn signs are covered by handle pills/avatar badges.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/move-in (100-cap)", "issue": "Works (409 'XField is full'), but refresh/reserve_circle can only be verified by code review that it respects cap; not exercised at full capacity live"},
+      {"endpoint": "CORS", "issue": "allow_origins='*' combined with allow_credentials=True; same-origin app so harmless, but set explicit origins for prod"}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Building lawn sign (TownMap/Building.jsx)", "issue": "At close zoom lawn signs are covered by the @handle pill and avatar badge of the house in front, and only one clipped line shows (e.g. 'THE BIRD FLEW THE' under @JDVance, '95% OF YOUR...' under @ericmigi, 'SUPERSONIC IS' under @daveg). Signs are basically unreadable and look like they belong to the wrong house", "selector": "[data-testid^=house-] sign board", "priority": "HIGH"},
+      {"component": "CensusSheet routing", "issue": "After a direct visit to /census (or /census/1), closing the sheet via map background leaves URL at /census, so reload reopens the sheet. Opening via CENSUS button does not push /census/1 either (URL stays /)", "selector": "[data-testid=census-sheet]", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Home", "issues": ["Fan disclaimer is tiny white text on light-blue sky: low contrast", "When search panel opens on desktop, the dark Sign-in chip pokes out under the (shorter) search input at the right edge", "Census card in sheet is only ~258x346px even at 1920 width; could be larger", "Handle pills sometimes collide with neighbourhood labels (e.g. @paulg vs CHANNEL 6 HEIGHTS)"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_xfield_round9.py", "/app/backend/tests/test_xfield_refresh.py", "/app/test_reports/pytest/pytest_round9.xml"],
+  "action_items": [
+    "Fix lawn sign placement/z-order so signs are not hidden behind handle pills/avatar badges of neighbouring houses, and show full sign text (2 lines) at close zoom",
+    "Reset URL to / when closing census sheet opened from /census or /census/:issue (optionally push /census/N when opened via button)",
+    "Raise contrast of fan disclaimer",
+    "Add the fake-session recipe to /app/memory/test_credentials.md (review request referenced it but the file only has ADMIN_KEY info and old 'Already Aired / Springfield' title)"
+  ],
+  "critical_code_review_comments": [
+    "server.py is ~1110 lines; split auth, census, town-life (refresh/demolish) and crons into modules",
+    "Refresh/demolish/tower logic is correct per spec; demolish_stale only spares reserved houses pointed to by others (self-pointing excluded) - verified live",
+    "Census 6-day guard verified (second cron run published nothing)",
+    "Playbook checks (bcrypt, brute-force lockout, seed admin) N/A: no passwords, auth is X OAuth PKCE; session cookie is httpOnly+secure+SameSite=Lax, state cookie scoped to /api/auth - good"
+  ],
+  "updated_files": ["/app/backend/tests/test_xfield_round9.py", "/app/backend/tests/test_xfield_refresh.py"],
+  "success_rate": {"backend": "100% (31/31)", "frontend": "~92% (all flows work; lawn sign visibility broken visually, minor URL issue)"},
+  "test_credentials": "test_credentials.md missing the fake-session recipe; used sessions doc {token_hash: sha256(token), k, h, name, avatar_url, created_at, expires_at: Date} + cookie xf_session=<token>",
+  "seed_data_creation": "Moved in real handle @dhh (+8 reserved circle houses, town now 62/100). All fake residents (zz_test_*), fake sessions, test jobs and my test 'demolished' ticker event were removed; levelsio restored to reserved/pun (it was legitimately re-read and moved back to (-2,1) by the refresh test)",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run pytest tests/test_xfield_round9.py (xdist ok) and tests/test_xfield_refresh.py with -n0 (mutates Mongo; set REFRESH_TARGET env to a resident whose read_at is set; it restores on throttle). Animation test approach: insert zz_test_ghost/zz_test_mover residents, load page, then via mongosh delete ghost / change mover x,y and $inc meta.town.version; within ~15s house-zz_test_mover inner g gets class 'moving' and ghost-house-zz_test_ghost appears then vanishes. Owner UI: insert fake session + set levelsio status finished, add cookie xf_session; restore afterwards.",
+  "rca of the issue": "Lawn sign overlap: sign board is drawn inside each house's own <g> in front of the house, but houses further down the iso grid (rendered later) draw their pill+avatar badge on top of it, and the board sits at the same screen height as the next row's pill, so it is occluded."
+}

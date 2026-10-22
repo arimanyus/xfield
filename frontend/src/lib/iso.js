@@ -11,7 +11,6 @@ export const HOUSE_SCALE = 1.7;
 export const P = (gx, gy, up = 0) => [OX + ((gx - gy) * TW) / 2, OY + ((gx + gy) * TH) / 2 - up];
 export const pts = (arr) => arr.map((p) => `${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(" ");
 export const houseSpot = (x, y) => [3 * x + 0.85, 3 * y + 0.85];
-export const signSpot = (x, y) => [3 * x + 1.8, 3 * y + 1.8];
 
 export const djb2 = (s) => {
   let h = 5381;
