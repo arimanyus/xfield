@@ -239,7 +239,7 @@ class TestCensus:
         if j["mover"]:
             assert set(j["mover"]) >= {"h", "a", "gained"}
         if which == "1":
-            assert j["share"]["text"].startswith("XField Census No. 1:")
+            assert j["share"]["text"].startswith("XField City Ledger No. 1:")
             assert j["share"]["url"].endswith("/api/c/1")
 
     @pytest.mark.parametrize("bad", ["999", "abc"])

@@ -1,4 +1,4 @@
-"""Weekly census: compare the town now against last week's snapshot."""
+"""Weekly City Ledger: compare the city now against last week's snapshot."""
 from collections import Counter, defaultdict
 
 import town
@@ -16,10 +16,21 @@ def neighbours_of(docs: list) -> dict:
 
 
 def snapshot_of(docs: list) -> dict:
-    indeg = town.inbound_counts(docs)
     nbrs = neighbours_of(docs)
-    return {d["k"]: {"nb": d.get("nb"), "t": town.tier_of(indeg[d["k"]]), "n": sorted(nbrs[d["k"]]), "s": d["status"]}
-            for d in docs}
+    return {d["k"]: {"nb": d.get("nb"), "t": town.tier_of(town.floors_of(d)),
+                     "n": sorted(nbrs[d["k"]]), "s": d["status"]} for d in docs}
+
+
+def top_districts(docs: list, nbs: list) -> list:
+    score = {n["id"]: {"id": n["id"], "name": n.get("name") or "A new district", "color": n.get("color"),
+                       "floors": 0, "lit": 0, "size": 0} for n in nbs}
+    for d in docs:
+        s = score.get(d.get("nb"))
+        if s:
+            s["floors"] += town.floors_of(d)
+            s["lit"] += d["status"] == "finished"
+            s["size"] += 1
+    return sorted(score.values(), key=lambda s: (-(s["floors"] + 2 * s["lit"]), s["id"]))[:3]
 
 
 def baseline(docs: list, start_iso: str) -> dict:
@@ -42,8 +53,8 @@ def build_census(docs: list, nbs: list, prev: dict, start_iso: str, end_iso: str
     if gained:
         nb_id = max(gained, key=lambda i: (gained[i], nb_by_id[i].get("size", 0), i))
         nb = nb_by_id[nb_id]
-        fastest = {"id": nb_id, "name": nb.get("name") or "A new neighbourhood", "landmark": nb.get("landmark") or "lard_lad",
-                   "gained": gained[nb_id], "size": nb.get("size", 0)}
+        fastest = {"id": nb_id, "name": nb.get("name") or "A new district", "landmark": nb.get("landmark") or "harbor",
+                   "color": nb.get("color"), "gained": gained[nb_id], "size": nb.get("size", 0)}
 
     towers = sorted((k for k, s in cur.items() if s["t"] == 3 and (prev.get(k) or {}).get("t", -1) < 3),
                     key=lambda k: (-len(cur[k]["n"]), k))
@@ -66,4 +77,5 @@ def build_census(docs: list, nbs: list, prev: dict, start_iso: str, end_iso: str
         "lit_week": len(lit),
         "moves": sum(1 for e in events if e["type"] == "moved"),
         "demolished": sum(e.get("n") or 1 for e in events if e["type"] == "demolished"),
+        "districts": top_districts(docs, nbs),
     }

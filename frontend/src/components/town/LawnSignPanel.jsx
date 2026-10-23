@@ -26,6 +26,7 @@ export const LawnSignPanel = ({ d, onSaved }) => {
 
   return (
     <div className="mt-5" data-testid="lawn-sign-panel">
+      <div className="font-head font-semibold text-xs uppercase tracking-wider text-ink/60 mb-2">Billboard</div>
       <div className="flex gap-2">
         {TONES.map((t) => (
           <button
@@ -33,22 +34,20 @@ export const LawnSignPanel = ({ d, onSaved }) => {
             type="button"
             onClick={() => setTone(t.id)}
             aria-pressed={tone === t.id}
-            className={`chip-toon text-sm sm:text-base ${tone === t.id ? "bg-simp" : ""}`}
+            className={`chip text-xs sm:text-sm ${tone === t.id ? "bg-brand" : ""}`}
             data-testid={`lawn-sign-tone-${t.id}`}
           >
             {t.label}
-            {d.sign_tone === t.id && <span className="text-xs opacity-60">· ON LAWN</span>}
+            {d.sign_tone === t.id && <span className="text-[10px] opacity-60">· UP</span>}
           </button>
         ))}
       </div>
-      <div className="mt-3 relative" data-testid="lawn-sign-board">
-        <div className="toon px-5 py-5 text-center" style={{ "--toon-bg": "#FFFDF0", "--toon-r": "16px" }}>
-          <div className="font-display text-2xl sm:text-3xl leading-tight pt-1" data-testid="lawn-sign-text">{d.signs[tone]}</div>
-        </div>
+      <div className="mt-3 rounded-xl border-2 border-ink bg-ink px-5 py-4 text-center" data-testid="lawn-sign-board">
+        <div className="font-display font-bold text-xl sm:text-2xl leading-tight text-[#FCE38A]" data-testid="lawn-sign-text">{d.signs[tone]}</div>
       </div>
       {canSet && tone !== d.sign_tone && (
-        <button type="button" onClick={save} disabled={saving} className="btn-toon w-full justify-center mt-4 text-lg sm:text-xl" data-testid="lawn-sign-save-button">
-          PUT THIS ON MY LAWN
+        <button type="button" onClick={save} disabled={saving} className="btn-primary w-full justify-center mt-4 text-base sm:text-lg" data-testid="lawn-sign-save-button">
+          PUT THIS ON MY BILLBOARD
         </button>
       )}
     </div>

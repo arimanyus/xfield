@@ -1,4 +1,4 @@
-"""Church-sign style lawn signs written from a person's own posts, in three tones."""
+"""Rooftop billboards written from a person's own posts, in three tones."""
 import asyncio
 import json
 import os
@@ -12,10 +12,10 @@ from safety import contains_blocked
 TONES = ("pun", "roast", "kind")
 FALLBACK = {"pun": "NOW SERVING FRESH HOT TAKES", "roast": "POSTS FIRST. THINKS LATER.", "kind": "GOOD NEIGHBOUR. GREAT TIMELINE."}
 SYSTEM = (
-    "You write lawn signs for houses in XField, a cartoon town on X, in the style of the classic church-sign gag: "
-    "short lines in capital letters on a marquee board. Read the person's bio and recent posts and write three signs "
-    "about what they actually post and care about:\n"
-    "- pun: a cheeky church-sign pun or wordplay\n"
+    "You write rooftop billboards for buildings in XField, a city-builder on X: short lines in capital letters "
+    "on a lit marquee. Read the person's bio and recent posts and write three billboards about what they actually "
+    "post and care about:\n"
+    "- pun: a cheeky pun or wordplay\n"
     "- roast: a savage but playful roast of their takes, habits or posting style. Never about looks, age, race, "
     "gender, sexuality, religion, health, disability, family or tragedy. No slurs, no profanity, nothing sexual.\n"
     "- kind: a warm, wholesome one-liner about them\n"

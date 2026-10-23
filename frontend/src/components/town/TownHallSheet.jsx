@@ -1,23 +1,24 @@
 import { Sheet } from "@/components/town/Sheet";
 
 const STEPS = [
-  "Type any X handle to build their house.",
-  "Only the real owner can light it, by signing in with X.",
-  "When all the spots are gone, they're gone.",
+  "Type any X handle to reserve their lot next to the people they talk to.",
+  "Only the real owner can light it up, by signing in with X. That pays 500 credits.",
+  "Join a district, add floors, fund its treasury and vote for its mayor.",
+  "Districts grow when their people show up. Lots are limited.",
 ];
 
 export const TownHallSheet = ({ stats, onClose }) => (
   <Sheet onClose={onClose} testId="town-hall-sheet">
-    <div className="font-display text-3xl sm:text-4xl leading-none pt-1 pr-10">XFIELD TOWN HALL</div>
+    <div className="title-display text-3xl sm:text-4xl leading-none pt-1 pr-10">CITY HALL</div>
     <div className="mt-5 flex items-end gap-3" data-testid="town-hall-spots">
-      <span className="title-toon text-6xl sm:text-7xl leading-none">{stats.taken}</span>
-      <span className="font-display text-2xl sm:text-3xl pb-2">/ {stats.capacity} SPOTS TAKEN</span>
+      <span className="title-display text-6xl sm:text-7xl leading-none">{stats.taken}</span>
+      <span className="font-display font-bold text-xl sm:text-2xl pb-2">/ {stats.capacity} LOTS TAKEN</span>
     </div>
     <ol className="mt-6 space-y-3">
       {STEPS.map((s, i) => (
         <li key={i} className="flex items-start gap-3">
-          <span className="shrink-0 w-9 h-9 rounded-full bg-simp border-[3px] border-ink grid place-items-center font-display text-lg pt-1">{i + 1}</span>
-          <span className="font-head font-bold text-lg sm:text-xl leading-snug pt-1">{s}</span>
+          <span className="shrink-0 w-8 h-8 rounded-lg bg-brand border-2 border-ink grid place-items-center font-display font-bold">{i + 1}</span>
+          <span className="font-head font-medium text-base sm:text-lg leading-snug pt-0.5">{s}</span>
         </li>
       ))}
     </ol>

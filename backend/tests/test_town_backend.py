@@ -1,4 +1,4 @@
-"""Backend tests for Springfield, X town.
+"""Backend tests for the XField city.
 
 Covers: /api/town, /api/move-in, /api/residents, /api/residents/*/card.jpg,
 /api/s/{handle}, owner-only admin.
@@ -46,16 +46,17 @@ class TestTown:
         r = api_get("/api/town")
         assert r.status_code == 200
         d = r.json()
-        for k in ("version", "residents", "neighbourhoods", "ticker", "town_hall", "stats"):
+        for k in ("version", "residents", "neighbourhoods", "ticker", "town_hall", "stats", "options"):
             assert k in d, f"missing {k}"
         assert d["town_hall"] == {"bx": 0, "by": 0}
+        assert set(d["options"]) == {"colors", "projects", "landmarks"}
         s = d["stats"]
         for k in ("population", "finished", "reserved", "neighbourhoods", "biggest"):
             assert k in s
         assert isinstance(d["residents"], list)
         if d["residents"]:
             r0 = d["residents"][0]
-            for k in ("k", "h", "n", "a", "s", "x", "y", "t", "by", "nb"):
+            for k in ("k", "h", "n", "a", "s", "x", "y", "t", "f", "by", "nb"):
                 assert k in r0, f"resident missing {k}"
             assert r0["s"] in ("f", "r")
 
@@ -75,8 +76,8 @@ class TestResidents:
         r = api_get("/api/residents/levelsio")
         assert r.status_code == 200, r.text
         d = r.json()
-        for k in ("k", "h", "name", "avatar_url", "status", "tier", "tier_name",
-                  "inbound", "by_h", "neighbourhood", "neighbours", "brought",
+        for k in ("k", "h", "name", "avatar_url", "status", "tier", "tier_name", "floors", "max_floors",
+                  "land_value", "home", "inbound", "by_h", "neighbourhood", "neighbours", "brought",
                   "brought_lit", "share", "card_url"):
             assert k in d, f"missing {k}"
         assert d["status"] == "finished"
@@ -86,11 +87,12 @@ class TestResidents:
         assert s["url"].endswith("/api/s/levelsio")
         assert len(s["tags"]) <= 3
         # share text format
-        assert s["text"].startswith("I'm in Springfield.")
+        assert "on XField." in s["text"]
+        assert "economy" not in d
         if s["tags"]:
             for t in s["tags"]:
                 assert f"@{t}" in s["text"]
-            assert s["text"].endswith("your houses are ready \u2192")
+            assert s["text"].endswith("your lots are reserved \u2192")
 
     def test_reserved_resident(self):
         town = api_get("/api/town").json()

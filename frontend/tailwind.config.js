@@ -6,16 +6,15 @@ module.exports = {
   theme: {
     extend: {
       fontFamily: {
-        display: ['"Luckiest Guy"', '"Fredoka"', "cursive"],
-        head: ['"Fredoka"', '"Nunito"', "sans-serif"],
-        body: ['"Nunito"', '"Fredoka"', "sans-serif"],
+        display: ['"Space Grotesk"', '"Inter"', "sans-serif"],
+        head: ['"Inter"', "sans-serif"],
+        body: ['"Inter"', "sans-serif"],
       },
       colors: {
-        ink: "#111111",
-        simp: { DEFAULT: "#FFD90F", dark: "#F2C700" },
-        sky: { DEFAULT: "#38BDF8", deep: "#1A7FD9", light: "#9BDCFF" },
-        cream: "#FFFDF0",
-        grass: { DEFAULT: "#5DB33A", light: "#8BD14A" },
+        ink: "#0F172A",
+        brand: { DEFAULT: "#34D399", dark: "#10B981" },
+        sky: { DEFAULT: "#38BDF8", deep: "#1E40AF", light: "#DBEAFE" },
+        paper: "#F8FAFC",
         background: "hsl(var(--background))",
         foreground: "hsl(var(--foreground))",
         card: { DEFAULT: "hsl(var(--card))", foreground: "hsl(var(--card-foreground))" },
@@ -33,18 +32,10 @@ module.exports = {
       keyframes: {
         "accordion-down": { from: { height: "0" }, to: { height: "var(--radix-accordion-content-height)" } },
         "accordion-up": { from: { height: "var(--radix-accordion-content-height)" }, to: { height: "0" } },
-        drift: { from: { transform: "translateX(-45vw)" }, to: { transform: "translateX(125vw)" } },
-        bob: { "0%,100%": { transform: "translateY(0) rotate(-3deg)" }, "50%": { transform: "translateY(-14px) rotate(2deg)" } },
-        spin: { to: { transform: "rotate(360deg)" } },
-        pop: { "0%": { opacity: "0", transform: "scale(.6) rotate(-8deg)" }, "70%": { transform: "scale(1.06) rotate(2deg)" }, "100%": { opacity: "1", transform: "none" } },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
-        drift: "drift 90s linear infinite",
-        bob: "bob 4s ease-in-out infinite",
-        "spin-slow": "spin 18s linear infinite",
-        pop: "pop .6s cubic-bezier(.2,.9,.3,1.3) both",
       },
     },
   },

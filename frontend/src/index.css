@@ -4,33 +4,32 @@
 
 @layer base {
   :root {
-    --background: 199 92% 60%;
-    --foreground: 0 0% 7%;
-    --card: 51 100% 97%;
-    --card-foreground: 0 0% 7%;
-    --popover: 51 100% 97%;
-    --popover-foreground: 0 0% 7%;
-    --primary: 51 100% 53%;
-    --primary-foreground: 0 0% 7%;
+    --background: 214 95% 93%;
+    --foreground: 222 47% 11%;
+    --card: 210 40% 98%;
+    --card-foreground: 222 47% 11%;
+    --popover: 210 40% 98%;
+    --popover-foreground: 222 47% 11%;
+    --primary: 158 64% 52%;
+    --primary-foreground: 222 47% 11%;
     --secondary: 0 0% 100%;
-    --secondary-foreground: 0 0% 7%;
-    --muted: 199 90% 90%;
+    --secondary-foreground: 222 47% 11%;
+    --muted: 214 95% 93%;
     --muted-foreground: 215 25% 27%;
-    --accent: 51 100% 53%;
-    --accent-foreground: 0 0% 7%;
+    --accent: 158 64% 52%;
+    --accent-foreground: 222 47% 11%;
     --destructive: 0 84% 60%;
     --destructive-foreground: 0 0% 100%;
-    --border: 0 0% 7%;
-    --input: 0 0% 7%;
-    --ring: 51 100% 53%;
-    --radius: 1rem;
+    --border: 222 47% 11%;
+    --input: 222 47% 11%;
+    --ring: 158 64% 52%;
+    --radius: 0.75rem;
   }
   * {
     @apply border-border;
   }
   html {
-    background: #1a7fd9;
-    scroll-behavior: smooth;
+    background: #cfe3fa;
   }
   body {
     @apply font-body text-ink;
@@ -38,8 +37,8 @@
     -moz-osx-font-smoothing: grayscale;
   }
   ::selection {
-    background: #ffd90f;
-    color: #111;
+    background: #34d399;
+    color: #0f172a;
   }
 }
 
@@ -58,68 +57,35 @@
 }
 
 @layer components {
-  .sky-bg {
-    background: linear-gradient(180deg, #1a7fd9 0%, #2f9be8 38%, #5cbcf5 70%, #9bdcff 100%);
+  .city-bg {
+    background: linear-gradient(180deg, #b9d6f5 0%, #d6e8fb 55%, #eef5fd 100%);
   }
-  .toon {
-    position: relative;
-    isolation: isolate;
+  .panel {
+    @apply relative bg-[var(--panel-bg,#F8FAFC)] border-2 border-ink rounded-[var(--panel-r,16px)];
+    box-shadow: 0 10px 30px rgba(15, 23, 42, 0.18);
   }
-  .toon::before {
-    content: "";
-    position: absolute;
-    inset: 0;
-    z-index: -1;
-    background: var(--toon-bg, #fffdf0);
-    border: 4px solid #111;
-    border-radius: var(--toon-r, 28px);
-    filter: url(#wobble);
+  .title-display {
+    @apply font-display font-bold text-ink tracking-tight;
   }
-  .toon-lift {
-    transition: transform 0.2s ease;
+  .btn-primary {
+    @apply inline-flex items-center gap-2 font-display font-bold uppercase tracking-wide text-lg sm:text-xl bg-brand text-ink border-2 border-ink rounded-xl px-6 py-3 transition-[transform,background-color] duration-150 hover:bg-brand-dark hover:-translate-y-0.5 active:translate-y-0 disabled:opacity-50 disabled:hover:translate-y-0;
   }
-  .toon-lift:hover {
-    transform: translateY(-4px) rotate(0deg) !important;
-  }
-  .title-toon {
-    @apply font-display text-simp;
-    letter-spacing: 0.02em;
-    text-shadow:
-      3px 0 0 #111, -3px 0 0 #111, 0 3px 0 #111, 0 -3px 0 #111,
-      2px 2px 0 #111, -2px -2px 0 #111, 2px -2px 0 #111, -2px 2px 0 #111;
-  }
-  .title-toon-sm {
-    @apply font-display text-simp;
-    text-shadow:
-      2px 0 0 #111, -2px 0 0 #111, 0 2px 0 #111, 0 -2px 0 #111,
-      2px 2px 0 #111, -2px -2px 0 #111, 2px -2px 0 #111, -2px 2px 0 #111;
-  }
-  .btn-toon {
-    @apply inline-flex items-center gap-2 font-display text-xl sm:text-2xl bg-simp text-ink border-4 border-ink rounded-full px-7 pt-[14px] pb-[10px] transition-[transform,background-color] duration-150 hover:bg-simp-dark hover:-translate-y-1 active:translate-y-0.5;
-  }
-  .chip-toon {
-    @apply shrink-0 inline-flex items-center gap-2 font-head font-bold uppercase text-base sm:text-lg bg-white text-ink border-[3px] border-ink rounded-full px-4 py-1.5 transition-[transform,background-color,box-shadow] duration-150 hover:-translate-y-0.5;
+  .chip {
+    @apply shrink-0 inline-flex items-center gap-2 font-head font-semibold uppercase text-sm sm:text-base bg-white text-ink border-2 border-ink rounded-lg px-3 py-1.5 transition-[transform,background-color] duration-150 hover:-translate-y-0.5;
   }
   .sticker {
-    @apply inline-block font-display text-ink border-[3px] border-ink rounded-2xl px-3 pt-[7px] pb-[4px] leading-none;
-  }
-  .no-scrollbar {
-    scrollbar-width: none;
-  }
-  .no-scrollbar::-webkit-scrollbar {
-    display: none;
+    @apply inline-block font-head font-semibold uppercase tracking-wide text-ink border-2 border-ink rounded-lg px-2.5 py-1 leading-none;
   }
 }
 
 @keyframes houseUp {
-  0% { transform: translateY(24px) scale(0.2); opacity: 0; }
-  60% { transform: translateY(-8px) scale(1.08); opacity: 1; }
+  0% { transform: translateY(24px) scaleY(0.2); opacity: 0; }
   100% { transform: none; opacity: 1; }
 }
 @keyframes lightsOn {
-  0% { transform: translateY(0) scale(1); filter: brightness(1); }
-  30% { transform: translateY(-16px) scale(1.12); filter: brightness(1.35); }
-  100% { transform: none; filter: brightness(1); }
+  0% { filter: brightness(1); }
+  35% { filter: brightness(1.4); }
+  100% { filter: brightness(1); }
 }
 @keyframes moveHouse {
   0% { transform: translate(var(--dx), var(--dy)); }
@@ -129,7 +95,6 @@
 }
 @keyframes demolish {
   0% { transform: none; opacity: 1; }
-  25% { transform: translateY(-10px) rotate(-4deg); opacity: 1; }
   100% { transform: translateY(24px) scaleY(0.1); opacity: 0; }
 }
 .pop-in, .lights-on, .moving, .demolish {
@@ -137,10 +102,10 @@
   transform-origin: 50% 100%;
 }
 .pop-in {
-  animation: houseUp 0.7s cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
+  animation: houseUp 0.6s cubic-bezier(0.2, 0.8, 0.3, 1) both;
 }
 .lights-on {
-  animation: lightsOn 0.9s cubic-bezier(0.2, 0.9, 0.3, 1.3) both;
+  animation: lightsOn 0.9s ease-out both;
 }
 .moving {
   animation: moveHouse 1.8s cubic-bezier(0.45, 0, 0.25, 1) both;
@@ -153,11 +118,5 @@
 @media (prefers-reduced-motion: reduce) {
   .pop-in, .lights-on, .moving, .demolish {
     animation: none !important;
-  }
-  .animate-drift, .animate-bob, .animate-spin-slow, .animate-pop {
-    animation: none !important;
-  }
-  html {
-    scroll-behavior: auto;
   }
 }
