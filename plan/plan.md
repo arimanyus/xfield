@@ -3,8 +3,8 @@
 XField is a cartoon isometric town where every X account gets a house next to the people it actually talks to. There are only 100 spots. This round gets "Sign in with X" working, adds a weekly census card people can share, and lets the streets change as people's conversations change.
 
 ## X Developer Console values (paste these now)
-- **Callback URI / Redirect URL:** `https://handle-prophecy.preview.emergentagent.com/api/auth/x/callback`
-- **Website URL:** `https://handle-prophecy.preview.emergentagent.com`
+- **Callback URI / Redirect URL:** `https://xfield-dev.preview.emergentagent.com/api/auth/x/callback`
+- **Website URL:** `https://xfield-dev.preview.emergentagent.com`
 - **Type of App:** Web App, Automated App or Bot
 - **App permissions:** Read
 - After you save, X shows a **Client ID** and a **Client Secret**. The Client ID is already saved. The Client Secret goes into the secure box that opens when the build starts. It never goes in the chat.
