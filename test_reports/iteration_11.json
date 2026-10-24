@@ -1,0 +1,46 @@
+{
+  "summary": "Smoke/regression test of the XField v3 'Pure Votes' code (pulled from GitHub) on the preview, with DEV_MODE off. Backend: 22 of 22 new pytest checks pass (tests/test_v3_smoke.py), and the repo's 16 unit tests (arena/writers/town) pass. Covered: /api/town (all keys, capacity 200, ?v= returns unchanged), /api/auth/me, the X OAuth 302 with PKCE S256 and the right redirect_uri, dev routes returning 404, residents paulg/levelsio/naval (200), unknown resident (404), card.jpg (a real JPEG), census list/latest/card, paper/latest, cron 401 (no or wrong bearer), 400 (bad body), accepted, and duplicate run_id. Arena: 401 signed out, 404 with a fake session whose house is dark, and the full vote flow after temporarily lighting 4 houses. The pair stays the same until you vote and never includes the voter; Elo +16/-16 between equals; left goes 3->2->0; a 4th vote returns 429. All of that data was restored. One real move-in (patio11) went queued->done(reserved) and added 9 houses plus a new district, Old Mill Road. The refresh cron re-read 8 houses and published Ledger No.1 with the AI writer, which works end to end. Frontend: the 3D city loads with 2 canvases (scene and minimap) and shows the XFIELD logo, '71/200 lots' and the docks/uptown chip, all 8 district labels with face stacks, and the place buttons (City Hall, Post Office, Arrivals, The Docks, Timeline, Ledger). Each place opens its panel. The Ledger pops up automatically for a new issue and closes with x or Esc (xf_paper is stored). Clicking a ticker item flies to the house and opens its HouseCard. 'Sign in with X' goes to x.com/i/oauth2/authorize. There were no page errors. Mobile 390x800 renders with no horizontal overflow. The old 2D routes /h/paulg, /census, /census/1 and an unknown /h/ handle all render without crashing.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/paper (Ledger No.1)", "issue": "migrate_to_night -> refresh_neighbourhoods logged 6 fresh 'new_nb' events at migration time (19:00:39) for districts that already existed, plus 1 more at 19:02. So the first paper headline reads 'Eight New Districts Open Across XField Today!' and the ticker/Timeline list them all as new. This is a migration side effect, not real city news, which goes against the README's 'Nothing fake' rule."},
+      {"endpoint": "/api/town ticker", "issue": "new_nb event 'h' doesn't always match the current district host. Ivy Gardens event says 'home of @elonmusk' but neighbourhoods[].host = sama; Station Row event says @bascodes but host = levelsio."},
+      {"endpoint": "/api/town residents", "issue": "1 migrated resident has name stored as '@handle' (levelsio: n='@levelsio'), so the UI may show '@@levelsio' in places that prefix with '@'."},
+      {"endpoint": "/api/census/1", "issue": "Historical census issue 1 still says capacity 100 (53/100) and is titled 'LEDGER No. 1 / XFIELD CITY LEDGER' in the old 2D sheet. This clashes with the new 'The XField Ledger' newspaper name and the 200 capacity."},
+      {"endpoint": "state", "issue": "All 71 residents are reserved (0 finished). Nobody can vote until real users sign in: arena pool is empty and require_citizen returns 404 'Light your house first.' This is expected with DEV_MODE off, but the vote card and ladder can't be seen on the preview."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "3D CityPage / Hud / City3D / Newspaper", "issue": "The v3 UI has zero data-testid attributes (the old 2D TownPage still has them). This blocks robust automation; tests had to use role/text selectors.", "selector": "src/pages/CityPage.jsx, src/city3d/*.jsx", "priority": "MEDIUM"},
+      {"component": "Place label buttons (e.g. '🗞 The Ledger')", "issue": "A normal Playwright click on the floating place labels times out after waiting for stability (labels are re-transformed every frame), so dispatch_event was needed. Real mouse users are unaffected, but automation is.", "selector": "button:has-text('🗞 The Ledger')", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Mobile 390x800", "issues": ["The 'Your house is already here / Sign in with X' card (bottom-left, ~330px wide) covers most of the minimap (bottom-right, 200x170 at x167-367, y575-745)."]},
+      {"screen": "Desktop 1920x1080 city", "issues": ["A flat light-blue rectangle renders inside the WebGL canvas at the top centre (about x 390-1645, y 0-35) in every frame, regardless of camera position. It may be a headless SwiftShader artifact; check on a real GPU.", "The '📰 The Timeline' label sits partly off-screen at top (y=-12) on initial load.", "The Arrivals panel is completely empty (town.newest=[] because nobody is lit) with no empty-state text.", "Buildings stream in over ~5-8s (an early screenshot showed only City Hall, cars and trees). No loading indicator after the logo splash."]},
+      {"screen": "Console", "issues": ["Repeated 'THREE.GLTFLoader: Couldn't load texture Textures/colormap.png' errors. The files exist (public/models/*/Textures/colormap.png); the requests show net::ERR_ABORTED, probably aborted or duplicated texture loads. Rendering is not broken."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_v3_smoke.py", "/app/test_reports/pytest/pytest_v3_smoke.xml"],
+  "action_items": [
+    "Add data-testid to the v3 UI: header lots chip, place buttons, PlaceCard, HouseCard, VoteCard (pick/next), sign-in button, Newspaper modal and close, ticker items, minimap.",
+    "Stop migrations/refresh_neighbourhoods from emitting 'new_nb' events for districts that already existed, or remove the 6 migration-time new_nb events (at 2026-10-24T19:00:39) so the paper doesn't call them new. Consider re-issuing Ledger No.1.",
+    "On mobile, stack or hide the minimap when the sign-in card is shown (they overlap).",
+    "Add an Arrivals empty state ('Nobody has moved in yet').",
+    "Fix the stray '@' in levelsio's stored name.",
+    "Optionally check the top-centre light-blue band in the 3D scene on a real GPU."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 1921 lines and should be split (auth, arena, paper/census, districts, crons, migrations).",
+    "/api/cron/refresh runs publish_paper right after the refresh, so any accepted refresh call can publish a paper (at most once per 20h). Calling it in preview published Ledger No.1.",
+    "Old district/board/election endpoints (/districts/*) and the 2D TownPage are still live, as the README notes. The 2D census sheet still uses 'Ledger' wording, which clashes with the new paper.",
+    "/api/arena with a signed-in but unlit user returns 404 'Light your house first.' A 403/409 would describe this state more accurately than 404."
+  ],
+  "updated_files": ["/app/backend/tests/test_v3_smoke.py"],
+  "success_rate": {"backend": "100% (22/22 new + 16/16 unit)", "frontend": "~92% (all flows work; testid/design issues only)"},
+  "seed_data_creation": "Real move-in of @patio11 (kept: patio11 + 8 reserved neighbours + district 'Old Mill Road'; taken 62->71). Refresh cron published paper No.1 (kept, real cron behaviour). Arena test data (4 houses temporarily lit, fake session, votes, matchups) fully restored; TEST_ cron_runs removed. Full mongodump taken before testing at /tmp/xf_backup.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "v3 3D UI has no data-testids. Use role/text selectors, e.g. get_by_role('button', name='🏛 City Hall'), and dispatch_event('click') for the floating labels. Set localStorage xf_paper=<latest issue> to suppress the Ledger popup. The fake-session recipe works: insert into sessions {token_hash: sha256(T), k, h, expires_at} and send cookie xf_session=T. Voting needs the voter plus at least 2 others with status 'finished' and seen_at within 7 days. tests/test_v3_smoke.py lights levelsio/naval/paulg/sama temporarily and restores them. pytest.ini forces -n 2; use -o addopts='' for serial runs."
+}
