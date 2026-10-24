@@ -1,18 +1,17 @@
-import { memo } from "react";
-import { P, TW } from "@/lib/iso";
-import META from "@/data/landmarkMeta.json";
+import { memo, useMemo } from "react";
+import { P, landmark, pts } from "@/lib/iso";
 
-const NAME_SIZE = [84, 46, 28];
+const NAME_SIZE = [72, 40, 26];
 
-const Label = ({ x, y, text, size, sub, onClick, testId }) => {
+const Label = ({ x, y, text, size, sub, color, onClick, testId }) => {
   const w = text.length * size * 0.62 + size * 1.4;
   return (
     <g transform={`translate(${x} ${y})`} style={{ pointerEvents: onClick ? "auto" : "none" }} cursor={onClick ? "pointer" : undefined}
       onClick={(e) => { e.stopPropagation(); onClick?.(); }} data-testid={testId}>
-      <rect x={-w / 2} y={-size} width={w} height={size * 2} rx={size} fill="#FFD90F" stroke="#111" strokeWidth={Math.max(3, size / 9)} />
-      <text textAnchor="middle" dominantBaseline="central" y={2} fontFamily="Luckiest Guy" fontSize={size} fill="#111">{text}</text>
+      <rect x={-w / 2} y={-size} width={w} height={size * 2} rx={size * 0.4} fill={color} stroke="#0F172A" strokeWidth={Math.max(2.5, size / 12)} />
+      <text textAnchor="middle" dominantBaseline="central" y={2} fontFamily="Space Grotesk" fontWeight="700" fontSize={size} fill="#0F172A">{text}</text>
       {sub && (
-        <text textAnchor="middle" y={size * 1.9} fontFamily="Fredoka" fontWeight="700" fontSize={size * 0.6} fill="#111" stroke="#fff" strokeWidth={size / 7} paintOrder="stroke">
+        <text textAnchor="middle" y={size * 1.9} fontFamily="Inter" fontWeight="700" fontSize={size * 0.6} fill="#0F172A" stroke="#fff" strokeWidth={size / 7} paintOrder="stroke">
           {sub}
         </text>
       )}
@@ -20,20 +19,24 @@ const Label = ({ x, y, text, size, sub, onClick, testId }) => {
   );
 };
 
-export const Landmark = memo(function Landmark({ bx, by, kind, onClick, testId }) {
-  const meta = META[kind] || META.lard_lad;
-  const w = 2 * TW * 1.12;
-  const h = (meta.h / meta.w) * w;
-  const [x, yb] = P(3 * bx + 2, 3 * by + 2);
+export const Landmark = memo(function Landmark({ bx, by, kind, color, onClick, testId }) {
+  const geo = useMemo(() => landmark(bx, by, kind), [bx, by, kind]);
+  const [fx, fy] = geo.flag;
   return (
     <g onClick={(e) => { e.stopPropagation(); onClick?.(); }} cursor={onClick ? "pointer" : undefined} data-testid={testId}>
-      <image href={`/art/landmarks/${kind}.webp`} x={x - w / 2} y={yb - h + 10} width={w} height={h} />
+      {geo.polys.map((p, i) => <polygon key={i} points={pts(p.d)} fill={p.fill} stroke="#0F172A" strokeWidth={2} strokeLinejoin="round" />)}
+      {color && (
+        <>
+          <line x1={fx} y1={fy} x2={fx} y2={fy - 56} stroke="#0F172A" strokeWidth={3} />
+          <polygon points={pts([[fx, fy - 56], [fx + 34, fy - 47], [fx, fy - 38]])} fill={color} stroke="#0F172A" strokeWidth={2} strokeLinejoin="round" />
+        </>
+      )}
     </g>
   );
 });
 
-export const LandmarkLabel = memo(function LandmarkLabel({ bx, by, name, sub, level, onClick }) {
+export const LandmarkLabel = memo(function LandmarkLabel({ bx, by, name, sub, level, color, onClick }) {
   const [x, yb] = P(3 * bx + 2, 3 * by + 2);
   const size = NAME_SIZE[level];
-  return <Label x={x} y={yb + size * 0.9} text={name.toUpperCase()} size={size} sub={level > 0 ? sub : null} onClick={onClick} testId={`landmark-label-${bx}-${by}`} />;
+  return <Label x={x} y={yb + size * 0.9} text={name.toUpperCase()} size={size} sub={level > 0 ? sub : null} color={color} onClick={onClick} testId={`landmark-label-${bx}-${by}`} />;
 });

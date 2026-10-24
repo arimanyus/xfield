@@ -12,34 +12,34 @@ export const SearchFly = ({ residents, onPick, onMoveIn }) => {
 
   if (!open)
     return (
-      <button type="button" onClick={() => setOpen(true)} className="w-14 h-14 rounded-full bg-white border-4 border-ink grid place-items-center hover:-translate-y-0.5 transition-transform" aria-label="Search the town" data-testid="search-open-button">
-        <Search className="w-7 h-7" strokeWidth={3} />
+      <button type="button" onClick={() => setOpen(true)} className="w-12 h-12 rounded-xl bg-white border-2 border-ink grid place-items-center hover:-translate-y-0.5 transition-transform" aria-label="Search the city" data-testid="search-open-button">
+        <Search className="w-6 h-6" strokeWidth={2.5} />
       </button>
     );
 
   return (
-    <div className="absolute right-0 top-0 z-30 w-[min(92vw,360px)]" data-testid="search-panel">
+    <div className="absolute right-0 top-0 z-30 w-[min(92vw,380px)]" data-testid="search-panel">
       <form
         onSubmit={(e) => { e.preventDefault(); if (exact) pick(exact.k); else if (query) { onMoveIn(query); setOpen(false); setQ(""); } }}
-        className="toon flex items-center gap-2 px-3 h-14"
-        style={{ "--toon-bg": "#FFFFFF", "--toon-r": "999px" }}
+        className="panel flex items-center gap-2 px-3 h-12"
+        style={{ "--panel-bg": "#FFFFFF", "--panel-r": "12px" }}
       >
-        <Search className="w-6 h-6 shrink-0" strokeWidth={3} />
-        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a handle" className="flex-1 min-w-0 bg-transparent outline-none font-head font-bold text-xl" data-testid="search-input" />
-        <button type="button" onClick={() => setOpen(false)} aria-label="Close search" data-testid="search-close-button"><X className="w-6 h-6" strokeWidth={3} /></button>
+        <Search className="w-5 h-5 shrink-0" strokeWidth={2.5} />
+        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Find a handle" className="flex-1 min-w-0 bg-transparent outline-none font-head font-semibold text-lg" data-testid="search-input" />
+        <button type="button" onClick={() => setOpen(false)} aria-label="Close search" data-testid="search-close-button"><X className="w-5 h-5" strokeWidth={2.5} /></button>
       </form>
       {query && (
-        <div className="toon mt-3 p-2" style={{ "--toon-bg": "#FFFDF0", "--toon-r": "22px" }}>
+        <div className="panel mt-3 p-2" style={{ "--panel-r": "14px" }}>
           {hits.map((r) => (
-            <button key={r.k} type="button" onClick={() => pick(r.k)} className="w-full flex items-center gap-3 px-2 py-2 rounded-xl hover:bg-simp/40 text-left" data-testid={`search-result-${r.k}`}>
-              {r.a ? <img src={smallAvatar(r.a)} alt="" className="w-10 h-10 rounded-full border-[3px] border-ink object-cover" /> : <span className="w-10 h-10 rounded-full border-[3px] border-ink bg-sky-light" />}
-              <span className="font-head font-bold text-lg truncate">@{r.h}</span>
-              {r.s === "r" && <span className="ml-auto sticker bg-[#FFA94D] text-xs">RESERVED</span>}
+            <button key={r.k} type="button" onClick={() => pick(r.k)} className="w-full flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-brand/30 text-left" data-testid={`search-result-${r.k}`}>
+              {r.a ? <img src={smallAvatar(r.a)} alt="" className="w-9 h-9 rounded-lg border border-ink object-cover" /> : <span className="w-9 h-9 rounded-lg border border-ink bg-sky-light" />}
+              <span className="font-head font-semibold text-base truncate">@{r.h}</span>
+              {r.s === "r" && <span className="ml-auto sticker bg-[#FEF3C7] text-[10px]">RESERVED</span>}
             </button>
           ))}
           {!exact && (
-            <button type="button" onClick={() => { onMoveIn(query); setOpen(false); setQ(""); }} className="w-full font-head font-bold text-lg px-2 py-2 text-left hover:bg-simp/40 rounded-xl" data-testid="search-move-in-button">
-              Not in XField yet. Build @{query}'s house
+            <button type="button" onClick={() => { onMoveIn(query); setOpen(false); setQ(""); }} className="w-full font-head font-semibold text-base px-2 py-2 text-left hover:bg-brand/30 rounded-lg" data-testid="search-move-in-button">
+              Not in XField yet. Reserve a lot for @{query}
             </button>
           )}
         </div>

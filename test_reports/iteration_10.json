@@ -1,0 +1,32 @@
+{
+  "summary": "Iteration 10 frontend-only retest of post-iteration-9 fixes. PASS: lawn signs are now cream boards on posts ABOVE each house's @handle pill, full 3-line text, readable at close zoom (/h/paulg then close): paulg, naval, arseneeth, levelsio, sama, elonmusk all 0/15 occlusion probes covered by other houses' badges (elonmusk only clipped by header chips at viewport edge). Census URL: /census and /census/1 open sheet; closing via sheet-close-button or map background resets URL to '/', reload does not reopen; CENSUS button from '/' keeps '/'. Share opens x.com/intent/post text 'XField Census No. 1: ...'. Mobile 390x800 census stacks title/card/buttons and fits (bottom 766px). Fan disclaimer is dark ink (rgba(17,17,17,.8)) on white/85 pill. Search panel (360x56) fully covers Sign-in chip (all probes hit search-panel/input); closing restores chip + search button with no overlap. Regression: town loads, house click opens sheet, tone chips pun/roast/kind switch lawn-sign-text, ticker white on #111, Sign in -> x.com/i/oauth2/authorize, move animation ('moving' class with --dx/--dy) and ghost-house-zz_test_ghost with 'demolish' observed. FAIL: census desktop layout - census-next element missing entirely, title wraps onto 2 lines, share button wraps onto 2 lines.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "CensusSheet.jsx", "issue": "There is no data-testid='census-next' / 'Next one <weekday time>' line in the census sheet at all; the code only shows it in the Empty state (and with no testid). The list response's next_at is not shown when an issue exists", "selector": "[data-testid=census-next]", "priority": "MEDIUM"},
+      {"component": "CensusSheet.jsx desktop 1920x800", "issue": "The right column is only 252px wide: the Sheet is max-w-3xl (768px) and the card is 392px wide (w-[min(400px,(78vh-70px)*.75)]). So census-title 'CENSUS No. 1' wraps to 2 lines (252x100, 'CENSUS No.' / '1') and census-share-button 'SHARE THE CENSUS' wraps to 2 lines (300x104). Fix: make the wide sheet sm:max-w-4xl/5xl, or set the card to ~330px and use whitespace-nowrap with a smaller sm:text-4xl title and sm:text-2xl share text", "selector": "[data-testid=census-title], [data-testid=census-share-button]", "priority": "MEDIUM"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Town close zoom", "issues": ["Sign text is small (Luckiest Guy 15px, about 13px on screen at 1920). It is readable but could be 16-17px", "Signs paint over the avatar/pill area of the house behind them (e.g. paulg's sign sits right under @Cobylefko's avatar). This is acceptable"]},
+      {"screen": "/h/<handle> arrival/resident sheet", "issue_note": "LOW, not in scope", "issues": ["Closing the sheet opened from /h/paulg leaves the URL at /h/paulg, so a reload reopens it (same pattern that was just fixed for /census)"]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Add a census-next line ('Next one <weekday time>' from list.next_at) to the census issue view in CensusSheet.jsx",
+    "Make the desktop census right column wide enough that census-title and census-share-button each stay on ONE line (widen the wide Sheet or shrink the card to ~330px, add whitespace-nowrap)",
+    "Optional: reset the URL to '/' when closing a sheet opened via /h/<handle>"
+  ],
+  "critical_code_review_comments": [
+    "CensusSheet.jsx: the review request lists census-next, but it is not in the code. The main agent's edit may not have been saved",
+    "Building.jsx: the sign sits inside the house's own badge group, so houses painted later (in front) can still cover it in dense spots. The probe tests found no such cover now, but this is not guaranteed by the structure. A separate top-layer pass for signs would guarantee it"
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "N/A (skipped)", "frontend": "~88% (all flows pass except the census desktop layout/census-next)"},
+  "test_credentials": "No auth needed for these flows; fake session not used",
+  "seed_data_creation": "Temporarily inserted zz_test_ghost/zz_test_mover residents for the animation test. Both deleted, town version bumped, residents back to 62",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Animation test: /tmp/anim_setup.js (clone paulg doc as zz_test_ghost(-5,3)/zz_test_mover(-4,3), $inc meta.town.version), load page, then run /tmp/anim_change.js via asyncio subprocess (mongosh) inside the playwright script. 'moving' + ghost demolish show within a few seconds. Clean up with deleteMany({k:/^zz_test_/}). The sign-in testid is auth-signin-button (a button, not a link). Tone chips: lawn-sign-tone-pun/roast/kind."
+}

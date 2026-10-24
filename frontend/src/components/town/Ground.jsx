@@ -1,13 +1,13 @@
 import { memo } from "react";
-import { P, pts } from "@/lib/iso";
+import { P, lotPad, pts } from "@/lib/iso";
 
 const DEPTH = 34;
 
-const Side = ({ d, fill }) => <polygon points={pts(d)} fill={fill} stroke="#111" strokeWidth={4} strokeLinejoin="round" />;
+const Side = ({ d, fill }) => <polygon points={pts(d)} fill={fill} stroke="#0F172A" strokeWidth={2.5} strokeLinejoin="round" />;
 
-const Dash = ({ a, b }) => <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke="#FFE45C" strokeWidth={4} strokeDasharray="14 14" />;
+const Dash = ({ a, b }) => <line x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke="#F8FAFC" strokeWidth={3} strokeDasharray="14 14" />;
 
-export const Ground = memo(function Ground({ lots }) {
+export const Ground = memo(function Ground({ lots, tints }) {
   const set = new Set(lots.map((b) => b.join(",")));
   const sorted = [...lots].sort((a, b) => a[0] + a[1] - (b[0] + b[1]));
   return (
@@ -16,17 +16,19 @@ export const Ground = memo(function Ground({ lots }) {
         const [x0, x1, y0, y1] = [3 * lx, 3 * lx + 3, 3 * ly, 3 * ly + 3];
         return (
           <g key={`s${lx},${ly}`}>
-            {!set.has(`${lx + 1},${ly}`) && <Side d={[P(x1, y1), P(x1, y0), P(x1, y0, -DEPTH), P(x1, y1, -DEPTH)]} fill="#A0673A" />}
-            {!set.has(`${lx},${ly + 1}`) && <Side d={[P(x0, y1), P(x1, y1), P(x1, y1, -DEPTH), P(x0, y1, -DEPTH)]} fill="#8A5530" />}
+            {!set.has(`${lx + 1},${ly}`) && <Side d={[P(x1, y1), P(x1, y0), P(x1, y0, -DEPTH), P(x1, y1, -DEPTH)]} fill="#8B6F4E" />}
+            {!set.has(`${lx},${ly + 1}`) && <Side d={[P(x0, y1), P(x1, y1), P(x1, y1, -DEPTH), P(x0, y1, -DEPTH)]} fill="#735A3E" />}
           </g>
         );
       })}
       {sorted.map(([lx, ly]) => {
         const [x0, x1, y0, y1] = [3 * lx, 3 * lx + 3, 3 * ly, 3 * ly + 3];
+        const tint = tints[`${lx},${ly}`];
         return (
           <g key={`t${lx},${ly}`}>
-            <polygon points={pts([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)])} fill="#9A9CA3" stroke="#9A9CA3" strokeWidth={1.5} />
-            <polygon points={pts([P(x0 + 0.08, y0 + 0.08), P(x0 + 1.92, y0 + 0.08), P(x0 + 1.92, y0 + 1.92), P(x0 + 0.08, y0 + 1.92)])} fill="#7CC242" stroke="#5FA334" strokeWidth={3} />
+            <polygon points={pts([P(x0, y0), P(x1, y0), P(x1, y1), P(x0, y1)])} fill="#7B828C" stroke="#7B828C" strokeWidth={1.5} />
+            <polygon points={pts(lotPad(lx, ly))} fill="#86C36A" stroke="#6FAA55" strokeWidth={2} />
+            {tint && <polygon points={pts(lotPad(lx, ly))} fill={tint} fillOpacity={0.28} stroke={tint} strokeWidth={5} />}
             <Dash a={P(x0 + 2.5, y0 + 0.2)} b={P(x0 + 2.5, y0 + 1.8)} />
             <Dash a={P(x0 + 0.2, y0 + 2.5)} b={P(x0 + 1.8, y0 + 2.5)} />
           </g>
@@ -36,15 +38,12 @@ export const Ground = memo(function Ground({ lots }) {
   );
 });
 
-export const Tree = memo(function Tree({ tx, ty, size = 1 }) {
+export const Tree = memo(function Tree({ tx, ty }) {
   const [x, y] = P(tx, ty);
-  const s = size;
   return (
     <g aria-hidden="true">
-      <line x1={x} y1={y} x2={x} y2={y - 34 * s} stroke="#111" strokeWidth={9 * s} strokeLinecap="round" />
-      <line x1={x} y1={y} x2={x} y2={y - 34 * s} stroke="#8B5E3C" strokeWidth={4 * s} strokeLinecap="round" />
-      <circle cx={x} cy={y - 54 * s} r={27 * s} fill="#4BAA6F" stroke="#111" strokeWidth={4} />
-      <circle cx={x - 8 * s} cy={y - 62 * s} r={8 * s} fill="#7FD49B" />
+      <line x1={x} y1={y} x2={x} y2={y - 30} stroke="#5B4632" strokeWidth={5} strokeLinecap="round" />
+      <polygon points={pts([[x, y - 78], [x + 22, y - 26], [x - 22, y - 26]])} fill="#3F8F5A" stroke="#0F172A" strokeWidth={2} strokeLinejoin="round" />
     </g>
   );
 });

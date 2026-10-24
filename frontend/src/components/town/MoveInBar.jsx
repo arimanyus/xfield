@@ -2,9 +2,9 @@ import { useState } from "react";
 import { Loader2 } from "lucide-react";
 
 const STEPS = {
-  queued: (h) => `Booking a truck for @${h}…`,
-  reading: (h) => `Reading @${h}'s posts…`,
-  traffic: () => "The movers are stuck in traffic…",
+  queued: (h) => `Surveying a lot for @${h}…`,
+  reading: (h) => `Reading who @${h} talks to…`,
+  traffic: () => "X is slow right now. Still trying…",
   building: () => "Pouring the foundations…",
 };
 
@@ -15,28 +15,28 @@ export const MoveInBar = ({ job, onSubmit, onReset, full }) => {
   return (
     <div className="w-full" data-testid="move-in-bar">
       {job?.state === "error" && (
-        <button type="button" onClick={onReset} className="sticker bg-[#FF6B6B] text-white text-base sm:text-lg mb-3 -rotate-1" data-testid="move-in-error">
+        <button type="button" onClick={onReset} className="sticker bg-[#EF4444] text-white text-sm sm:text-base mb-3 normal-case" data-testid="move-in-error">
           {job.message}
         </button>
       )}
       {full && !working ? (
-        <div className="toon px-6 py-4 text-center font-display text-2xl sm:text-3xl" style={{ "--toon-bg": "#FFD90F", "--toon-r": "999px" }} data-testid="town-full-banner">
-          XFIELD IS FULL
+        <div className="panel px-6 py-4 text-center title-display text-2xl sm:text-3xl" style={{ "--panel-bg": "#34D399", "--panel-r": "14px" }} data-testid="town-full-banner">
+          EVERY LOT IS TAKEN
         </div>
       ) : (
         <form
           onSubmit={(e) => { e.preventDefault(); if (!working && value.trim()) onSubmit(value); }}
-          className="toon flex items-center gap-2 pl-5 pr-2 py-2"
-          style={{ "--toon-bg": "#FFFFFF", "--toon-r": "999px" }}
+          className="panel flex items-center gap-2 pl-4 pr-2 py-2"
+          style={{ "--panel-bg": "#FFFFFF", "--panel-r": "14px" }}
         >
           {working ? (
-            <div className="flex-1 flex items-center gap-3 font-head font-bold text-lg sm:text-2xl py-2 min-w-0" data-testid="move-in-progress">
-              <Loader2 className="w-7 h-7 animate-spin shrink-0" strokeWidth={3} />
+            <div className="flex-1 flex items-center gap-3 font-head font-semibold text-base sm:text-xl py-2 min-w-0" data-testid="move-in-progress">
+              <Loader2 className="w-6 h-6 animate-spin shrink-0" strokeWidth={2.5} />
               <span className="truncate">{(STEPS[job.state] || STEPS.queued)(job.handle)}</span>
             </div>
           ) : (
             <>
-              <span className="font-display text-2xl sm:text-3xl pt-1">@</span>
+              <span className="font-display font-bold text-2xl sm:text-3xl text-ink/60">@</span>
               <input
                 value={value}
                 onChange={(e) => { setValue(e.target.value); if (job) onReset(); }}
@@ -44,12 +44,12 @@ export const MoveInBar = ({ job, onSubmit, onReset, full }) => {
                 autoCapitalize="none"
                 autoCorrect="off"
                 spellCheck={false}
-                className="flex-1 min-w-0 bg-transparent outline-none font-head font-bold text-xl sm:text-2xl py-2"
+                className="flex-1 min-w-0 bg-transparent outline-none font-head font-semibold text-lg sm:text-2xl py-2"
                 data-testid="move-in-input"
               />
             </>
           )}
-          <button type="submit" disabled={working} className="btn-toon text-lg sm:text-2xl px-5 sm:px-7 disabled:opacity-60" data-testid="move-in-submit">
+          <button type="submit" disabled={working} className="btn-primary text-base sm:text-xl px-5 sm:px-7" data-testid="move-in-submit">
             BUILD
           </button>
         </form>

@@ -19,14 +19,14 @@ export const ArrivalSheet = ({ handle, onClose, onPickTagged, onSkip }) => {
   return (
     <Sheet onClose={onClose} testId="arrival-sheet">
       <div className="flex items-center gap-4 pr-10">
-        <Face src={d.avatar_url} size={64} ring="#FFD90F" alt={`@${d.h}`} />
-        <div className="font-head font-bold text-2xl sm:text-3xl leading-tight" data-testid="arrival-title">@{d.h}'s street</div>
+        <Face src={d.avatar_url} size={64} ring={d.neighbourhood?.color || "#34D399"} alt={`@${d.h}`} />
+        <div className="font-head font-bold text-2xl sm:text-3xl leading-tight" data-testid="arrival-title">@{d.h}'s block</div>
       </div>
-      <div className="font-display text-3xl sm:text-4xl mt-6 leading-none pt-1" data-testid="arrival-question">TAGGED? TAP YOUR FACE.</div>
+      <div className="title-display text-3xl sm:text-4xl mt-6 leading-none pt-1" data-testid="arrival-question">TAGGED? TAP YOUR FACE.</div>
       <div className="mt-5 grid grid-cols-3 gap-3">
         {tagged.map((n) => (
           <button key={n.k} type="button" onClick={() => onPickTagged(n.k)} className="flex flex-col items-center gap-2 hover:-translate-y-1 transition-transform" data-testid={`arrival-tagged-${n.k}`}>
-            <Face src={n.a} size={84} ring="#FFA94D" alt={`@${n.h}`} />
+            <Face src={n.a} size={84} ring="#F59E0B" alt={`@${n.h}`} />
             <span className="font-head font-bold text-base sm:text-lg truncate max-w-full">@{n.h}</span>
           </button>
         ))}

@@ -1,4 +1,4 @@
-"""XField round 9 backend tests: town shape/signs, Sign in with X (fake sessions), lawn sign API,
+"""XField round 9 backend tests: town shape, Sign in with X (fake sessions), the ladder API,
 cron auth, weekly census, 100-cap guard. Town refresh/demolish flow lives in test_xfield_refresh.py.
 
 Only hits the public preview URL (REACT_APP_BACKEND_URL); uses Mongo directly for fake sessions.
@@ -71,7 +71,7 @@ class TestTown:
         assert j["stats"]["taken"] == len(j["residents"]) <= 100
         assert j["stats"]["finished"] + j["stats"]["reserved"] == j["stats"]["taken"]
         res = j["residents"][0]
-        for f in ("k", "h", "n", "a", "s", "x", "y", "t", "by", "nb", "sg"):
+        for f in ("k", "h", "n", "a", "s", "x", "y", "t", "by", "nb", "m"):
             assert f in res
         ats = [e["at"] for e in j["ticker"]]
         assert ats == sorted(ats, reverse=True)
@@ -88,13 +88,12 @@ class TestTown:
 
 
 class TestResident:
-    def test_profile_with_signs(self):
+    def test_profile_with_ladder(self):
         r = get("/api/residents/paulg")
         assert r.status_code == 200
         j = r.json()
-        assert set(j["signs"].keys()) >= {"pun", "roast", "kind"}
-        assert j["sign_tone"] in ("pun", "roast", "kind")
-        assert j["is_me"] is False
+        assert "signs" not in j and "bio" not in j
+        assert j["is_me"] is False and "voters" not in j["ladder"]
         assert "text" in j["share"] and "url" in j["share"]
         assert j["card_url"]
 
@@ -152,38 +151,23 @@ class TestAuth:
         assert get("/api/auth/me", cookies={"xf_session": tok}).json()["user"] is None
 
 
-# ---------- lawn sign ----------
+# ---------- the ladder ----------
 
-class TestSign:
-    def test_sign_no_session_401(self):
-        assert post("/api/me/sign", json={"tone": "roast"}).status_code == 401
+class TestArena:
+    def test_vote_no_session_401(self):
+        assert get("/api/arena").status_code == 401
+        assert post("/api/arena/vote", json={"pick": 0}).status_code == 401
 
-    def test_sign_reserved_404(self, fake_session):
-        tok = fake_session("naval")
-        assert post("/api/me/sign", json={"tone": "roast"}, cookies={"xf_session": tok}).status_code == 404
+    def test_bad_pick_422(self, fake_session):
+        tok = fake_session("levelsio")
+        assert post("/api/arena/vote", json={"pick": 2}, cookies={"xf_session": tok}).status_code == 422
 
-    def test_sign_bad_tone_400(self, fake_session):
-        tok = fake_session("naval")
-        r = post("/api/me/sign", json={"tone": "mean"}, cookies={"xf_session": tok})
-        assert r.status_code in (400, 422)
-
-    def test_sign_finished_200(self, fake_session):
-        orig = mongo(lambda db: db.residents.find_one({"k": "levelsio"}, {"_id": 0, "status": 1, "sign_tone": 1, "signs": 1}))
-        mongo(lambda db: db.residents.update_one({"k": "levelsio"}, {"$set": {"status": "finished"}}))
-        try:
-            tok = fake_session("levelsio")
-            other = "kind" if orig.get("sign_tone") != "kind" else "roast"
-            r = post("/api/me/sign", json={"tone": other}, cookies={"xf_session": tok})
-            assert r.status_code == 200 and r.json() == {"tone": other}
-            town = get("/api/town").json()
-            lv = next(x for x in town["residents"] if x["k"] == "levelsio")
-            assert lv["sg"] == orig["signs"][other]
-            me = get("/api/residents/levelsio", cookies={"xf_session": tok}).json()
-            assert me["is_me"] is True and me["sign_tone"] == other
-        finally:
-            mongo(lambda db: db.residents.update_one({"k": "levelsio"}, {"$set": {
-                "status": orig["status"], "sign_tone": orig.get("sign_tone", "pun")}}))
-            mongo(lambda db: db.meta.update_one({"_id": "town"}, {"$inc": {"version": 1}}))
+    def test_pair_is_anonymous(self, fake_session):
+        tok = fake_session("levelsio")
+        j = get("/api/arena", cookies={"xf_session": tok}).json()
+        assert j["of"] == 3 and 0 <= j["left"] <= 3
+        for side in j["pair"]:
+            assert set(side) == {"m", "c", "docks"}
 
 
 # ---------- crons ----------
@@ -239,7 +223,7 @@ class TestCensus:
         if j["mover"]:
             assert set(j["mover"]) >= {"h", "a", "gained"}
         if which == "1":
-            assert j["share"]["text"].startswith("XField Census No. 1:")
+            assert j["share"]["text"].startswith("XField City Ledger No. 1:")
             assert j["share"]["url"].endswith("/api/c/1")
 
     @pytest.mark.parametrize("bad", ["999", "abc"])

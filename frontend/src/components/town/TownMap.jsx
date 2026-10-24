@@ -5,17 +5,23 @@ import { Ground, Tree } from "@/components/town/Ground";
 import { Building } from "@/components/town/Building";
 import { Landmark, LandmarkLabel } from "@/components/town/Landmark";
 
+const HALL_COLOR = "#F8FAFC";
+
 function layout(town) {
   const used = new Set();
   const items = [];
+  const colors = Object.fromEntries(town.neighbourhoods.map((nb) => [nb.id, nb.color]));
+  const tints = {};
   town.residents.forEach((r) => {
     used.add(`${r.x},${r.y}`);
+    if (colors[r.nb]) tints[`${r.x},${r.y}`] = colors[r.nb];
     const [hx, hy] = houseSpot(r.x, r.y);
-    items.push({ type: "res", key: r.k, depth: hx + hy, r });
+    items.push({ type: "res", key: r.k, depth: hx + hy, r, color: colors[r.nb] });
   });
   const hall = town.town_hall;
   [...town.neighbourhoods, { id: "hall", bx: hall.bx, by: hall.by }].forEach((nb) => {
     used.add(`${nb.bx},${nb.by}`);
+    if (nb.color) tints[`${nb.bx},${nb.by}`] = nb.color;
     items.push({ type: nb.id === "hall" ? "hall" : "lm", key: `nb-${nb.id}`, depth: 6 * nb.bx + 6 * nb.by + 2, nb });
   });
   const ring = new Set(used);
@@ -32,7 +38,7 @@ function layout(town) {
     });
   });
   items.sort((a, b) => a.depth - b.depth || (a.key < b.key ? -1 : 1));
-  return { items, lots, used };
+  return { items, lots, used, tints };
 }
 
 function fitView(used) {
@@ -59,11 +65,11 @@ function fitView(used) {
 const levelOf = (s) => (s < 0.25 ? 0 : s < 0.7 ? 1 : 2);
 const DEMOLISH = { cls: "demolish" };
 
-export const TownMap = forwardRef(function TownMap({ town, anims: { anims, ghosts }, me, onSelect, onTownHall, onBackground }, ref) {
+export const TownMap = forwardRef(function TownMap({ town, anims: { anims, ghosts }, me, onSelect, onDistrict, onTownHall, onBackground }, ref) {
   const tw = useRef(null);
   const wrap = useRef(null);
   const down = useRef(null);
-  const { items, lots, used } = useMemo(() => layout(town), [town]);
+  const { items, lots, used, tints } = useMemo(() => layout(town), [town]);
   const start = useMemo(() => fitView(used), []); // eslint-disable-line react-hooks/exhaustive-deps
   const [level, setLevel] = useState(levelOf(start.scale));
 
@@ -104,12 +110,12 @@ export const TownMap = forwardRef(function TownMap({ town, anims: { anims, ghost
                 <circle cx="0.5" cy="0.5" r="0.5" />
               </clipPath>
             </defs>
-            <Ground lots={lots} />
+            <Ground lots={lots} tints={tints} />
             {items.map((it) => {
               if (it.type === "tree") return <Tree key={it.key} tx={it.tx} ty={it.ty} />;
-              if (it.type === "hall") return <Landmark key={it.key} bx={it.nb.bx} by={it.nb.by} kind="town_hall" onClick={onTownHall} testId="landmark-town-hall" />;
-              if (it.type === "lm") return <Landmark key={it.key} bx={it.nb.bx} by={it.nb.by} kind={it.nb.landmark || "lard_lad"} testId={`landmark-${it.nb.id}`} />;
-              return <Building key={it.key} r={it.r} level={level} anim={anims[it.key]} mine={me === it.key} onSelect={onSelect} />;
+              if (it.type === "hall") return <Landmark key={it.key} bx={it.nb.bx} by={it.nb.by} kind="city_hall" onClick={onTownHall} testId="landmark-town-hall" />;
+              if (it.type === "lm") return <Landmark key={it.key} bx={it.nb.bx} by={it.nb.by} kind={it.nb.landmark || "harbor"} color={it.nb.color} onClick={() => onDistrict(it.nb.id)} testId={`landmark-${it.nb.id}`} />;
+              return <Building key={it.key} r={it.r} color={it.color} level={level} anim={anims[it.key]} mine={me === it.key} onSelect={onSelect} />;
             })}
             {ghosts.map((r) => <Building key={`ghost-${r.k}`} r={r} level={level} anim={DEMOLISH} ghost />)}
             {items.filter((it) => it.type === "hall" || it.type === "lm").map((it) => (
@@ -118,9 +124,10 @@ export const TownMap = forwardRef(function TownMap({ town, anims: { anims, ghost
                 bx={it.nb.bx}
                 by={it.nb.by}
                 level={level}
-                name={it.type === "hall" ? "Town Hall" : it.nb.name || "New neighbourhood"}
-                sub={it.type === "hall" ? `${town.stats.taken}/${town.stats.capacity} spots taken` : `${it.nb.size} houses`}
-                onClick={it.type === "hall" ? onTownHall : undefined}
+                color={it.type === "hall" ? HALL_COLOR : it.nb.color}
+                name={it.type === "hall" ? "City Hall" : it.nb.name || "New district"}
+                sub={it.type === "hall" ? `${town.stats.taken}/${town.stats.capacity} lots taken` : `${it.nb.size} lots${it.nb.claimed ? "" : " · unclaimed"}`}
+                onClick={it.type === "hall" ? onTownHall : () => onDistrict(it.nb.id)}
               />
             ))}
           </svg>
