@@ -665,6 +665,7 @@ async def get_town(v: Optional[int] = None):
     return {"version": version, "residents": residents, "neighbourhoods": nbs, "ticker": events,
             "town_hall": {"bx": town.TOWN_HALL[0], "by": town.TOWN_HALL[1]},
             "bounds": town.city_bounds(await city_blocks()), "newest": newest(docs),
+            "paper": await db.papers.find_one({}, {"_id": 0, "issue": 1}, sort=[("issue", -1)]),
             "ladder": {"uptown_at": arena.UPTOWN_AT, "votes": arena.VOTES_PER_DAY},
             "options": {"colors": town.FACTION_COLORS, "landmarks": LANDMARKS},
             "stats": {"taken": len(residents), "capacity": TOWN_CAPACITY, "finished": finished,
@@ -1036,7 +1037,7 @@ async def dev_voters():
             continue
         k = random.choice(voters)
         await db.residents.update_one({"k": k}, {"$set": {"seen_at": now_iso()}})
-        if not await votes_left(k) or not await matchup(k):
+        if not await votes_left(k) or not (await matchup(k))[0]:
             continue
         try:
             async with ARENA_LOCK:
@@ -1357,27 +1358,35 @@ async def arena_pool() -> list:
     return [d for d in docs if in_arena(d)]
 
 
-async def matchup(k: str) -> list:
-    """The two houses k is voting on, kept until they vote so a pair can't be rerolled."""
+async def matchup(k: str) -> tuple:
+    """The two houses k is voting on, and whether they're k's own people: two of their mutuals when two they haven't
+    voted on today are in the running, else two strangers with no names on them. Kept until k votes, so a pair can't
+    be rerolled."""
     pool = {d["k"]: d for d in await arena_pool()}
     cur = await db.matchups.find_one({"k": k})
     if cur and all(x in pool for x in cur["pair"]):
-        return [pool[x] for x in cur["pair"]]
-    pair = arena.pair(list(pool.values()), k, random)
+        return [pool[x] for x in cur["pair"]], cur.get("friends", False)
+    me = await db.residents.find_one({"k": k}, TOWN_FIELDS) or {"k": k}
+    seen = {x async for v in db.votes.find({"voter": k, "day": today()}) for x in (v["win"], v["lose"])}
+    fresh = [d for d in pool.values() if d["k"] not in seen]
+    friends = [d for d in fresh if d["k"] != k and near(me, d)]
+    mine = len(friends) >= 2
+    pair = arena.pair(friends if mine else fresh, k, random) or arena.pair(list(pool.values()), k, random)
     if pair:
-        await db.matchups.update_one({"k": k}, {"$set": {"k": k, "pair": [d["k"] for d in pair], "at": now_iso()}}, upsert=True)
-    return pair
+        await db.matchups.update_one({"k": k}, {"$set": {"k": k, "pair": [d["k"] for d in pair], "friends": mine, "at": now_iso()}},
+                                     upsert=True)
+    return pair, mine
 
 
 async def arena_state(k: str) -> dict:
-    """Your votes left today and, while you have some, two houses with no names on them."""
+    """Your votes left today and, while you have some, two houses: your mutuals', or strangers' with no names."""
     left = await votes_left(k)
-    pair = await matchup(k) if left else []
+    pair, friends = await matchup(k) if left else ([], False)
     colors = {n["id"]: n.get("color") async for n in db.neighbourhoods.find({"active": True}, {"_id": 0, "id": 1, "color": 1})}
     tomorrow = (now() + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
-    return {"left": left, "of": arena.VOTES_PER_DAY, "next_at": tomorrow.isoformat(),
+    return {"left": left, "of": arena.VOTES_PER_DAY, "next_at": tomorrow.isoformat(), "friends": friends,
             "pair": [{"m": arena.model_of(d, d.get("dock") is not None), "c": colors.get(d.get("nb")),
-                      "docks": d.get("dock") is not None} for d in pair]}
+                      "docks": d.get("dock") is not None, **({"p": person(d), "e": arena.score(d)} if friends else {})} for d in pair]}
 
 
 async def cast(k: str, pick: int):
@@ -1401,10 +1410,13 @@ async def cast(k: str, pick: int):
     await db.votes.insert_one({"voter": k, "win": w["k"], "lose": lo["k"], "pts": pts, "day": today(), "at": now_iso()})
     if rank < was_rank and (rank == 1 or rank <= arena.TOP < was_rank):
         await db.events.insert_one({"type": "top", "h": w["h"], "rank": rank, "at": now_iso()})
-    if not w.get("uptown") and won >= arena.UPTOWN_AT:
+    moved = not w.get("uptown") and won >= arena.UPTOWN_AT
+    if moved:
         await db.residents.update_one({"k": w["k"]}, {"$set": {"uptown": True}, "$unset": {"dock": ""}})
         await db.events.insert_one({"type": "uptown", "h": w["h"], "nb": w.get("nb"), "at": now_iso()})
     await bump()
+    return {"pick": pick, "pts": pts, "e": won, "rank": rank, "of": len(pool), "moved": moved,
+            "uptown": moved or bool(w.get("uptown")), "to_go": max(0, arena.UPTOWN_AT - won)}
 
 
 @api.get("/arena")
@@ -1418,8 +1430,8 @@ async def get_arena(request: Request):
 async def arena_vote(body: PickRequest, request: Request):
     me = await require_citizen(request)
     async with ARENA_LOCK:
-        await cast(me["k"], body.pick)
-    return await arena_state(me["k"])
+        last = await cast(me["k"], body.pick)
+    return {**await arena_state(me["k"]), "last": last}
 
 
 @api.post("/me/design")
@@ -1608,12 +1620,52 @@ def climbers(votes: list) -> list:
     return [(k, n) for k, n in net.most_common(5) if n > 0]
 
 
+def paper_sections(events: list, top: list, people: dict) -> dict:
+    """The boxes around the stories: climbers, who moved uptown, new faces and new districts."""
+    def who(types):
+        seen = {}
+        for e in events:
+            k = (e.get("h") or "").lower()
+            if e["type"] in types and k in people:
+                seen.setdefault(k, {**people[k], "where": e.get("where")})
+        return list(seen.values())
+    return {"climbers": [{**people[k], "pts": n} for k, n in top], "uptown": who(("uptown",)),
+            "arrivals": who(("moved_in", "lights_on")),
+            "districts": list(dict.fromkeys(e["name"] for e in events if e["type"] == "new_nb" and e.get("name")))}
+
+
 def plain_paper(events: list, top: list, people: dict) -> dict:
-    up = [e for e in events if e["type"] == "uptown"]
-    movers = sum(e["type"] in ("moved_in", "lights_on") for e in events)
-    headline = (f"@{up[-1]['h']} moves uptown" if up else f"@{people[top[0][0]]['h']} climbs {top[0][1]} points" if top
-                else f"{movers} new {'face' if movers == 1 else 'faces'} on the Docks" if movers else "A quiet day in XField")
-    return {"headline": headline, "stories": [], "quotes": []}
+    """A front page written from the facts alone, for when the writer is away."""
+    sec, stories = paper_sections(events, top, people), []
+    up = sec["uptown"]
+    if len(up) > 2:
+        shown, rest = (up[:4], f"{len(up) - 4} others") if len(up) > 4 else (up[:-1], f"@{up[-1]['h']}")
+        stories.append({"title": f"{len(up)} houses leave the Docks", "people": up[:4],
+                        "body": "It was moving day on the waterfront. " + ", ".join(f"@{p['h']}" for p in shown)
+                                + f" and {rest} won the votes they needed and moved to lots of their own uptown, next to their friends."})
+    for p in up if len(up) <= 2 else []:
+        stories.append({"title": f"@{p['h']} leaves the Docks", "people": [p],
+                        "body": f"Vote by vote, @{p['h']}'s house earned its way off the waterfront and onto its own lot uptown"
+                                + (f" on {p['where']}." if p.get("where") else ".")})
+    if sec["climbers"]:
+        c = sec["climbers"][0]
+        stories.append({"title": f"@{c['h']} climbs {c['pts']} points", "people": [c],
+                        "body": f"Nobody gained more on the ladder since the last paper. Voters who had never seen the name on the door "
+                                f"kept picking @{c['h']}'s house."})
+    for e in [e for e in events if e["type"] == "top" and e.get("rank") == 1][-1:]:
+        k = e["h"].lower()
+        stories.append({"title": f"A new #1: @{e['h']}", "people": [people[k]] if k in people else [],
+                        "body": f"@{e['h']}'s house now sits at the very top of the XField ladder."})
+    if sec["arrivals"]:
+        n = len(sec["arrivals"])
+        stories.append({"title": f"{n} new {'face' if n == 1 else 'faces'} on the Docks", "people": sec["arrivals"][:4],
+                        "body": "Every house starts on the waterfront. " + ", ".join(f"@{p['h']}" for p in sec["arrivals"][:4])
+                                + (" and others" if n > 4 else "") + " turned their lights on and joined the queue for votes."})
+    if sec["districts"]:
+        stories.append({"title": f"New on the map: {sec['districts'][0]}", "people": [],
+                        "body": "A circle of friends filled enough lots to earn a district name of its own."})
+    headline = stories[0]["title"] if stories else "A quiet day in XField"
+    return {"headline": headline, "stories": stories[:5], "quotes": []}
 
 
 async def publish_paper(force: bool = False):
@@ -1642,13 +1694,18 @@ async def publish_paper(force: bool = False):
         except Exception as e:
             logger.warning("paper writing failed: %s", e)
             edition = plain_paper(events, top, people)
+        sections = paper_sections(events, top, people)
+        votes = await db.votes.count_documents({"at": {"$gte": since}})
+        docked = await db.residents.count_documents({"hidden": False, "status": "finished", "dock": {"$exists": True}})
         featured = {}
         for p in [p for s in edition["stories"] for p in s["people"]] + [people[k] for k, _ in top]:
             featured.setdefault(p["k"], {"k": p["k"], "h": p["h"], "a": p.get("a")})
         end = now()
         issue = (last or {}).get("issue", 0) + 1
         await db.papers.insert_one({"issue": issue, "label": f"{end:%A}, {end:%B} {end.day}", "published_at": end.isoformat(),
-                                    **edition, "featured": list(featured.values())})
+                                    **edition, **sections, "featured": list(featured.values()),
+                                    "numbers": {"lit": lit, "taken": len(people), "capacity": TOWN_CAPACITY, "votes": votes,
+                                                "docks": docked, "uptown": lit - docked}})
         await db.events.insert_one({"type": "paper", "h": "", "issue": issue, "headline": edition["headline"], "at": end.isoformat()})
         await bump()
         logger.info("paper No. %s published", issue)

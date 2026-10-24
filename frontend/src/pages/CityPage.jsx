@@ -4,6 +4,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { buildCity } from "@/city3d/layout";
 import { City3D } from "@/city3d/City3D";
 import { Logo } from "@/city3d/Logo";
+import { Newspaper } from "@/city3d/Newspaper";
 import { Arrival, AwayCard, CARD, Face, HouseCard, Minimap, PlaceCard, StreetBar, TickerBar, VoteCard, isLight } from "@/city3d/Hud";
 
 const TITLE = "XField: your city on X, lit up by your friends";
@@ -66,6 +67,11 @@ export default function CityPage() {
   }, [loadTown]);
   useEffect(() => { loadMe(); }, [loadMe, town?.version]);
   useEffect(() => { document.title = TITLE; }, []);
+  // Every new edition lands on everyone's screen once.
+  const issue = town?.paper?.issue;
+  useEffect(() => {
+    if (issue > Number(localStorage.getItem("xf_paper") || 0)) setPlace("ledger");
+  }, [issue]);
 
   const city = useMemo(() => {
     if (!town) return null;
@@ -104,6 +110,10 @@ export default function CityPage() {
     setPlace(it.mark?.kind === "place" ? it.mark.id : it.mark?.kind === "city_hall" ? "hall" : null);
   };
   const visit = (p) => homeOf[p.k] && pick(homeOf[p.k]);
+  const closePaper = () => {
+    if (issue) localStorage.setItem("xf_paper", String(issue));
+    setPlace(null);
+  };
   const pickedNow = picked && homeOf[picked.owner.k];
   const at = atHandle && homeOf[atHandle]?.owner;
 
@@ -147,8 +157,10 @@ export default function CityPage() {
       <div className="absolute left-4 top-4 pointer-events-none">
         <Logo size={44} />
         <div className="mt-1.5 flex gap-1.5 text-xs font-bold">
-          <span className="rounded-full bg-white/85 px-2 py-0.5 shadow-sm" title="Houses whose owner moved in">💡 {town.stats.finished} lit</span>
-          <span className="rounded-full bg-white/85 px-2 py-0.5 shadow-sm" title="Houses waiting for their owner">🌑 {town.stats.reserved} dark</span>
+          <span className="rounded-full bg-white/85 px-2 py-0.5 shadow-sm tabular-nums" title="Lots with a house on them">🏠 {town.stats.taken}/{town.stats.capacity} lots</span>
+          <span className="rounded-full bg-white/85 px-2 py-0.5 shadow-sm tabular-nums" title="Houses on the Docks and uptown">
+            ⚓ {town.residents.filter((r) => r.d != null).length} · 🏙 {town.residents.filter((r) => r.u).length}
+          </span>
         </div>
       </div>
       {me?.status === "finished" && !arrived && (
@@ -205,6 +217,7 @@ export default function CityPage() {
           </div>
         </div>
       )}
+      {place === "ledger" && <Newspaper votes={town.ladder.votes} onVisit={visit} onClose={closePaper} />}
       <TickerBar events={town.ticker} people={Object.fromEntries(town.residents.map((r) => [r.k, r]))} onVisit={visit} />
       {toast && (
         <div className="pop absolute bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full bg-ink text-white text-sm font-bold pl-2 pr-2 py-1.5 shadow-lg pointer-events-auto whitespace-nowrap">

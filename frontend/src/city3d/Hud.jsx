@@ -122,9 +122,13 @@ const until = (iso) => {
   return `${Math.floor(m / 60)}h ${m % 60}m`;
 };
 
-// Two houses with no names on them. Pick the one you like; it takes points from the other.
+const outcome = (r, who) =>
+  r.moved ? `🎉 ${who} moved uptown!` : `+${r.pts} to ${who}. Now #${r.rank} of ${r.of}${r.uptown ? ", uptown" : `, ${r.to_go} pts from uptown`}.`;
+
+// Two houses: your mutuals', or strangers' with no names. Your pick takes points from the other, then you see what it did.
 export function VoteCard({ onVoted }) {
   const [a, setA] = useState(null);
+  const [done, setDone] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState(null);
   const load = () => api("/arena").then(setA).catch(() => {});
@@ -134,7 +138,7 @@ export function VoteCard({ onVoted }) {
     setBusy(true);
     setErr(null);
     try {
-      setA(await api("/arena/vote", { method: "POST", body: { pick } }));
+      setDone(await api("/arena/vote", { method: "POST", body: { pick } }));
       onVoted();
     } catch (e) {
       setErr(e.message);
@@ -143,29 +147,56 @@ export function VoteCard({ onVoted }) {
       setBusy(false);
     }
   };
+  const next = () => { setA(done); setDone(null); };
+  const r = done?.last;
+  const left = done ? done.left : a.left;
   return (
     <div className={`${CARD} w-[min(92vw,300px)] p-3 pointer-events-auto`}>
       <div className="flex items-center justify-between">
-        <div className="font-display font-bold">🗳 Which house wins?</div>
-        <span className="flex gap-1" title={`${a.left} of ${a.of} votes left today`}>
-          {Array.from({ length: a.of }, (_, i) => <span key={i} className={`h-2.5 w-2.5 rounded-full ${i < a.left ? "bg-amber-400" : "bg-slate-200"}`} />)}
+        <div className="font-display font-bold">{a.friends ? "🔥 Who should move up?" : "🗳 Which house wins?"}</div>
+        <span className="flex gap-1" title={`${left} of ${a.of} votes left today`}>
+          {Array.from({ length: a.of }, (_, i) => <span key={i} className={`h-2.5 w-2.5 rounded-full ${i < left ? "bg-amber-400" : "bg-slate-200"}`} />)}
         </span>
       </div>
       {a.pair.length === 2 ? (
         <>
           <div className="mt-2 grid grid-cols-2 gap-2">
-            {a.pair.map((side, i) => (
-              <button key={i} type="button" disabled={busy} onClick={() => vote(i)}
-                className="overflow-hidden rounded-xl bg-sky-50 transition hover:bg-amber-50 hover:ring-2 hover:ring-amber-300 disabled:opacity-50">
-                <HousePreview model={modelOf(side.m, side.docks)} tint={tintOf(side)} />
-                <div className="pb-1 text-[10px] font-bold uppercase tracking-widest text-ink/50">{side.docks ? "⚓ Docks" : "🏙 Uptown"}</div>
-              </button>
-            ))}
+            {a.pair.map((side, i) => {
+              const won = r && r.pick === i, lost = r && r.pick !== i;
+              return (
+                <button key={i} type="button" disabled={busy || !!r} onClick={() => vote(i)}
+                  className={`relative overflow-hidden rounded-xl transition ${won ? "bg-amber-50 ring-2 ring-amber-400" : "bg-sky-50"}
+                    ${lost ? "opacity-40 grayscale" : ""} ${r ? "" : "hover:bg-amber-50 hover:ring-2 hover:ring-amber-300 disabled:opacity-50"}`}>
+                  {won && <span className="rise absolute right-1.5 top-1.5 z-10 rounded-full bg-emerald-500 px-1.5 text-xs font-bold text-white">+{r.pts}</span>}
+                  {side.p && (
+                    <div className="flex flex-col items-center pt-2">
+                      <Face p={side.p} size={44} ring={WARM} />
+                      <div className="mt-1 max-w-full truncate px-1 text-xs font-bold">@{side.p.h}</div>
+                    </div>
+                  )}
+                  <HousePreview model={modelOf(side.m, side.docks)} tint={tintOf(side)} />
+                  <div className="pb-1 text-[10px] font-bold uppercase tracking-widest text-ink/50">
+                    {won && r.moved ? "🏙 Uptown" : side.docks ? "⚓ Docks" : "🏙 Uptown"}{side.e != null && ` · ${won ? r.e : side.e}`}
+                  </div>
+                </button>
+              );
+            })}
           </div>
-          <div className="mt-1.5 text-[11px] text-ink/50">No names. The house you pick may find out it was you.</div>
+          {r ? (
+            <div className="pop mt-2">
+              <div className="text-sm font-bold">{outcome(r, a.pair[r.pick].p ? `@${a.pair[r.pick].p.h}` : "that house")}</div>
+              <Btn tone={left ? "brand" : "soft"} className="mt-2 w-full py-1.5 text-sm" onClick={next}>
+                {left ? `Next pair · ${left} left` : "Done for today"}
+              </Btn>
+            </div>
+          ) : (
+            <div className="mt-1.5 text-[11px] text-ink/50">
+              {a.friends ? "Tap the one who should move up. They gain points and may find out it was you." : "Tap the house you like. No names; it may find out it was you."}
+            </div>
+          )}
         </>
       ) : (
-        <div className="mt-1.5 text-sm text-ink/70">{a.left ? "Not enough houses to vote on yet." : `That's your ${a.of} votes. Back in ${until(a.next_at)}.`}</div>
+        <div className="mt-1.5 text-sm text-ink/70">{a.left ? "Not enough houses to vote on yet." : `✅ You've used your ${a.of} votes. ${a.of} more in ${until(a.next_at)}.`}</div>
       )}
       {err && <div className="mt-1 text-xs text-red-600">{err}</div>}
     </div>
@@ -309,7 +340,7 @@ export function TickerBar({ events, people, onVisit }) {
   );
 }
 
-const PLACES = { hall: "🏛 City Hall", timeline: "📰 The Timeline", ledger: "🗞 The Ledger", post: "📮 Post Office", arrivals: "🛎 Arrivals", docks: "⚓ The Docks" };
+const PLACES = { hall: "🏛 City Hall", timeline: "📰 The Timeline", post: "📮 Post Office", arrivals: "🛎 Arrivals", docks: "⚓ The Docks" };
 
 // What each building downtown is for.
 export function PlaceCard({ id, town, me, onVisit, onClose }) {
@@ -323,7 +354,6 @@ export function PlaceCard({ id, town, me, onVisit, onClose }) {
       <div className="max-h-[55vh] overflow-y-auto">
         {id === "hall" && <Hall town={town} onVisit={onVisit} />}
         {id === "timeline" && <Timeline events={town.ticker} />}
-        {id === "ledger" && <Ledger onVisit={onVisit} />}
         {id === "post" && <PostOffice me={me} />}
         {id === "arrivals" && <Arrivals people={town.newest} onVisit={onVisit} />}
         {id === "docks" && <Docks town={town} me={me} />}
@@ -372,40 +402,6 @@ function Docks({ town, me }) {
       <div>Every house starts here. {docked} {docked === 1 ? "house is" : "houses are"} on the Docks right now.</div>
       <div className="mt-1">Win votes to reach {town.ladder.uptown_at} points and your house moves uptown to its own lot near your friends.</div>
       {l && <div className="mt-2 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs text-ink"><Standing l={l} /></div>}
-    </div>
-  );
-}
-
-// Today's paper, with the weekly census as its Sunday edition.
-function Ledger({ onVisit }) {
-  const [p, setP] = useState(undefined);
-  const [census, setCensus] = useState(null);
-  useEffect(() => {
-    api("/paper/latest").then(setP).catch(() => setP(null));
-    api("/census/latest").then(setCensus).catch(() => {});
-  }, []);
-  if (p === undefined) return <div className="text-sm text-ink/50">Fetching today's paper…</div>;
-  return (
-    <div className="text-sm">
-      {p ? (
-        <>
-          <div className="text-[10px] font-bold uppercase tracking-widest text-ink/50">No. {p.issue} · {p.label}</div>
-          <div className="mt-1 font-display text-lg font-bold leading-snug">{p.headline}</div>
-          {p.stories.map((s) => (
-            <div key={s.title} className="mt-2.5">
-              <div className="font-bold leading-snug">{s.title}</div>
-              <div className="text-xs text-ink/70">{s.body}</div>
-              <div className="mt-1 flex gap-1">
-                {s.people.map((f) => <button key={f.k} type="button" title={`@${f.h}`} onClick={() => onVisit(f)}><Face p={f} size={20} /></button>)}
-              </div>
-            </div>
-          ))}
-        </>
-      ) : <div className="text-ink/70">The first paper comes out tomorrow morning.</div>}
-      <div className="mt-3 flex flex-wrap gap-1.5">
-        {p && <XLink href={onX(p.share.text, p.share.url)}>𝕏 Share today's paper</XLink>}
-        {census && <a href={`/census/${census.issue}`} className="rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold">Weekly census No. {census.issue}</a>}
-      </div>
     </div>
   );
 }
