@@ -1,7 +1,7 @@
 import { forwardRef, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { TransformWrapper, TransformComponent } from "react-zoom-pan-pinch";
 import { P, WORLD_W, WORLD_H, djb2, houseSpot } from "@/lib/iso";
-import { Ground, Highway, Tree } from "@/components/town/Ground";
+import { Ground, Tree } from "@/components/town/Ground";
 import { Building } from "@/components/town/Building";
 import { Landmark, LandmarkLabel } from "@/components/town/Landmark";
 
@@ -38,10 +38,7 @@ function layout(town) {
     });
   });
   items.sort((a, b) => a.depth - b.depth || (a.key < b.key ? -1 : 1));
-  const byId = Object.fromEntries(town.neighbourhoods.map((nb) => [nb.id, nb]));
-  const highways = town.neighbourhoods.flatMap((nb) =>
-    (nb.highways || []).filter((id) => byId[id] && nb.id < id).map((id) => ({ key: `${nb.id}-${id}`, a: nb, b: byId[id] })));
-  return { items, lots, used, tints, highways };
+  return { items, lots, used, tints };
 }
 
 function fitView(used) {
@@ -72,7 +69,7 @@ export const TownMap = forwardRef(function TownMap({ town, anims: { anims, ghost
   const tw = useRef(null);
   const wrap = useRef(null);
   const down = useRef(null);
-  const { items, lots, used, tints, highways } = useMemo(() => layout(town), [town]);
+  const { items, lots, used, tints } = useMemo(() => layout(town), [town]);
   const start = useMemo(() => fitView(used), []); // eslint-disable-line react-hooks/exhaustive-deps
   const [level, setLevel] = useState(levelOf(start.scale));
 
@@ -114,7 +111,6 @@ export const TownMap = forwardRef(function TownMap({ town, anims: { anims, ghost
               </clipPath>
             </defs>
             <Ground lots={lots} tints={tints} />
-            {highways.map((h) => <Highway key={h.key} a={h.a} b={h.b} />)}
             {items.map((it) => {
               if (it.type === "tree") return <Tree key={it.key} tx={it.tx} ty={it.ty} />;
               if (it.type === "hall") return <Landmark key={it.key} bx={it.nb.bx} by={it.nb.by} kind="city_hall" onClick={onTownHall} testId="landmark-town-hall" />;

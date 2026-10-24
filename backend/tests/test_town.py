@@ -1,4 +1,5 @@
-"""Pure unit tests for district and economy rules in town.py. No server needed."""
+"""Pure unit tests for district and house rules in town.py. No server needed."""
+import math
 import os
 import sys
 
@@ -7,33 +8,10 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import town  # noqa: E402
 
 
-def res(k, x, y, floors=1, status="finished", nb=None):
-    return {"k": k, "x": x, "y": y, "floors": floors, "status": status, "nb": nb}
-
-
-def test_stories_set_the_tier():
+def test_floors_set_the_tier():
     assert town.floors_of({"floors": 5}) == 5
     assert town.floors_of({}) == 1
-    assert [town.tier_of(f) for f in (1, 2, 3, 4, 5, 9)] == [0, 1, 2, 2, 3, 3]
-
-
-def test_expansion_cost_counts_projects():
-    assert town.expansion_cost({}) == town.EXPANSION_BASE
-    assert town.expansion_cost({"plot_cap": 18, "max_floors": 6}) == town.EXPANSION_BASE + 600
-
-
-def test_rent_rewards_stories_neighbours_boost_and_tax():
-    me = res("me", 0, 0, floors=3, nb="a")
-    docs = [me, res("n1", 1, 0, nb="a"), res("n2", 2, 0, nb="a", status="reserved"), res("o", 3, 0, nb="b")]
-    r = town.rent(me, docs)
-    assert r["base"] == 100 + 40 * 2 + 10 * 1
-    assert r["tax"] == round(r["gross"] * town.TAX_RATE) and r["net"] == r["gross"] - r["tax"]
-    assert town.rent(me, docs, boosted=True)["gross"] == round(r["base"] * town.MAYOR_BOOST)
-    assert town.rent(res("solo", 9, 9), [])["base"] == 100
-
-
-def test_land_value_grows_with_stories():
-    assert town.land_value(3, 0) - town.land_value(1, 0) == 2000
+    assert [town.tier_of(f) for f in (1, 2, 3, 5, 6, 9, 10, 40)] == [0, 0, 1, 1, 2, 2, 3, 3]
 
 
 def test_district_colours_are_stable_faction_colours():
@@ -71,7 +49,28 @@ def test_districts_leave_the_civic_core():
     assert set(moves) == set(homes)
 
 
-def test_wage_grows_with_loyalty_and_pays_tax():
-    assert town.wage(0)["gross"] == 60
-    assert town.wage(10)["gross"] == town.wage(50)["gross"] == 120
-    assert town.wage(3)["net"] == town.wage(3)["gross"] - town.wage(3)["tax"]
+def test_districts_grow_into_blocks_next_door():
+    homes = {(20 + i % 4, 20 + i // 4): "a" for i in range(12)} | {(24, 20): None}
+    _, blocks, _ = town.plan_blocks(homes, [{"id": "a", "bx": 20, "by": 20, "blocks": [[5, 5]]}])
+    assert blocks["a"][0] == (5, 5) and len(blocks["a"]) == 2
+    assert math.dist(blocks["a"][0], blocks["a"][1]) == 1
+
+
+def test_the_city_has_a_margin_of_open_land():
+    assert town.city_bounds({(0, 0)}) == (-8, -8, 11, 11)
+    assert town.city_bounds({(-1, 0), (2, 0)})[::2] == (-12, 19)
+
+
+def test_a_district_is_one_host_and_their_mutuals():
+    star = {f"m{i}" for i in range(6)}
+    mutuals = {"host": star | {"x"}, **{m: {"host"} for m in star}, "x": {"host", "y"}, "y": {"x"}}
+    groups = town.host_groups(sorted(mutuals), mutuals)
+    assert groups == [("host", ["host", *sorted(star | {"x"})])]
+    assert town.host_groups(["a", "b"], {"a": {"b"}, "b": {"a"}}) == []
+
+
+def test_a_house_grows_a_floor_for_each_friend_who_moved_in():
+    docs = [{"k": "me", "status": "finished", "circle": [{"k": "a"}, {"k": "b"}, {"k": "gone"}, {"k": "me"}]},
+            {"k": "a", "status": "finished", "circle": [{"k": "me"}]},
+            {"k": "b", "status": "reserved", "circle": []}]
+    assert town.street_floors(docs) == {"me": 2, "a": 2, "b": 1}

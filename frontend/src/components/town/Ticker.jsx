@@ -11,19 +11,22 @@ const LINES = {
   grew: (e) => `@${e.h}'s circle grew · ${e.n} ${plural(e.n, "lot", "lots")} reserved`,
   tower: (e) => (e.nb_name ? `New tower in ${e.nb_name}: @${e.h}` : `@${e.h} built a tower`),
   upgraded: (e) => `@${e.h} built up to ${e.n} floors in ${where(e, "XField")}`,
-  new_nb: (e) => `New district on the map: ${e.name}`,
+  new_nb: (e) => (e.h ? `New district: ${e.name}, home of @${e.h} and their mutuals` : `New district on the map: ${e.name}`),
   nb_gone: (e) => `${e.name} emptied out`,
   claimed: (e) => `@${e.h} claimed the charter of ${where(e)}`,
   chartered: (e) => `@${e.h} founded ${where(e, "a new district")}`,
   joined: (e) => `@${e.h} moved into ${where(e)}`,
-  new_mayor: (e) => `${where(e)} elected @${e.h} mayor`,
-  expanded: (e) => (e.project === "height" ? `${where(e)} raised its height limit by ${e.n} floors` : `${where(e)} opened ${e.n} new lots`),
-  highway: (e) => `A highway now links ${where(e)} and ${e.name}`,
+  new_leader: (e) => `${where(e)} elected @${e.h} as its leader`,
+  renamed: (e) => `@${e.h} renamed their district ${e.name}`,
+  uptown: (e) => `🏙 @${e.h}'s house won its way off the Docks and moved uptown`,
+  top: (e) => (e.rank === 1 ? `🥇 @${e.h}'s house is now #1 in XField` : `🏁 @${e.h}'s house broke into the top 10`),
+  docked: (e) => `⚓ The weekly reshuffle sent ${e.n} ${plural(e.n, "house", "houses")} back to the Docks`,
   demolished: (e) => (e.n > 1 ? `${e.n} empty lots were cleared · ${e.n} spots opened up` : `@${e.h}'s empty lot was cleared · a spot opened up`),
   census: (e) => `City Ledger No. ${e.issue} is out`,
+  paper: (e) => `🗞 Today's Ledger: ${e.headline}`,
 };
 
-const line = (e) => (LINES[e.type] || ((x) => `@${x.h} moved in${x.n ? ` · ${x.n} neighbours reserved` : ""}`))(e);
+export const tickerLine = (e) => (LINES[e.type] || ((x) => `@${x.h} moved in${x.n ? ` · ${x.n} neighbours reserved` : ""}`))(e);
 
 export const Ticker = ({ events }) => {
   const [i, setI] = useState(0);
@@ -38,7 +41,7 @@ export const Ticker = ({ events }) => {
     <div className="inline-flex max-w-full items-center gap-2 bg-ink text-white rounded-lg pl-3 pr-4 py-1.5 mb-3" data-testid="town-ticker">
       <Megaphone className="w-4 h-4 text-brand shrink-0" strokeWidth={2.5} />
       <span key={i} className="font-head font-medium text-sm sm:text-base truncate animate-in fade-in slide-in-from-bottom-1 duration-300" data-testid="town-ticker-line">
-        {line(e)}
+        {tickerLine(e)}
       </span>
     </div>
   );

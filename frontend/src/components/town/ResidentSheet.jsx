@@ -1,14 +1,7 @@
 import { useEffect, useState } from "react";
 import { BadgeCheck, Crown, EyeOff, ExternalLink, Loader2, MapPin } from "lucide-react";
 import { api, getAdmin, openXPost } from "@/lib/api";
-import { Sheet, Face, Stat, fmt } from "@/components/town/Sheet";
-import { LawnSignPanel } from "@/components/town/LawnSignPanel";
-
-const until = (iso) => {
-  const m = Math.max(0, Math.ceil((new Date(iso) - Date.now()) / 60000));
-  return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`;
-};
-
+import { Sheet, Face } from "@/components/town/Sheet";
 const Neighbours = ({ list, onPick }) => (
   <div className="mt-5" data-testid="resident-neighbours">
     <div className="font-head font-semibold text-xs uppercase tracking-wider text-ink/60 mb-2">Neighbours</div>
@@ -42,52 +35,11 @@ const Facts = ({ d, onDistrict }) => {
       <span className="sticker bg-white text-sm sm:text-base" data-testid="resident-tier">{d.tier_name.toUpperCase()} · {d.floors} FL</span>
       {nb && (
         <button type="button" onClick={() => onDistrict(nb.id)} className="chip text-sm sm:text-base" style={{ background: nb.color }} data-testid="resident-neighbourhood">
-          {nb.founder || nb.mayor ? <Crown className="w-4 h-4" strokeWidth={2.5} /> : <MapPin className="w-4 h-4" strokeWidth={2.5} />}
+          {nb.founder || nb.leader ? <Crown className="w-4 h-4" strokeWidth={2.5} /> : <MapPin className="w-4 h-4" strokeWidth={2.5} />}
           {(nb.name || "New district").toUpperCase()}
         </button>
       )}
       {d.brought > 0 && <span className="sticker bg-brand text-sm sm:text-base" data-testid="resident-brought">BROUGHT {d.brought} · {d.brought_lit} LIT</span>}
-    </div>
-  );
-};
-
-const Economy = ({ d, onDone, onCharter }) => {
-  const [busy, setBusy] = useState(false);
-  const [note, setNote] = useState(null);
-  const e = d.economy;
-  const nb = d.neighbourhood;
-  const ready = !e.next_claim_at || new Date(e.next_claim_at) <= Date.now();
-
-  const act = async (path, ok) => {
-    setBusy(true);
-    setNote(null);
-    try {
-      const r = await api(path, { method: "POST" });
-      setNote(ok(r));
-      onDone();
-    } catch (err) {
-      setNote(err.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="mt-5" data-testid="resident-economy">
-      <div className="grid grid-cols-3 gap-2">
-        <Stat label="Credits" value={fmt(e.credits)} testId="economy-credits" />
-        <Stat label="Rent" value={`+${fmt(e.rent.net)}`} testId="economy-yield" />
-        <Stat label="Land value" value={fmt(d.land_value)} testId="economy-land-value" />
-      </div>
-      <div className="mt-3 grid gap-2">
-        <button type="button" disabled={busy || !ready} onClick={() => act("/me/claim", (r) => `+${fmt(r.net)} credits collected.`)} className="btn-primary justify-center text-base" data-testid="economy-claim-button">
-          {ready ? `COLLECT +${fmt(e.rent.net)}` : `NEXT PAYOUT IN ${until(e.next_claim_at)}`}
-        </button>
-        <button type="button" disabled={nb?.founder} onClick={onCharter} className="chip justify-center text-sm disabled:opacity-40" data-testid="economy-charter-button">
-          FOUND A DISTRICT
-        </button>
-      </div>
-      {note && <p className="mt-2 font-head font-semibold text-sm" data-testid="economy-note">{note}</p>}
     </div>
   );
 };
@@ -114,7 +66,6 @@ const ReservedActions = ({ d, auth, onMoveIn, built }) => {
 export const ResidentSheet = ({ handle, mode, version, auth, onClose, onPick, onMoveIn, onHidden, onChanged, onDistrict, onCharter }) => {
   const [d, setD] = useState(null);
   const [missing, setMissing] = useState(false);
-  const [tick, setTick] = useState(0);
   const admin = getAdmin();
 
   useEffect(() => {
@@ -122,7 +73,7 @@ export const ResidentSheet = ({ handle, mode, version, auth, onClose, onPick, on
     setMissing(false);
     api(`/residents/${encodeURIComponent(handle)}`).then((x) => live && setD(x)).catch((e) => live && e.status === 404 && setMissing(true));
     return () => { live = false; };
-  }, [handle, version, tick, auth.user]);
+  }, [handle, version, auth.user]);
 
   if (missing)
     return (
@@ -142,7 +93,6 @@ export const ResidentSheet = ({ handle, mode, version, auth, onClose, onPick, on
     await api(`/admin/residents/${d.h}/hide`, { method: "POST", body: { hidden: true }, headers: { "X-Admin-Key": admin } });
     onHidden();
   };
-  const changed = () => { setTick((t) => t + 1); onChanged(); };
   const reserved = d.status === "reserved";
   const title = reserved
     ? mode === "built" ? `@${d.h}'s lot is reserved!` : mode === "ready" ? `@${d.h}, your lot is ready.` : `Reserved for @${d.h}`
@@ -159,8 +109,11 @@ export const ResidentSheet = ({ handle, mode, version, auth, onClose, onPick, on
       {(mode === "celebrate" || mode === "built") && (
         <img src={d.card_url} alt={`@${d.h}'s card`} className="mt-5 w-full max-w-[260px] mx-auto rounded-xl border-2 border-ink aspect-[3/4] object-cover bg-sky-light" data-testid="resident-card-image" />
       )}
-      {d.economy && !reserved && <Economy d={d} onDone={changed} onCharter={onCharter} />}
-      <LawnSignPanel d={d} onSaved={changed} />
+      {d.war && (
+        <button type="button" disabled={d.neighbourhood?.founder} onClick={onCharter} className="chip w-full justify-center mt-5 text-sm disabled:opacity-40" data-testid="resident-charter-button">
+          FOUND A DISTRICT
+        </button>
+      )}
       {reserved ? (
         <ReservedActions d={d} auth={auth} onMoveIn={onMoveIn} built={mode === "built"} />
       ) : (

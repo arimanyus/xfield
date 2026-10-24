@@ -1,7 +1,6 @@
 import { useState } from "react";
-import { Coins, LogIn, LogOut, Home, Landmark } from "lucide-react";
+import { LogIn, LogOut, Home, Landmark } from "lucide-react";
 import { smallAvatar } from "@/lib/api";
-import { fmt } from "@/components/town/Sheet";
 
 const XLogo = () => (
   <svg viewBox="0 0 24 24" className="w-4 h-4 fill-current" aria-label="X" role="img">
@@ -22,9 +21,7 @@ export const AuthChip = ({ auth, onMyHouse, onMyDistrict }) => {
     <div className="relative" data-testid="auth-user-chip">
       <button type="button" onClick={() => setOpen((v) => !v)} className="h-12 pl-1 pr-3 rounded-xl border-2 border-ink bg-white inline-flex items-center gap-2 hover:-translate-y-0.5 transition-transform" aria-label="My account" data-testid="auth-user-button">
         <img src={smallAvatar(auth.user.avatar_url)} alt={`@${auth.user.h}`} className="w-9 h-9 rounded-lg object-cover border border-ink" />
-        <span className="font-display font-bold text-sm sm:text-base inline-flex items-center gap-1" data-testid="auth-credits">
-          <Coins className="w-4 h-4" strokeWidth={2.5} /> {fmt(auth.user.credits)}
-        </span>
+        <span className="font-display font-bold text-sm sm:text-base">@{auth.user.h}</span>
       </button>
       {open && (
         <div className="panel absolute right-0 mt-3 w-56 p-2" style={{ "--panel-r": "14px" }}>

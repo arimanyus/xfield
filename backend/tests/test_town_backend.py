@@ -49,7 +49,7 @@ class TestTown:
         for k in ("version", "residents", "neighbourhoods", "ticker", "town_hall", "stats", "options"):
             assert k in d, f"missing {k}"
         assert d["town_hall"] == {"bx": 0, "by": 0}
-        assert set(d["options"]) == {"colors", "projects", "landmarks"}
+        assert set(d["options"]) == {"colors", "max_allies", "landmarks"}
         s = d["stats"]
         for k in ("population", "finished", "reserved", "neighbourhoods", "biggest"):
             assert k in s
@@ -76,8 +76,8 @@ class TestResidents:
         r = api_get("/api/residents/levelsio")
         assert r.status_code == 200, r.text
         d = r.json()
-        for k in ("k", "h", "name", "avatar_url", "status", "tier", "tier_name", "floors", "max_floors",
-                  "land_value", "home", "inbound", "by_h", "neighbourhood", "neighbours", "brought",
+        for k in ("k", "h", "name", "avatar_url", "status", "tier", "tier_name", "floors",
+                  "home", "inbound", "by_h", "neighbourhood", "neighbours", "brought",
                   "brought_lit", "share", "card_url"):
             assert k in d, f"missing {k}"
         assert d["status"] == "finished"

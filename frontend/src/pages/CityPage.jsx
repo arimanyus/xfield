@@ -1,132 +1,143 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
-import { buildCity, tileOf } from "@/city3d/layout";
+import { buildCity } from "@/city3d/layout";
 import { City3D } from "@/city3d/City3D";
-import { CARD, CivicCard, Face, HomeCard, MayorBar, Minimap, MyHome, TopDistricts, isLight, useNow } from "@/city3d/Hud";
+import { Logo } from "@/city3d/Logo";
+import { Arrival, AwayCard, CARD, Face, HouseCard, Minimap, PlaceCard, StreetBar, TickerBar, VoteCard, isLight } from "@/city3d/Hud";
+
+const TITLE = "XField: your city on X, lit up by your friends";
+const newsToast = (n) => ({ text: `💡 @${n.p.h} just moved in near you`, face: n.p, visit: n.p, cta: "Visit" });
 
 export default function CityPage() {
   const [town, setTown] = useState(null);
   const [me, setMe] = useState(null);
   const [hover, setHover] = useState(null);
   const [picked, setPicked] = useState(null);
+  const [place, setPlace] = useState(() => new URLSearchParams(window.location.search).get("place"));
   const [focus, setFocus] = useState(null);
   const [toast, setToast] = useState(null);
-  const [busy, setBusy] = useState(false);
-  const [copied, setCopied] = useState(false);
+  const [flashes, setFlashes] = useState([]);
+  const [away, setAway] = useState(null);
+  const [arrived, setArrived] = useState(() => Boolean(localStorage.getItem("xf_arrived")));
   const auth = useAuth();
-  const now = useNow();
   const labelNodes = useRef([]);
-  const params = new URLSearchParams(window.location.search);
-  const invitedBy = params.get("invite");
+  const flashId = useRef(0);
+  const lastLots = useRef(null);
+  const seen = useRef(null);
+  const startedRef = useRef(false);
+  const atHandle = new URLSearchParams(window.location.search).get("at")?.toLowerCase();
+  const arrive = () => {
+    localStorage.setItem("xf_arrived", "1");
+    setArrived(true);
+  };
 
-  const loadTown = useCallback(() => api("/town").then(setTown).catch(() => {}), []);
+  const flash = (list) => {
+    const at = performance.now();
+    setFlashes((fs) => [...fs.filter((f) => at - f.at < 1500), ...list.slice(0, 64).map((f) => ({ ...f, at, id: flashId.current++ }))]);
+  };
+  const version = useRef(null);
+  const loadTown = useCallback(() => api(`/town${version.current === null ? "" : `?v=${version.current}`}`).then((t) => {
+    if (t.unchanged) return;
+    version.current = t.version;
+    const was = lastLots.current;
+    lastLots.current = new Map(t.residents.map((r) => [r.k, `${r.s}${r.f}${r.u}`]));
+    if (was) flash(t.residents.filter((r) => was.has(r.k) && was.get(r.k) !== `${r.s}${r.f}${r.u}`).map((r) => ({ x: r.x, y: r.y, color: "#FCD34D" })));
+    setTown(t);
+  }).catch(() => {}), []);
   const loadMe = useCallback(() => {
     if (!auth.user) return setMe(null);
-    return api(`/residents/${auth.user.h}`).then(setMe).catch(() => setMe(null));
+    return api(`/residents/${auth.user.h}`).then((m) => {
+      setMe(m);
+      const news = m.news || [];
+      const last = seen.current ?? localStorage.getItem("xf_seen") ?? "";
+      const fresh = news.filter((n) => n.at > last);
+      if (seen.current === null) {
+        if (last && fresh.length) setAway(fresh);
+      } else if (fresh.length) setToast(newsToast(fresh[0]));
+      seen.current = news[0]?.at > last ? news[0].at : last;
+      localStorage.setItem("xf_seen", seen.current);
+    }).catch(() => setMe(null));
   }, [auth.user]);
   useEffect(() => {
     loadTown();
-    const id = setInterval(loadTown, 10000);
+    const id = setInterval(loadTown, 5000);
     return () => clearInterval(id);
   }, [loadTown]);
   useEffect(() => { loadMe(); }, [loadMe, town?.version]);
-  useEffect(() => {
-    if (town && new Date(town.city.ends_at).getTime() <= now) loadTown();
-  }, [town, now, loadTown]);
+  useEffect(() => { document.title = TITLE; }, []);
 
   const city = useMemo(() => {
     if (!town) return null;
     const c = buildCity(town);
-    const mine = c.homes.find((h) => h.people.some((p) => p.k === auth.user?.k));
-    if (mine) c.labels.push({ kind: "me", pos: [mine.x, 0.5 + 0.25 * mine.stories, mine.z], avatar: auth.user.avatar_url });
+    const mine = c.homes.find((h) => h.owner.k === auth.user?.k);
     c.mine = mine ? [mine.x, mine.z] : null;
     return c;
   }, [town, auth.user]);
-  const startedRef = useRef(false);
   useEffect(() => {
     if (!city || startedRef.current) return;
     startedRef.current = true;
-    setFocus(city.mine || [1.5, 1.5]);
-  }, [city]);
+    const there = atHandle && city.homes.find((h) => h.owner.k === atHandle);
+    setFocus(there ? [there.x, there.z] : city.mine || [1.5, 1.5]);
+    if (there) setPicked(there);
+  }, [city, atHandle]);
 
-  const districts = useMemo(() => {
-    if (!town) return [];
-    const tallest = {};
-    for (const r of town.residents) tallest[r.nb] = Math.max(tallest[r.nb] || 0, r.f || 1);
-    return [...town.neighbourhoods].map((n) => ({ ...n, tallest: tallest[n.id] || 1 }))
-      .sort((a, b) => b.size - a.size || (b.treasury || 0) - (a.treasury || 0));
-  }, [town]);
-
-  const act = async (fn, ok) => {
-    setBusy(true);
-    try {
-      const r = await fn();
-      if (ok) setToast(ok(r));
-      await loadTown();
-      await loadMe();
-    } catch (e) {
-      setToast(e.message);
-    } finally {
-      setBusy(false);
-    }
-  };
-  const vote = (k) => act(() => api("/city/vote", { method: "POST", body: { candidate: k } }), () => `You voted for @${k}.`);
-  const boost = (id) => act(() => api("/city/boost", { method: "POST", body: { nb_id: id } }), () => "Boost set for this term.");
-  const collect = () => act(() => api("/me/claim", { method: "POST" }), (r) => `+₡${r.net} rent. ₡${r.tax} went to the city vault.`);
-  const work = (place) => act(() => api("/me/work", { method: "POST", body: { place } }),
-    (r) => `+₡${r.net} for shift ${r.shifts} as a ${r.title}. ₡${r.tax} went to the city vault.`);
-  const run = () => act(() => api("/city/run", { method: "POST" }), () => "You're on the ballot. Tell your neighbours to vote for you.");
-  const fund = () => act(() => api(`/districts/${me.neighbourhood.id}/contribute`, { method: "POST", body: { amount: 100 } }),
-    (r) => (r.built?.length ? `Treasury funded a ${r.built.join(" and ")} project!` : "₡100 added to the treasury."));
-  const invite = async () => {
-    await navigator.clipboard.writeText(me.economy.invite_url).catch(() => {});
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
   useEffect(() => {
     if (!toast) return;
-    const id = setTimeout(() => setToast(null), 3500);
+    const id = setTimeout(() => setToast(null), toast.href || toast.visit ? 7000 : 3500);
     return () => clearTimeout(id);
   }, [toast]);
 
-  if (!city) return <div className="fixed inset-0 grid place-items-center title-display text-5xl">XFIELD</div>;
+  if (!city) return <div className="fixed inset-0 grid place-items-center"><Logo size={72} /></div>;
   const nbById = Object.fromEntries(town.neighbourhoods.map((n) => [n.id, n]));
+  const homeOf = Object.fromEntries(city.homes.map((h) => [h.owner.k, h]));
+  const myNb = me?.neighbourhood ? nbById[me.neighbourhood.id] : null;
   const h = hover?.item;
-  const running = new Set(town.city.race.map((c) => c.k));
+  const roof = (home) => 0.6 + 0.25 * home.stories;
+  const myHome = homeOf[auth.user?.k];
+  const labels = [...city.labels,
+    ...(myHome ? [{ kind: "me", key: "me", pos: [myHome.x, roof(myHome) + 0.5, myHome.z], avatar: auth.user.avatar_url, score: myHome.owner.e }] : [])];
+  const refresh = () => Promise.all([loadTown(), loadMe()]);
   const pick = (it) => {
     setFocus([it.x, it.z]);
-    setPicked(it.owner || it.mark?.kind === "civic" ? it : null);
+    setPicked(it.owner ? it : null);
+    setPlace(it.mark?.kind === "place" ? it.mark.id : it.mark?.kind === "city_hall" ? "hall" : null);
   };
+  const visit = (p) => homeOf[p.k] && pick(homeOf[p.k]);
+  const pickedNow = picked && homeOf[picked.owner.k];
+  const at = atHandle && homeOf[atHandle]?.owner;
 
   return (
-    <div className="fixed inset-0 overflow-hidden select-none">
-      <City3D city={city} labelNodes={labelNodes} focus={focus} onHover={setHover} onPick={pick} />
+    <div className="fixed inset-0 overflow-clip select-none">
+      <City3D city={city} labels={labels} labelNodes={labelNodes} focus={focus} flashes={flashes}
+        onHover={setHover} onPick={pick} newest={town.newest} onFace={(k) => visit({ k })} />
       <div className="absolute inset-0 pointer-events-none">
-        {city.labels.map((l, i) => (
-          <div key={i} ref={(el) => (labelNodes.current[i] = el)} className="absolute left-0 top-0 will-change-transform">
+        {labels.map((l, i) => (
+          <div key={l.key || i} ref={(el) => { labelNodes.current[i] = el; }} className="absolute left-0 top-0 will-change-transform">
             {l.kind === "me" ? (
               <div className="flex flex-col items-center animate-bounce">
-                <img src={l.avatar} alt="" className="w-10 h-10 rounded-full border-[3px] border-white shadow-lg bg-sky-light" />
-                <span className="mt-1 rounded-full bg-ink text-white text-[11px] font-bold px-2 py-0.5">YOU</span>
+                <img src={l.avatar} alt="" className="w-10 h-10 rounded-full border-[3px] border-amber-300 shadow-lg bg-sky-light" />
+                <span className="mt-1 rounded-full bg-amber-300 text-ink text-[11px] font-bold px-2 py-0.5 whitespace-nowrap tabular-nums">YOU{l.score != null && ` · ${l.score}`}</span>
               </div>
-            ) : l.kind === "mayor" ? (
-              <div className="flex items-center gap-1.5 rounded-full bg-ink text-white pl-1 pr-3 py-1 shadow-lg">
-                {l.mayor ? <Face p={l.mayor} size={22} /> : <span className="w-[22px] h-[22px] rounded-full bg-white/20" />}
-                <span className="text-xs font-bold whitespace-nowrap">{l.text}</span>
-              </div>
-            ) : l.kind === "civic" ? (
-              <div className="flex flex-col items-center">
-                <span className="flex items-center gap-1.5 rounded-full bg-white/95 px-2 py-0.5 text-xs font-bold shadow whitespace-nowrap">
-                  <span className="w-2 h-2 rounded-full" style={{ background: l.color }} />{l.text}
-                </span>
-                <span className="mt-0.5 text-[10px] font-semibold text-ink/70 bg-white/80 rounded px-1 whitespace-nowrap">{l.sub}</span>
-              </div>
+            ) : l.kind === "place" ? (
+              <button type="button" onClick={() => { setPlace(l.id); setPicked(null); }}
+                className="pointer-events-auto rounded-full bg-white/95 px-3 py-1 text-sm font-display font-bold text-ink shadow-md whitespace-nowrap hover:bg-white">
+                {l.text}
+              </button>
             ) : (
               <div className="flex flex-col items-center">
                 <span className="rounded-lg px-2.5 py-1 font-display font-bold text-sm shadow-md whitespace-nowrap"
                   style={{ background: l.color, color: isLight(l.color) ? "#0F172A" : "#FFFFFF" }}>{l.text}</span>
-                <span className="mt-0.5 text-[11px] font-semibold text-ink/80 bg-white/85 rounded px-1.5 whitespace-nowrap">{l.sub}</span>
+                <span className="mt-1 flex items-center -space-x-1.5" title={l.host ? `@${l.host}'s mutuals` : undefined}>
+                  {l.faces.map((p, i) => (
+                    <button key={p.k} type="button" onClick={() => visit(p)} className="pointer-events-auto hover:z-10 hover:scale-110 transition-transform">
+                      <Face p={p} size={i ? 22 : 28} ring={i ? "#FFFFFF" : l.color} />
+                    </button>
+                  ))}
+                  {l.size > l.faces.length && (
+                    <span className="!ml-1 rounded-full bg-white/90 px-1.5 text-[11px] font-bold text-ink/80 tabular-nums shadow-sm">+{l.size - l.faces.length}</span>
+                  )}
+                </span>
               </div>
             )}
           </div>
@@ -134,41 +145,45 @@ export default function CityPage() {
       </div>
 
       <div className="absolute left-4 top-4 pointer-events-none">
-        <div className="title-display text-4xl drop-shadow-sm">XFIELD</div>
-        <div className="mt-1 text-sm font-semibold text-ink/70">
-          {town.stats.taken}/{town.stats.capacity} citizens · {town.neighbourhoods.length} districts
+        <Logo size={44} />
+        <div className="mt-1.5 flex gap-1.5 text-xs font-bold">
+          <span className="rounded-full bg-white/85 px-2 py-0.5 shadow-sm" title="Houses whose owner moved in">💡 {town.stats.finished} lit</span>
+          <span className="rounded-full bg-white/85 px-2 py-0.5 shadow-sm" title="Houses waiting for their owner">🌑 {town.stats.reserved} dark</span>
         </div>
       </div>
-      <div className="absolute top-4 left-1/2 -translate-x-1/2">
-        <MayorBar city={town.city} me={me} districts={districts} onVote={vote} onBoost={boost} onRun={run} busy={busy} now={now} />
-      </div>
-      <div className="absolute right-4 top-4">
-        <TopDistricts districts={districts} boost={town.city.boost?.id} onPick={(d) => setFocus([tileOf(d.bx), tileOf(d.by)])} />
-      </div>
-      <div className="absolute right-4 bottom-4">
+      {me?.status === "finished" && !arrived && (
+        <div className="absolute bottom-28 left-1/2 -translate-x-1/2">
+          <Arrival me={me} nb={myNb} onClose={arrive} />
+        </div>
+      )}
+      {me?.status === "finished" && arrived && (
+        <div className="absolute right-4 top-4">
+          <VoteCard onVoted={refresh} />
+        </div>
+      )}
+      <div className="absolute right-4 bottom-12">
         <Minimap city={city} me={city.mine} onPick={setFocus} />
       </div>
-      <div className="absolute left-4 bottom-4 flex flex-col gap-2 items-start">
-        {picked?.owner && (
-          <HomeCard home={picked} nb={nbById[picked.owner.nb]} me={me} running={running} onVote={vote} onClose={() => setPicked(null)} />
+      <div className="absolute left-4 bottom-12 flex flex-col gap-2 items-start">
+        {place && !pickedNow && <PlaceCard id={place} town={town} me={me} onVisit={visit} onClose={() => setPlace(null)} />}
+        {pickedNow && (
+          <HouseCard house={pickedNow} nb={nbById[pickedNow.owner.nb]} signedIn={Boolean(me)} onChanged={refresh}
+            onLeft={() => { window.location.href = "/"; }} onClose={() => setPicked(null)} />
         )}
-        {picked?.mark && (
-          <CivicCard place={city.buildings.find((b) => b.mark?.id === picked.mark.id)?.mark || picked.mark} me={me} now={now} busy={busy} onWork={work} onClose={() => setPicked(null)} />
-        )}
-        {me?.economy ? (
-          <MyHome me={me} district={me.neighbourhood && nbById[me.neighbourhood.id]} city={town.city} now={now} busy={busy}
-            onCollect={collect} onInvite={invite} onFund={fund} onWork={work} onCore={() => setFocus([1.5, 1.5])}
-            onFocus={() => city.mine && setFocus(city.mine)} copied={copied} />
-        ) : auth.ready && (
+        {away && me && !pickedNow && !place && <AwayCard news={away} onVisit={(p) => { setAway(null); visit(p); }} onClose={() => setAway(null)} />}
+        {me && me.status !== "finished" && <div className={`${CARD} px-3 py-2 text-sm font-bold pointer-events-auto`}>🔌 Turning your lights on…</div>}
+        {me?.status === "finished" && arrived && <StreetBar me={me} onFocus={() => city.mine && setFocus(city.mine)} onVisit={visit} />}
+        {auth.ready && !auth.user && (
           <div className={`${CARD} w-[min(92vw,330px)] p-4 pointer-events-auto`}>
             <div className="font-display font-bold text-lg">
-              {invitedBy ? `@${invitedBy} saved you a floor in their home` : "Move into XField"}
+              {at ? (at.s === "r" ? `@${at.h}'s house is dark` : `@${at.h} lives here`) : "Your house is already here"}
             </div>
             <div className="mt-1 text-sm text-ink/70">
-              {invitedBy ? "Sign in with X and you'll move in with them. Your home grows a story, and you both get ₡300."
-                : "Sign in with X. You get a home next to the people you talk to, and it grows a story for every friend who moves in."}
+              {at?.s === "r" ? "Is it yours? Sign in with X to turn the lights on."
+                : "XField is a city built from who talks to whom on X. Your friends live on your street. Sign in to turn your lights on."}
             </div>
-            <button type="button" onClick={() => auth.login("/")} className="mt-3 rounded-lg bg-ink text-white font-bold px-4 py-2">
+            <button type="button" onClick={() => auth.login(window.location.pathname + window.location.search)}
+              className="mt-3 rounded-lg bg-ink text-white font-bold px-4 py-2">
               Sign in with X
             </button>
           </div>
@@ -178,19 +193,30 @@ export default function CityPage() {
       {h?.owner && !picked && (
         <div className="absolute pointer-events-none z-10" style={{ left: hover.x + 14, top: hover.y + 14 }}>
           <div className={`${CARD} flex items-center gap-2 px-3 py-2`}>
-            <Face p={h.owner} size={32} />
+            <Face p={h.owner} size={32} ring={h.owner.s === "f" ? "#FCD34D" : "#475569"} dim={h.owner.s !== "f"} />
             <div>
-              <div className="text-sm font-bold">@{h.owner.h}{h.stories > 1 ? ` +${h.stories - 1}` : ""}</div>
+              <div className="text-sm font-bold">@{h.owner.h}</div>
               <div className="text-[11px] text-ink/70">
-                {h.owner.s === "r" && h.stories === 1 ? "Reserved lot" : `${h.stories} ${h.stories === 1 ? "story" : "stories"}`}
-                {nbById[h.owner.nb] ? ` · ${nbById[h.owner.nb].name}` : ""}
+                {h.owner.s === "f" ? (h.owner.u ? "🏙 Uptown" : "⚓ Docks") : "🌑 dark"} · 🏢 {h.owner.f} {h.owner.f === 1 ? "floor" : "floors"}
+                {h.owner.s === "f" && ` · ${h.owner.e} pts`}
+                {nbById[h.owner.nb] ? ` · ${nbById[h.owner.nb].name || "New district"}` : ""}
               </div>
             </div>
           </div>
         </div>
       )}
+      <TickerBar events={town.ticker} people={Object.fromEntries(town.residents.map((r) => [r.k, r]))} onVisit={visit} />
       {toast && (
-        <div className="absolute bottom-6 left-1/2 -translate-x-1/2 rounded-full bg-ink text-white text-sm font-semibold px-4 py-2 shadow-lg">{toast}</div>
+        <div className="pop absolute bottom-14 left-1/2 -translate-x-1/2 flex items-center gap-2 rounded-full bg-ink text-white text-sm font-bold pl-2 pr-2 py-1.5 shadow-lg pointer-events-auto whitespace-nowrap">
+          {toast.face && <Face p={toast.face} size={26} />}
+          <span className={toast.face ? "" : "pl-2"}>{toast.text || toast}</span>
+          {toast.href ? (
+            <a href={toast.href} target="_blank" rel="noreferrer" className="rounded-full bg-white text-ink px-3 py-1 text-xs">{toast.cta}</a>
+          ) : toast.visit ? (
+            <button type="button" onClick={() => { visit(toast.visit); setToast(null); }}
+              className="rounded-full bg-amber-300 text-ink px-3 py-1 text-xs">{toast.cta}</button>
+          ) : <span className="pr-2" />}
+        </div>
       )}
     </div>
   );

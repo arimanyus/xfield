@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useMoveIn } from "@/hooks/useMoveIn";
 import { useTownAnims } from "@/hooks/useTownAnims";
 import { TownMap } from "@/components/town/TownMap";
+import { Logo } from "@/city3d/Logo";
 import { TownHeader } from "@/components/town/TownHeader";
 import { SearchFly } from "@/components/town/SearchFly";
 import { AuthChip } from "@/components/town/AuthChip";
@@ -90,7 +91,7 @@ export default function TownPage() {
     return (
       <div className="fixed inset-0 grid place-items-center" data-testid="town-loading">
         <div className="text-center">
-          <div className="title-display text-5xl sm:text-7xl">XFIELD</div>
+          <div className="flex justify-center"><Logo size={72} /></div>
           {error ? <p className="mt-4 font-head font-semibold text-xl">{error}</p> : <Loader2 className="w-10 h-10 animate-spin mx-auto mt-6" strokeWidth={2.5} />}
         </div>
       </div>

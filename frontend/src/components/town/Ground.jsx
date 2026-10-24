@@ -47,15 +47,3 @@ export const Tree = memo(function Tree({ tx, ty }) {
     </g>
   );
 });
-
-export const Highway = ({ a, b }) => {
-  const [ax, ay] = P(3 * a.bx + 1, 3 * a.by + 1);
-  const [bx, by] = P(3 * b.bx + 1, 3 * b.by + 1);
-  return (
-    <g aria-hidden="true">
-      <line x1={ax} y1={ay} x2={bx} y2={by} stroke="#0F172A" strokeWidth={26} strokeLinecap="round" />
-      <line x1={ax} y1={ay} x2={bx} y2={by} stroke="#4B5563" strokeWidth={20} strokeLinecap="round" />
-      <line x1={ax} y1={ay} x2={bx} y2={by} stroke="#FBBF24" strokeWidth={3} strokeDasharray="18 16" />
-    </g>
-  );
-};

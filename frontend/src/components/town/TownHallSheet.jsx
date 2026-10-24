@@ -2,9 +2,9 @@ import { Sheet } from "@/components/town/Sheet";
 
 const STEPS = [
   "Type any X handle to reserve their lot next to the people they talk to.",
-  "Only the real owner can light it up, by signing in with X. That pays 500 credits.",
-  "Join a district, add floors, fund its treasury and vote for its mayor.",
-  "Districts grow when their people show up. Lots are limited.",
+  "Only the real owner can light it up, by signing in with X.",
+  "Every friend who moves in next to you adds a floor to your house.",
+  "Neighbours pick the sign on your roof. Pick theirs back.",
 ];
 
 export const TownHallSheet = ({ stats, onClose }) => (

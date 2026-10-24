@@ -15,6 +15,7 @@ BRAND = (52, 211, 153)
 AMBER = (245, 158, 11)
 LIT = (252, 227, 138)
 GLASS = (156, 199, 234)
+DARK = (51, 65, 85)
 NEUTRAL = (138, 148, 163)
 WALLS = [(232, 226, 214), (217, 195, 165), (201, 139, 107), (191, 199, 207), (227, 213, 184), (168, 181, 194)]
 TWC, THC = 290, 145
@@ -94,18 +95,17 @@ def _building(d, i, j, floors, key, color, scale=1.0, reserved=False):
     half = (0.3 if floors <= 2 else 0.34) * scale ** 0.5
     x0, x1, y0, y1 = i - half, i + half, j - half, j + half
     hh = min(48 + 30 * floors, 380) * scale
-    wall = (238, 241, 245) if reserved else WALLS[djb2(key) % len(WALLS)]
+    wall = DARK if reserved else WALLS[djb2(key) % len(WALLS)]
     T, R, B, L = (x0, y0), (x1, y0), (x1, y1), (x0, y1)
     up = lambda p, v=hh: P(p[0], p[1], v)
     _poly(d, [P(*L), P(*B), up(B), up(L)], _shade(wall, 0.82))
     _poly(d, [P(*B), P(*R), up(R), up(B)], wall)
-    if not reserved:
-        rows = min(floors, 10)
-        for face in ("left", "right"):
-            for r in range(rows):
-                v0 = hh * (0.1 + r * 0.8 / rows)
-                for u0, u1 in ((0.15, 0.4), (0.6, 0.85)):
-                    _poly(d, _quad(face, x0, x1, y0, y1, u0, u1, v0, v0 + hh * 0.45 / rows), LIT, 2)
+    rows = min(floors, 10)
+    for face in ("left", "right"):
+        for r in range(rows):
+            v0 = hh * (0.1 + r * 0.8 / rows)
+            for u0, u1 in ((0.15, 0.4), (0.6, 0.85)):
+                _poly(d, _quad(face, x0, x1, y0, y1, u0, u1, v0, v0 + hh * 0.45 / rows), INK if reserved else LIT, 2)
     top_y = hh
     roof = NEUTRAL if reserved else color
     if floors <= 2:
@@ -126,11 +126,6 @@ def _building(d, i, j, floors, key, color, scale=1.0, reserved=False):
             d.line([c, (c[0], c[1] - 70 * scale)], fill=INK, width=6)
             d.ellipse([c[0] - 9, c[1] - 70 * scale - 9, c[0] + 9, c[1] - 70 * scale + 9], fill=(229, 72, 77), outline=INK, width=3)
             top_y = hh + 70 * scale
-    if reserved:
-        for p in (L, B, R):
-            d.line([P(*p), P(p[0], p[1], top_y + 18)], fill=AMBER, width=8)
-        for v in (hh * 0.35, hh * 0.75):
-            d.line([P(*L, v), P(*B, v), P(*R, v)], fill=AMBER, width=7)
     return P(i, j, top_y)
 
 
@@ -220,26 +215,26 @@ def render_card(data: dict, avatars: dict, host: str) -> bytes:
     for _, top, n, sc in sorted(tops, key=lambda t: (t[3] > 1, t[0])):
         owner = sc > 1
         size = 170 if owner else 104
-        ring = color if owner else (PAPER if n.get("status") != "reserved" else AMBER)
+        ring = color if owner else (LIT if n.get("status") != "reserved" else NEUTRAL)
         av = _circle(avatars.get(n["k"]), size, ring)
         img.paste(av, (int(top[0] - size / 2), int(top[1] - size - 14)), av)
 
     reserved = data.get("status") == "reserved"
-    handle_line = (f"@{data['h']}, YOUR LOT IS RESERVED" if reserved else f"@{data['h']} BUILT HERE").upper()
+    handle_line = (f"@{data['h']}, YOUR HOUSE IS DARK" if reserved else f"@{data['h']} LIVES HERE").upper()
     _centered(d, handle_line, _fit(d, handle_line, DISPLAY, 1150, 96, True), 1250, INK)
     if data.get("sign"):
         _billboard(d, data["sign"], 1372)
     else:
         tags = data.get("tags") or []
         if reserved:
-            line = "Only you can light it up."
+            line = "Only you can turn the lights on."
         elif tags:
             names = [f"@{t}" for t in tags]
             line = "Next to " + (", ".join(names[:-1]) + " & " + names[-1] if len(names) > 1 else names[0])
         else:
-            line = f"{data.get('floors', 1)} floors and climbing"
+            line = "A city on X, built from who talks to whom"
         _centered(d, line, _fit(d, line, BODY, 1120, 50, True), 1392, INK)
-    cta = ("SIGN IN WITH X AT " if reserved else "CLAIM YOUR LOT AT ") + host.upper()
+    cta = ("TURN YOUR LIGHTS ON AT " if reserved else "FIND YOUR HOUSE AT ") + host.upper()
     _pill(d, cta, _fit(d, cta, BODY, 1040, 44, True), 1590, BRAND)
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=90)

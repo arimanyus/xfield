@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Crown, Flag, Loader2 } from "lucide-react";
 import { api, openXPost } from "@/lib/api";
-import { Sheet, Face, Stat, fmt } from "@/components/town/Sheet";
-
-const PROJECT_LABELS = { plots: "+6 LOTS", height: "+2 FLOORS", highway: "HIGHWAY" };
+import { Sheet, Face, Stat } from "@/components/town/Sheet";
 
 const CharterForm = ({ options, title, cta, defaults = {}, onSubmit }) => {
   const [name, setName] = useState(defaults.name || "");
@@ -26,12 +24,6 @@ const CharterForm = ({ options, title, cta, defaults = {}, onSubmit }) => {
   );
 };
 
-const Meter = ({ value, max }) => (
-  <div className="h-3 rounded-full border-2 border-ink bg-white overflow-hidden" data-testid="district-treasury-meter">
-    <div className="h-full bg-brand" style={{ width: `${Math.min(100, (100 * value) / max)}%` }} />
-  </div>
-);
-
 export const CharterSheet = ({ options, onClose, onCreated }) => {
   const [error, setError] = useState(null);
   const submit = async (body) => {
@@ -46,7 +38,7 @@ export const CharterSheet = ({ options, onClose, onCreated }) => {
   return (
     <Sheet onClose={onClose} testId="charter-sheet">
       <div className="title-display text-3xl leading-none pr-10">FOUND A DISTRICT</div>
-      <p className="mt-2 font-head font-medium text-ink/70">You'll be its founder and first mayor. Invite your people to fill the lots.</p>
+      <p className="mt-2 font-head font-medium text-ink/70">You'll be its founder and first leader. Invite your people and fight for the field.</p>
       <CharterForm options={options} title="Charter" cta="FOUND IT" onSubmit={submit} />
       {error && <p className="mt-3 font-head font-semibold text-[#DC2626]" data-testid="charter-error">{error}</p>}
     </Sheet>
@@ -57,7 +49,6 @@ export const DistrictSheet = ({ id, options, auth, version, onClose, onPick, onC
   const [d, setD] = useState(null);
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [amount, setAmount] = useState(100);
 
   const load = useCallback(() => api(`/districts/${id}`).then(setD).catch((e) => setError(e.message)), [id]);
   useEffect(() => { setD(null); load(); }, [load, version, auth.user?.k]);
@@ -85,8 +76,7 @@ export const DistrictSheet = ({ id, options, auth, version, onClose, onPick, onC
 
   const me = d.me;
   const citizen = me?.member && me?.lit;
-  const open = Math.max(0, d.plot_cap - d.size);
-  const shareText = `${d.name || "My district"} is building on XField. ${open} lots open. Move in \u2192`;
+  const shareText = `${d.name || "My district"} stands ${d.floors} floors tall on XField today. Join our side \u2192`;
   return (
     <Sheet onClose={onClose} testId="district-sheet">
       <div className="flex items-center gap-3 pr-10">
@@ -94,47 +84,19 @@ export const DistrictSheet = ({ id, options, auth, version, onClose, onPick, onC
         <div className="min-w-0">
           <div className="title-display text-2xl sm:text-3xl leading-tight break-words" data-testid="district-title">{d.name || "New district"}</div>
           <div className="font-head font-medium text-ink/70" data-testid="district-subtitle">
-            {d.claimed ? <>Founded by @{d.founder?.h}{d.mayor && d.mayor.k !== d.founder?.k ? <> · Mayor @{d.mayor.h}</> : null}</> : <>Unclaimed · forming around @{d.anchor?.h}</>}
+            {d.claimed ? <>Founded by @{d.founder?.h}{d.leader && d.leader.k !== d.founder?.k ? <> · Led by @{d.leader.h}</> : null}</> : <>Unclaimed · forming around @{d.anchor?.h}</>}
           </div>
         </div>
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-2">
-        <Stat label="Lots" value={`${d.size}/${d.plot_cap}`} testId="district-lots" />
-        <Stat label="Height limit" value={`${d.max_floors} fl`} testId="district-height" />
-        <Stat label="Lit" value={d.lit} testId="district-lit" />
+        <Stat label="Citizens" value={d.size} testId="district-size" />
+        <Stat label="Floors" value={d.floors} testId="district-floors" />
+        <Stat label="Crowns" value={d.titles || 0} testId="district-titles" />
       </div>
-
-      <div className="mt-4">
-        <div className="flex items-baseline justify-between font-head font-semibold text-sm">
-          <span>Treasury · next: {PROJECT_LABELS[d.project]}</span>
-          <span data-testid="district-treasury">{fmt(d.treasury)} / {fmt(d.expansion_cost)}</span>
-        </div>
-        <div className="mt-1.5"><Meter value={d.treasury} max={d.expansion_cost} /></div>
-      </div>
-
-      {me?.mayor && (
-        <div className="mt-4" data-testid="district-project-picker">
-          <div className="font-head font-semibold text-xs uppercase tracking-wider text-ink/60 mb-2 inline-flex items-center gap-1"><Crown className="w-3.5 h-3.5" /> Mayor: pick the next project</div>
-          <div className="flex gap-2">
-            {options.projects.map((p) => (
-              <button key={p} type="button" disabled={busy} onClick={() => act(`/districts/${d.id}/project`, { project: p })} className={`chip text-xs sm:text-sm ${d.project === p ? "bg-brand" : ""}`} data-testid={`district-project-${p}`}>
-                {PROJECT_LABELS[p]}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {citizen && (
-        <form onSubmit={(e) => { e.preventDefault(); act(`/districts/${d.id}/contribute`, { amount: Number(amount) }); }} className="mt-4 flex gap-2" data-testid="district-contribute-form">
-          <input type="number" min={10} step={10} value={amount} onChange={(e) => setAmount(e.target.value)} className="w-28 rounded-xl border-2 border-ink bg-white px-3 font-head font-semibold outline-none" data-testid="district-contribute-input" />
-          <button type="submit" disabled={busy} className="btn-primary flex-1 justify-center text-base" data-testid="district-contribute-button">FUND THE TREASURY</button>
-        </form>
-      )}
 
       {me?.can_claim && (
-        <CharterForm options={options} title="This district formed around you" cta="CLAIM THE CHARTER" defaults={{ name: d.name, color: d.color, landmark: d.landmark }}
+        <CharterForm options={options} title="This district has no leader yet" cta="LEAD THIS DISTRICT" defaults={{ name: d.name, color: d.color, landmark: d.landmark }}
           onSubmit={(body) => act(`/districts/${d.id}/claim`, body)} />
       )}
 
@@ -152,9 +114,9 @@ export const DistrictSheet = ({ id, options, auth, version, onClose, onPick, onC
       <div className="mt-5" data-testid="district-election">
         <div className="font-head font-semibold text-xs uppercase tracking-wider text-ink/60 mb-2 inline-flex items-center gap-1"><Flag className="w-3.5 h-3.5" /> Election</div>
         {d.election.open ? (
-          <p className="font-head font-medium text-sm text-ink/70 mb-2">Tap a citizen to vote. A majority of lit citizens makes a new mayor.</p>
+          <p className="font-head font-medium text-sm text-ink/70 mb-2">Tap a citizen to vote. A majority of lit citizens makes a new leader.</p>
         ) : (
-          <p className="font-head font-medium text-sm text-ink/70">{d.claimed ? `Opens at ${d.election.min} lit citizens (${d.lit}/${d.election.min}).` : "Opens once the charter is claimed."}</p>
+          <p className="font-head font-medium text-sm text-ink/70">Opens at {d.election.min} lit citizens ({d.lit}/{d.election.min}).</p>
         )}
         {d.election.tally.length > 0 && (
           <div className="flex flex-wrap gap-2 mb-2">
@@ -171,20 +133,15 @@ export const DistrictSheet = ({ id, options, auth, version, onClose, onPick, onC
               onClick={() => (canVote ? act(`/districts/${d.id}/vote`, { candidate: m.k }) : onPick(m.k))}
               className={`relative hover:-translate-y-0.5 transition-transform ${me?.vote === m.k ? "ring-2 ring-brand rounded-full" : ""}`} title={`@${m.h} · ${m.f} floors`} data-testid={`district-member-${m.k}`}>
               <Face src={m.a} size={44} ring={m.s === "r" ? "#FEF3C7" : d.color} alt={`@${m.h}`} />
-              {(m.k === d.mayor?.k) && <Crown className="absolute -top-2 -right-1 w-4 h-4 fill-[#FBBF24]" strokeWidth={2} />}
+              {(m.k === d.leader?.k) && <Crown className="absolute -top-2 -right-1 w-4 h-4 fill-[#FBBF24]" strokeWidth={2} />}
             </button>
           );
         })}
       </div>
 
-      {d.contributors.length > 0 && (
-        <div className="mt-4 font-head font-medium text-sm" data-testid="district-contributors">
-          <span className="font-semibold">Top builders:</span> {d.contributors.map((c) => `@${c.h} (${fmt(c.amount)})`).join(", ")}
-        </div>
-      )}
-      {d.highways.length > 0 && (
-        <div className="mt-2 font-head font-medium text-sm" data-testid="district-highways">
-          <span className="font-semibold">Highways to:</span> {d.highways.map((h) => h.name).join(", ")} · +20% yield
+      {d.allies.length > 0 && (
+        <div className="mt-4 font-head font-medium text-sm" data-testid="district-allies">
+          <span className="font-semibold">Allies:</span> {d.allies.map((a) => a.name || "New district").join(", ")}
         </div>
       )}
 

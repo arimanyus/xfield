@@ -1,4 +1,4 @@
-"""Pure town geometry, SimCity district rules, placement, clustering, and economy math."""
+"""Pure town geometry, SimCity district rules, placement, clustering, and how tall each house stands."""
 import hashlib
 import math
 from collections import Counter, defaultdict
@@ -9,23 +9,13 @@ DISSOLVE_BELOW = 3
 TOP_N = 5
 MOVE_MIN_LOTS = 2
 TIERS = ("cottage", "rowhouse", "mid-rise", "tower")
-FACTION_COLORS = ("#2563EB", "#10B981", "#FACC15", "#EF4444", "#8B5CF6", "#06B6D4", "#EC4899", "#F97316")
-PROJECTS = ("plots", "height", "highway")
-DEFAULT_PLOT_CAP = 12
-DEFAULT_MAX_FLOORS = 4
-START_CREDITS = 500
-RECRUIT_BOUNTY = 300
-EXPANSION_BASE = 600
-ELECTION_MIN = 8
+FACTION_COLORS = ("#2563EB", "#16A34A", "#EAB308", "#DC2626", "#7C3AED", "#0D9488", "#DB2777", "#EA580C")
+ELECTION_MIN = 3
 BLOCK = 4
 CIVIC = (0, 0)
-CIVIC_BLOCKS = {(x, y) for x in (-1, 0, 1) for y in (-1, 0, 1)}
+CIVIC_BLOCKS = {(x, y) for x in range(-2, 3) for y in range(-2, 3)}
 HOMES_PER_BLOCK = 8
-TAX_RATE = 0.1
-MAYOR_BOOST = 1.5
-RUN_FEE = 200
-WORKPLACES = {"hospital": "Nurse", "school": "Teacher", "fire": "Firefighter", "police": "Officer",
-              "market": "Shopkeeper", "bank": "Banker", "power": "Engineer", "park": "Gardener"}
+CITY_MARGIN = 2
 
 
 def inbound_counts(docs: list) -> Counter:
@@ -63,42 +53,17 @@ def color_for(key: str, taken=()) -> str:
 
 
 def tier_of(floors: int) -> int:
-    return 3 if floors >= 5 else 2 if floors >= 3 else 1 if floors == 2 else 0
+    return 3 if floors >= 10 else 2 if floors >= 6 else 1 if floors >= 3 else 0
 
 
 def floors_of(d: dict) -> int:
     return int(d.get("floors") or 1)
 
 
-def expansion_cost(nb: dict) -> int:
-    expansions = max(0, (int(nb.get("plot_cap") or DEFAULT_PLOT_CAP) - DEFAULT_PLOT_CAP) // 6)
-    height_ups = max(0, (int(nb.get("max_floors") or DEFAULT_MAX_FLOORS) - DEFAULT_MAX_FLOORS) // 2)
-    return EXPANSION_BASE + 300 * (expansions + height_ups)
-
-
-def rent(doc: dict, docs: list, highways: int = 0, boosted: bool = False) -> dict:
-    """Every story in your home pays everyone who lives there; lit neighbours in your district add up too.
-    The mayor's boosted district earns more, and the city keeps a tax that pays the mayor."""
-    stories = floors_of(doc)
-    nb = doc.get("nb")
-    neighbours = sum(1 for d in docs if nb and d.get("nb") == nb and d["k"] != doc["k"] and d["status"] == "finished")
-    base = 100 + 40 * (stories - 1) + 10 * min(neighbours, 30)
-    mult = (1.2 if highways else 1.0) * (MAYOR_BOOST if boosted else 1.0)
-    gross = round(base * mult)
-    tax = round(gross * TAX_RATE)
-    return {"stories": stories, "neighbours": neighbours, "base": base, "mult": mult, "gross": gross, "tax": tax,
-            "net": gross - tax}
-
-
-def wage(shifts: int) -> dict:
-    """A shift pays more the longer you keep the same job, up to double after ten shifts."""
-    gross = 60 + 6 * min(shifts, 10)
-    tax = round(gross * TAX_RATE)
-    return {"gross": gross, "tax": tax, "net": gross - tax}
-
-
-def land_value(floors: int, inbound: int) -> int:
-    return 1000 * floors + 350 * inbound
+def street_floors(docs: list) -> dict:
+    """Every house is 1 floor, plus 1 for each person in its circle who has moved in."""
+    lit = {d["k"] for d in docs if d["status"] == "finished"}
+    return {d["k"]: 1 + sum(c["k"] in lit and c["k"] != d["k"] for c in d.get("circle") or []) for d in docs}
 
 
 def block_of(x: int, y: int) -> tuple:
@@ -129,7 +94,7 @@ def plan_blocks(homes: dict, districts: list) -> tuple:
     per_block = defaultdict(Counter)
     for lot, nb in homes.items():
         per_block[block_of(*lot)][nb] += 1
-    crowd = Counter({b: sum(c.values()) for b, c in per_block.items()})
+    crowd = Counter({b: sum(n for nb, n in c.items() if nb) for b, c in per_block.items()})
     size = Counter(nb for nb in homes.values() if nb)
     owner, blocks = {}, {}
     for d in districts:
@@ -207,25 +172,24 @@ def frontier_target(key: str, occupied: set) -> tuple:
     return radius * math.cos(angle), radius * math.sin(angle)
 
 
-def clusters(nodes: list, edges: dict) -> list:
-    label = {n: n for n in nodes}
-    order = sorted(nodes)
-    for _ in range(15):
-        changed = False
-        for n in order:
-            nbrs = edges.get(n)
-            if not nbrs:
-                continue
-            score = defaultdict(float)
-            for m, w in nbrs.items():
-                score[label[m]] += w
-            best = min(score.items(), key=lambda kv: (-kv[1], kv[0]))[0]
-            if best != label[n]:
-                label[n] = best
-                changed = True
-        if not changed:
+def host_groups(nodes: list, mutuals: dict) -> list:
+    """A district is one person and their mutuals: whoever has the most mutuals not yet in a district hosts them,
+    then the next. Returns [(host, members)], biggest first; whoever is left over lives in no district."""
+    left, out = set(nodes), []
+    while left:
+        host = max(sorted(left), key=lambda k: len(mutuals.get(k, set()) & left))
+        crew = mutuals.get(host, set()) & left
+        if len(crew) + 1 < MIN_NEIGHBOURHOOD:
             break
-    groups = defaultdict(list)
-    for n in nodes:
-        groups[label[n]].append(n)
-    return list(groups.values())
+        out.append((host, [host, *sorted(crew)]))
+        left -= crew | {host}
+    return out
+
+
+def city_bounds(blocks) -> tuple:
+    """Inclusive lot bounds (x0, y0, x1, y1): the city's blocks plus a margin of open land."""
+    xs, ys = [b[0] for b in blocks] or [0], [b[1] for b in blocks] or [0]
+    m = CITY_MARGIN
+    return (min(xs) - m) * BLOCK, (min(ys) - m) * BLOCK, (max(xs) + m + 1) * BLOCK - 1, (max(ys) + m + 1) * BLOCK - 1
+
+
