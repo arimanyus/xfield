@@ -319,7 +319,7 @@ function Terrain({ city }) {
         <meshLambertMaterial vertexColors />
       </mesh>
       <mesh rotation-x={-Math.PI / 2} position={[(x0 + x1) / 2, WATER, (z0 + z1) / 2]}>
-        <planeGeometry args={[x1 - x0 + 24, z1 - z0 + 24]} />
+        <planeGeometry args={[x1 - x0 + 400, z1 - z0 + 400]} />
         <meshLambertMaterial color="#4C97D1" transparent opacity={0.94} />
       </mesh>
     </>
@@ -771,9 +771,11 @@ function Walkers({ lanes }) {
   );
 }
 
+// Pans (and zooms, when a focus asks for it) smoothly to each new focus, so a tour feels like a camera move.
 function Controls({ center, focus, span }) {
   const { camera, gl } = useThree();
   const ctl = useRef();
+  const goal = useRef(null);
   const centerRef = useRef(center);
   centerRef.current = center;
   const zoomed = useRef(false);
@@ -784,6 +786,7 @@ function Controls({ center, focus, span }) {
     c.minPolarAngle = 0.55;
     c.maxPolarAngle = 1.05;
     c.screenSpacePanning = false;
+    c.addEventListener("start", () => { goal.current = null; });
     ctl.current = c;
     const key = (e) => {
       if (!["-", "=", "+"].includes(e.key) || e.target.closest?.("input, textarea")) return;
@@ -798,19 +801,82 @@ function Controls({ center, focus, span }) {
   }, [camera, gl]);
   useEffect(() => { ctl.current.minZoom = Math.min(10, 1300 / span); }, [span]);
   useEffect(() => {
-    if (!focus || !ctl.current) return;
-    const c = ctl.current, [cx, cz] = centerRef.current;
-    const to = new THREE.Vector3(focus[0] - cx, 0, focus[1] - cz);
-    const shift = to.clone().sub(c.target);
-    c.target.add(shift);
-    camera.position.add(shift);
-    if (!zoomed.current) {
-      camera.zoom = 42;
-      zoomed.current = true;
+    if (!focus) return;
+    const [cx, cz] = centerRef.current;
+    goal.current = { to: new THREE.Vector3(focus[0] - cx, 0, focus[1] - cz), zoom: focus[2] ?? (zoomed.current ? null : 42) };
+    zoomed.current = true;
+  }, [focus]);
+  useFrame((_, dt) => {
+    const c = ctl.current, g = goal.current;
+    if (c && g) {
+      const k = 1 - Math.exp(-Math.min(dt, 0.05) * 4.5);
+      const shift = g.to.clone().sub(c.target).multiplyScalar(k);
+      c.target.add(shift);
+      camera.position.add(shift);
+      if (g.zoom) {
+        camera.zoom += (g.zoom - camera.zoom) * k;
+        camera.updateProjectionMatrix();
+      }
+      if (shift.lengthSq() < 1e-7 && (!g.zoom || Math.abs(g.zoom - camera.zoom) < 0.05)) goal.current = null;
     }
-    camera.updateProjectionMatrix();
-  }, [focus, camera]);
-  useFrame(() => ctl.current?.update());
+    c?.update();
+  });
+  return null;
+}
+
+// Takes a 1200x630 picture of one house and its street from a fixed corner, the house left of centre so a card can
+// sit on the right. Returns the JPEG and where the given points landed in it.
+const SNAP = { W: 1200, H: 630, zoom: 92, shift: 230 };
+const until = (ok, ms = 20000) => new Promise((done) => {
+  const start = performance.now();
+  const tick = () => (ok() || performance.now() - start > ms ? done() : setTimeout(tick, 250));
+  tick();
+});
+// Mounts once every model in its Suspense boundary has loaded.
+function Ready({ flag }) {
+  useEffect(() => { flag.current = true; }, [flag]);
+  return null;
+}
+function Snapshot({ snapRef, center, ready }) {
+  const { gl, scene, camera } = useThree();
+  useEffect(() => {
+    const shoot = (at, points) => {
+      const { W, H, zoom, shift } = SNAP;
+      const cam = new THREE.OrthographicCamera(-W / 2, W / 2, H / 2, -H / 2, -200, 400);
+      cam.zoom = zoom;
+      const house = new THREE.Vector3(at[0] - center[0], 0, at[1] - center[1]);
+      const target = house.clone().add(new THREE.Vector3(1, 0, -1).normalize().multiplyScalar(shift / zoom));
+      cam.position.copy(target).add(new THREE.Vector3(40, 40, 40));
+      cam.lookAt(target);
+      cam.updateProjectionMatrix();
+      cam.updateMatrixWorld();
+      const size = gl.getSize(new THREE.Vector2()), ratio = gl.getPixelRatio();
+      const out = document.createElement("canvas");
+      out.width = W;
+      out.height = H;
+      gl.setPixelRatio(2);
+      gl.setSize(W, H, false);
+      gl.render(scene, cam);
+      out.getContext("2d").drawImage(gl.domElement, 0, 0, W, H);
+      gl.setPixelRatio(ratio);
+      gl.setSize(size.x, size.y, false);
+      gl.render(scene, camera);
+      const v = new THREE.Vector3();
+      const placed = points.map((p) => {
+        v.set(p.pos[0] - center[0], p.pos[1], p.pos[2] - center[1]).project(cam);
+        return { ...p, x: Math.round(((v.x + 1) / 2) * W), y: Math.round(((1 - v.y) / 2) * H) };
+      });
+      return { out, placed };
+    };
+    snapRef.current = async ({ at, points }) => {
+      await until(() => ready.current);
+      await new Promise((r) => setTimeout(r, 800));
+      const { out, placed } = shoot(at, points);
+      const blob = await new Promise((r) => out.toBlob(r, "image/jpeg", 0.88));
+      return { blob, points: placed };
+    };
+    return () => { snapRef.current = null; };
+  }, [gl, scene, camera, center, snapRef, ready]);
   return null;
 }
 
@@ -864,12 +930,13 @@ const byModel = (items) => {
   return g;
 };
 
-export function City3D({ city, labels, labelNodes, focus, flashes, onHover, onPick, newest, onFace }) {
+export function City3D({ city, labels, labelNodes, focus, flashes, onHover, onPick, newest, onFace, snapRef }) {
   const shape = useStable({ built: city.built, island: city.island, water: city.water });
   const lanes = useStable(city.lanes);
   const groups = useMemo(() => byModel([...city.roads, ...city.buildings]), [city]);
   const [t0, t1, u0, u1] = city.grid;
   const span = Math.max(t1 - t0, u1 - u0) * 0.8;
+  const ready = useRef(false);
   return (
     <Canvas flat shadows orthographic dpr={[1, 2]} camera={{ position: [30, 30, 30], zoom: 48, near: -200, far: 400 }}
       onPointerMissed={() => onHover(null)}>
@@ -881,6 +948,7 @@ export function City3D({ city, labels, labelNodes, focus, flashes, onHover, onPi
         shadow-camera-near={0.5} shadow-camera-far={120} />
       <Controls center={city.center} focus={focus} span={Math.max(city.island[1] - city.island[0], city.island[3] - city.island[2])} />
       <Projector labels={labels} nodes={labelNodes} center={city.center} />
+      {snapRef && <Snapshot snapRef={snapRef} center={city.center} ready={ready} />}
       <group position={[-city.center[0], 0, -city.center[1]]}>
         <Terrain city={shape} />
         {flashes.map((f) => <Flash key={f.id} f={f} />)}
@@ -894,6 +962,7 @@ export function City3D({ city, labels, labelNodes, focus, flashes, onHover, onPi
           {Object.entries(groups).map(([key, items]) => (
             <Instances key={key} model={items[0].model} tint={items[0].tint} dark={items[0].dark} items={items} onHover={onHover} onPick={onPick} />
           ))}
+          <Ready flag={ready} />
         </Suspense>
         <Suspense fallback={null}>
           <Cars lanes={lanes} />

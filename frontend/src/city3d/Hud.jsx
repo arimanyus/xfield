@@ -151,7 +151,7 @@ export function VoteCard({ onVoted }) {
   const r = done?.last;
   const left = done ? done.left : a.left;
   return (
-    <div className={`${CARD} w-[min(92vw,300px)] p-3 pointer-events-auto`}>
+    <div className={`${CARD} w-[min(92vw,300px)] p-3 pointer-events-auto`} data-testid="vote-card">
       <div className="flex items-center justify-between">
         <div className="font-display font-bold">{a.friends ? "🔥 Who should move up?" : "🗳 Which house wins?"}</div>
         <span className="flex gap-1" title={`${left} of ${a.of} votes left today`}>
@@ -196,7 +196,10 @@ export function VoteCard({ onVoted }) {
           )}
         </>
       ) : (
-        <div className="mt-1.5 text-sm text-ink/70">{a.left ? "Not enough houses to vote on yet." : `✅ You've used your ${a.of} votes. ${a.of} more in ${until(a.next_at)}.`}</div>
+        <div className="mt-1.5 text-sm text-ink/70" data-testid="vote-card-empty">
+          {!a.left ? `✅ You've used your ${a.of} votes. ${a.of} more in ${until(a.next_at)}.`
+            : a.need ? `Voting opens at ${a.players + a.need} players. ${a.need} more to go: invite yours.` : "Not enough houses to vote on yet."}
+        </div>
       )}
       {err && <div className="mt-1 text-xs text-red-600">{err}</div>}
     </div>

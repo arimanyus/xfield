@@ -45,15 +45,16 @@ const PLAZA = "#E7E2D6";
 const SQUARE = "#F3EFE6";
 const PARK = "#6FAF55";
 const STONE = "#A8A29E";
-const QUAY = "#8C877D";
-const STAINS = ["#5B564D", "#4A463F", "#6F7E86", "#7A6A52"];
+const QUAY = "#77736A";
+const STAINS = ["#4E4A43", "#3F3B35", "#5F6B70", "#6A5B45", "#35302B"];
+const PUDDLE = "#3E4A50";
 const PLOT = "#B9A98C";
 
 // Everyone starts on the Docks: a strip of blocks on the north shore, filled outward from the middle, 16 houses a
 // block, with a crane yard at each end. A house moves to its own lot near its friends once it wins its way uptown.
 const DOCK_LOTS = BLOCK * BLOCK;
 const dockBlock = (i) => (i % 2 ? -(i + 1) / 2 : i / 2);
-export const dockTint = (color) => mix(color || STONE, "#64748B", 0.55);
+export const dockTint = (color) => mix(color || STONE, "#5B6470", 0.72);
 // A house on the Docks is the shack matching its home design.
 export const modelOf = (m, docks) => (docks ? `s${m[1]}` : m);
 
@@ -228,9 +229,17 @@ export function buildCity(town) {
     if (docks.has(key)) {
       const i = docks.get(key), prop = (model, x, z, k, scale) => buildings.push({ model, x, z, rot: rand(k + "r") * 6.3, scale });
       pads.push({ x: mid[0], z: mid[1], w: 4, d: 4, color: QUAY });
-      for (let s = 0; s < 9; s++) {
+      for (let s = 0; s < 16; s++) {
         const k = `${key}stain${s}`, w = 0.3 + rand(k + "w") * 0.9;
         pads.push({ x: t0 - 0.4 + rand(k) * 3.8, z: u0 - 0.4 + rand(k + "z") * 3.8, w, d: w * (0.5 + rand(k + "d")), y: 0.014, color: pick(STAINS, k) });
+      }
+      for (let s = 0; s < 5; s++) {
+        const k = `${key}puddle${s}`, w = 0.25 + rand(k + "w") * 0.4;
+        pads.push({ x: t0 - 0.3 + rand(k) * 3.6, z: u0 - 0.3 + rand(k + "z") * 3.6, w, d: w * (0.6 + rand(k + "d") * 0.6), y: 0.016, color: PUDDLE });
+      }
+      for (let f = 0; f < BLOCK; f++) {
+        const k = `${key}fence${f}`;
+        if (rand(k) < 0.65) buildings.push({ model: "modern/fence", x: t0 + f, z: u0 - 0.58, rot: (rand(k + "r") - 0.5) * 0.25 });
       }
       const boat = (x, z, rot, k) => {
         const [dx, dz] = [Math.sin(rot) * 0.6, Math.cos(rot) * 0.6];
@@ -251,22 +260,24 @@ export function buildCity(town) {
       for (let j = 0; j < DOCK_LOTS; j++) {
         const home = atDock.get(i * DOCK_LOTS + j), tx = t0 + Math.floor(j / BLOCK), tz = u0 + (j % BLOCK), k = `${key}:${j}`;
         if (home) addHome(home, tx, tz, true);
-        else if (rand(k) < 0.7) prop(pick(["modern/wreck", "modern/pallets", "modern/dumpster", "modern/junk", "modern/bags"], k + "m"), tx, tz, k, 1.2);
+        else if (rand(k) < 0.8) prop(pick(["modern/wreck", "modern/pallets", "modern/dumpster", "modern/junk", "modern/bags", "modern/tent", "modern/tires",
+                                           "modern/barrel", "modern/laundry"], k + "m"), tx, tz, k, 1.2);
       }
       for (let gx = 1; gx < BLOCK; gx++) {
         for (let gz = 1; gz < BLOCK; gz++) {
           const k = `${key}g${gx}${gz}`;
-          if (rand(k) < 0.5) prop(pick(["modern/bags", "modern/junk"], k + "m"), t0 + gx - 0.5, u0 + gz - 0.5, k, 0.8);
+          if (rand(k) < 0.65) prop(pick(["modern/bags", "modern/junk", "modern/barrel", "modern/tires", "modern/bags"], k + "m"), t0 + gx - 0.5, u0 + gz - 0.5, k, 0.8);
         }
       }
       continue;
     }
     const nb = owner.get(key);
-    if (nb) {
+    if (nb || filled.get(key)) {
       for (let gx = 1; gx < BLOCK; gx++) {
         for (let gz = 1; gz < BLOCK; gz++) {
           const k = `${key}f${gx}${gz}`;
-          if (rand(k) < 0.3) buildings.push({ model: pick(["modern/bench", "modern/hydrant", "modern/planter"], k + "m"), x: t0 + gx - 0.5, z: u0 + gz - 0.5,
+          if (rand(k) < 0.55) buildings.push({ model: pick(["modern/lamp", "modern/palm", "modern/flowerbed", "modern/bench", "modern/lamp", "modern/statue",
+                                                             "modern/planter", "modern/palm"], k + "m"), x: t0 + gx - 0.5, z: u0 + gz - 0.5,
                                               rot: (hash(k) % 4) * (Math.PI / 2) });
         }
       }

@@ -1,14 +1,71 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
-import { buildCity } from "@/city3d/layout";
+import { buildCity, tileOf } from "@/city3d/layout";
 import { City3D } from "@/city3d/City3D";
 import { Logo } from "@/city3d/Logo";
 import { Newspaper } from "@/city3d/Newspaper";
-import { Arrival, AwayCard, CARD, Face, HouseCard, Minimap, PlaceCard, StreetBar, TickerBar, VoteCard, isLight } from "@/city3d/Hud";
+import { NextMove } from "@/city3d/NextMove";
+import { PeoplePicker } from "@/city3d/PeoplePicker";
+import { Tour } from "@/city3d/Tour";
+import { AwayCard, CARD, Face, HouseCard, Minimap, PlaceCard, TickerBar, VoteCard, isLight } from "@/city3d/Hud";
 
 const TITLE = "XField: your city on X, lit up by your friends";
+const DAY = 86400000;
 const newsToast = (n) => ({ text: `💡 @${n.p.h} just moved in near you`, face: n.p, visit: n.p, cta: "Visit" });
+const roof = (home) => 0.6 + 0.25 * home.stories;
+const SIGNIN_ERRORS = {
+  off: "Sign in with X is switched off right now.",
+  cancelled: "Sign in was cancelled on X.",
+  expired: "That sign in took too long or opened in another browser. Try again.",
+  x_error: "X didn't let us in. Try again in a minute.",
+};
+
+// Pictures your house and street from the city, for your share card. Only when something on it changed, or a day on.
+function useSnapshot({ me, mine, homeOf, snapRef, onSaved }) {
+  const key = me?.status === "finished" && mine
+    ? [mine.x, mine.z, mine.owner.m, mine.owner.f, mine.owner.e, ...me.neighbours.map((p) => p.k + p.s)].join("|") : null;
+  useEffect(() => {
+    if (!key) return;
+    const store = `xf_snap_${me.k}`;
+    const prev = JSON.parse(localStorage.getItem(store) || "null");
+    if (me.has_snap && prev?.key === key && Date.now() - prev.at < DAY) return;
+    const id = setTimeout(async () => {
+      if (!snapRef.current) return;
+      const dark = me.neighbours.filter((p) => p.s === "r" && homeOf[p.k]).map((p) => homeOf[p.k]);
+      const points = [{ k: me.k, pos: [mine.x, roof(mine) + 0.1, mine.z] }, ...dark.map((h) => ({ k: h.owner.k, pos: [h.x, roof(h) + 0.05, h.z] }))];
+      const { blob, points: at } = await snapRef.current({ at: [mine.x, mine.z], points });
+      const inFrame = (p) => p.x > 30 && p.x < 660 && p.y > 90 && p.y < 610;
+      const form = new FormData();
+      form.append("image", blob, "house.jpg");
+      form.append("meta", JSON.stringify({ me: [at[0].x, at[0].y], faces: at.slice(1).filter(inFrame).map(({ k, x, y }) => ({ k, x, y })) }));
+      const res = await fetch(`${process.env.REACT_APP_BACKEND_URL}/api/me/snapshot`, { method: "POST", body: form, credentials: "include" }).catch(() => null);
+      if (res?.ok) {
+        localStorage.setItem(store, JSON.stringify({ key, at: Date.now() }));
+        onSaved();
+      }
+    }, 3000);
+    return () => clearTimeout(id);
+  }, [key, me?.has_snap]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+function SignInCard({ at, error, onSignIn }) {
+  return (
+    <div className={`${CARD} w-[min(92vw,330px)] p-4 pointer-events-auto`} data-testid="sign-in-card">
+      <div className="font-display font-bold text-lg">
+        {at ? (at.s === "r" ? `@${at.h}'s house is dark` : `@${at.h} lives here`) : "Get a house in XField"}
+      </div>
+      <div className="mt-1 text-sm text-ink/70">
+        {at?.s === "r" ? "Is it yours? Sign in with X to turn the lights on."
+          : "A city of people on X. Sign in and your house goes up on the Docks with your face on it. Win votes to move uptown."}
+      </div>
+      {error && <div className="mt-2 rounded-md bg-red-50 text-red-700 text-sm font-semibold px-2 py-1" data-testid="sign-in-error">{error}</div>}
+      <button type="button" onClick={onSignIn} className="mt-3 rounded-lg bg-ink text-white font-bold px-4 py-2 hover:bg-slate-700 transition-colors" data-testid="sign-in-button">
+        Sign in with X
+      </button>
+    </div>
+  );
+}
 
 export default function CityPage() {
   const [town, setTown] = useState(null);
@@ -20,18 +77,18 @@ export default function CityPage() {
   const [toast, setToast] = useState(null);
   const [flashes, setFlashes] = useState([]);
   const [away, setAway] = useState(null);
-  const [arrived, setArrived] = useState(() => Boolean(localStorage.getItem("xf_arrived")));
+  const [skipped, setSkipped] = useState(false);
+  const [replay, setReplay] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [signinError, setSigninError] = useState(null);
   const auth = useAuth();
   const labelNodes = useRef([]);
+  const snapRef = useRef(null);
   const flashId = useRef(0);
   const lastLots = useRef(null);
   const seen = useRef(null);
   const startedRef = useRef(false);
   const atHandle = new URLSearchParams(window.location.search).get("at")?.toLowerCase();
-  const arrive = () => {
-    localStorage.setItem("xf_arrived", "1");
-    setArrived(true);
-  };
 
   const flash = (list) => {
     const at = performance.now();
@@ -67,6 +124,14 @@ export default function CityPage() {
   }, [loadTown]);
   useEffect(() => { loadMe(); }, [loadMe, town?.version]);
   useEffect(() => { document.title = TITLE; }, []);
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    const why = url.searchParams.get("signin");
+    if (!why) return;
+    setSigninError(SIGNIN_ERRORS[why] || SIGNIN_ERRORS.x_error);
+    url.searchParams.delete("signin");
+    window.history.replaceState(null, "", url.pathname + url.search);
+  }, []);
   // Every new edition lands on everyone's screen once.
   const issue = town?.paper?.issue;
   useEffect(() => {
@@ -80,6 +145,9 @@ export default function CityPage() {
     c.mine = mine ? [mine.x, mine.z] : null;
     return c;
   }, [town, auth.user]);
+  const homeOf = useMemo(() => Object.fromEntries((city?.homes || []).map((h) => [h.owner.k, h])), [city]);
+  const myHome = homeOf[auth.user?.k];
+  useSnapshot({ me, mine: myHome, homeOf, snapRef, onSaved: loadMe });
   useEffect(() => {
     if (!city || startedRef.current) return;
     startedRef.current = true;
@@ -96,13 +164,12 @@ export default function CityPage() {
 
   if (!city) return <div className="fixed inset-0 grid place-items-center"><Logo size={72} /></div>;
   const nbById = Object.fromEntries(town.neighbourhoods.map((n) => [n.id, n]));
-  const homeOf = Object.fromEntries(city.homes.map((h) => [h.owner.k, h]));
-  const myNb = me?.neighbourhood ? nbById[me.neighbourhood.id] : null;
   const h = hover?.item;
-  const roof = (home) => 0.6 + 0.25 * home.stories;
-  const myHome = homeOf[auth.user?.k];
+  const lit = me?.status === "finished";
+  const touring = lit && myHome && (replay || (!me.done?.tour && !skipped));
   const labels = [...city.labels,
-    ...(myHome ? [{ kind: "me", key: "me", pos: [myHome.x, roof(myHome) + 0.5, myHome.z], avatar: auth.user.avatar_url, score: myHome.owner.e }] : [])];
+    ...(myHome ? [{ kind: "me", key: "me", pos: [myHome.x, roof(myHome) + 0.5, myHome.z], avatar: auth.user.avatar_url, score: myHome.owner.e }] : []),
+    ...(myHome && me && myHome.owner.d != null ? [{ kind: "lot", key: "lot", pos: [tileOf(me.x), 0.35, tileOf(me.y)] }] : [])];
   const refresh = () => Promise.all([loadTown(), loadMe()]);
   const pick = (it) => {
     setFocus([it.x, it.z]);
@@ -114,23 +181,41 @@ export default function CityPage() {
     if (issue) localStorage.setItem("xf_paper", String(issue));
     setPlace(null);
   };
+  const markDone = (step) => api("/me/done", { method: "POST", body: { step } }).then(loadMe).catch(() => {});
+  const endTour = (finished) => {
+    setReplay(false);
+    setSkipped(true);
+    if (city.mine) setFocus([...city.mine, 46]);
+    if (!finished) return;
+    markDone("tour");
+    if (me.invites_left > 0) setPicking(true);
+  };
+  const stops = touring ? [[myHome.x, myHome.z, 84], city.hall && [city.hall.x, city.hall.z, 40], [tileOf(me.x), tileOf(me.y), 64]] : [];
   const pickedNow = picked && homeOf[picked.owner.k];
   const at = atHandle && homeOf[atHandle]?.owner;
+  const calm = !touring && !picking;
 
   return (
     <div className="fixed inset-0 overflow-clip select-none">
-      <City3D city={city} labels={labels} labelNodes={labelNodes} focus={focus} flashes={flashes}
+      <City3D city={city} labels={labels} labelNodes={labelNodes} focus={focus} flashes={flashes} snapRef={lit ? snapRef : null}
         onHover={setHover} onPick={pick} newest={town.newest} onFace={(k) => visit({ k })} />
       <div className="absolute inset-0 pointer-events-none">
         {labels.map((l, i) => (
           <div key={l.key || i} ref={(el) => { labelNodes.current[i] = el; }} className="absolute left-0 top-0 will-change-transform">
             {l.kind === "me" ? (
-              <div className="flex flex-col items-center animate-bounce">
+              <div className="flex flex-col items-center animate-bounce" data-testid="my-house-marker">
                 <img src={l.avatar} alt="" className="w-10 h-10 rounded-full border-[3px] border-amber-300 shadow-lg bg-sky-light" />
                 <span className="mt-1 rounded-full bg-amber-300 text-ink text-[11px] font-bold px-2 py-0.5 whitespace-nowrap tabular-nums">YOU{l.score != null && ` · ${l.score}`}</span>
               </div>
+            ) : l.kind === "lot" ? (
+              <div className="flex flex-col items-center" data-testid="my-lot-marker">
+                <span className="rounded-full border-2 border-dashed border-amber-400 bg-white/90 px-2.5 py-0.5 text-[11px] font-bold text-ink whitespace-nowrap shadow-sm">
+                  Your lot uptown
+                </span>
+                <span className="h-3 w-0.5 bg-amber-400" />
+              </div>
             ) : l.kind === "place" ? (
-              <button type="button" onClick={() => { setPlace(l.id); setPicked(null); }}
+              <button type="button" onClick={() => { setPlace(l.id); setPicked(null); }} data-testid={`place-label-${l.id}`}
                 className="pointer-events-auto rounded-full bg-white/95 px-3 py-1 text-sm font-display font-bold text-ink shadow-md whitespace-nowrap hover:bg-white">
                 {l.text}
               </button>
@@ -157,23 +242,28 @@ export default function CityPage() {
       <div className="absolute left-4 top-4 pointer-events-none">
         <Logo size={44} />
         <div className="mt-1.5 flex gap-1.5 text-xs font-bold">
-          <span className="rounded-full bg-white/85 px-2 py-0.5 shadow-sm tabular-nums" title="Lots with a house on them">🏠 {town.stats.taken}/{town.stats.capacity} lots</span>
-          <span className="rounded-full bg-white/85 px-2 py-0.5 shadow-sm tabular-nums" title="Houses on the Docks and uptown">
+          <span className="rounded-full bg-white/85 px-2 py-0.5 shadow-sm tabular-nums" title="Lots with a house on them" data-testid="lots-stat">🏠 {town.stats.taken}/{town.stats.capacity} lots</span>
+          <span className="rounded-full bg-white/85 px-2 py-0.5 shadow-sm tabular-nums" title="Houses on the Docks and uptown" data-testid="docks-stat">
             ⚓ {town.residents.filter((r) => r.d != null).length} · 🏙 {town.residents.filter((r) => r.u).length}
           </span>
         </div>
       </div>
-      {me?.status === "finished" && !arrived && (
-        <div className="absolute bottom-28 left-1/2 -translate-x-1/2">
-          <Arrival me={me} nb={myNb} onClose={arrive} />
+      {touring && (
+        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-20">
+          <Tour me={me} model={myHome.owner.m} line={town.ladder.uptown_at} stops={stops} onFocus={setFocus} onDone={endTour} />
         </div>
       )}
-      {me?.status === "finished" && arrived && (
-        <div className="absolute right-4 top-4">
+      {lit && picking && (
+        <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-20">
+          <PeoplePicker me={me} onSaved={refresh} onTagged={() => markDone("tag")} onClose={() => setPicking(false)} />
+        </div>
+      )}
+      {lit && calm && (
+        <div className="absolute right-4 top-24 sm:top-4">
           <VoteCard onVoted={refresh} />
         </div>
       )}
-      <div className="absolute right-4 bottom-12">
+      <div className="absolute right-4 bottom-12 hidden sm:block">
         <Minimap city={city} me={city.mine} onPick={setFocus} />
       </div>
       <div className="absolute left-4 bottom-12 flex flex-col gap-2 items-start">
@@ -182,24 +272,13 @@ export default function CityPage() {
           <HouseCard house={pickedNow} nb={nbById[pickedNow.owner.nb]} signedIn={Boolean(me)} onChanged={refresh}
             onLeft={() => { window.location.href = "/"; }} onClose={() => setPicked(null)} />
         )}
-        {away && me && !pickedNow && !place && <AwayCard news={away} onVisit={(p) => { setAway(null); visit(p); }} onClose={() => setAway(null)} />}
-        {me && me.status !== "finished" && <div className={`${CARD} px-3 py-2 text-sm font-bold pointer-events-auto`}>🔌 Turning your lights on…</div>}
-        {me?.status === "finished" && arrived && <StreetBar me={me} onFocus={() => city.mine && setFocus(city.mine)} onVisit={visit} />}
-        {auth.ready && !auth.user && (
-          <div className={`${CARD} w-[min(92vw,330px)] p-4 pointer-events-auto`}>
-            <div className="font-display font-bold text-lg">
-              {at ? (at.s === "r" ? `@${at.h}'s house is dark` : `@${at.h} lives here`) : "Your house is already here"}
-            </div>
-            <div className="mt-1 text-sm text-ink/70">
-              {at?.s === "r" ? "Is it yours? Sign in with X to turn the lights on."
-                : "XField is a city built from who talks to whom on X. Your friends live on your street. Sign in to turn your lights on."}
-            </div>
-            <button type="button" onClick={() => auth.login(window.location.pathname + window.location.search)}
-              className="mt-3 rounded-lg bg-ink text-white font-bold px-4 py-2">
-              Sign in with X
-            </button>
-          </div>
+        {away && me && calm && !pickedNow && !place && <AwayCard news={away} onVisit={(p) => { setAway(null); visit(p); }} onClose={() => setAway(null)} />}
+        {me && !lit && <div className={`${CARD} px-3 py-2 text-sm font-bold pointer-events-auto`} data-testid="lights-pending">🔌 Turning your lights on…</div>}
+        {lit && calm && !pickedNow && !place && (
+          <NextMove me={me} onFocus={() => city.mine && setFocus(city.mine)} onPeople={() => setPicking(true)} onVisit={visit}
+            onDone={markDone} onTour={() => setReplay(true)} />
         )}
+        {auth.ready && !auth.user && <SignInCard at={at} error={signinError} onSignIn={() => auth.login(window.location.pathname + window.location.search)} />}
       </div>
 
       {h?.owner && !picked && (

@@ -25,3 +25,10 @@
 - P1: Real users on staging plus analytics. Check the AI paper with real activity.
 - P2: The rabbit moment (passing the house ahead of you). More house styling (signs, gardens).
 - P2 clean-up: the old 2D TownPage routes (/h, /d, /census), district boards/elections, old integration tests, and the outdated XFIELD_STATUS.md.
+
+
+## 2026-10-28: Sign in with X failing on the live site
+- Root cause (deployer RCA): the live callback https://handle-prophecy.emergent.host/api/auth/x/callback is not in the X Developer Portal callback allowlist. X never redirects back (0 callback hits on live). Code and secrets are fine. Preview sign-in works.
+- User action: add that URL in X Developer Portal > App > User authentication settings > Callback URI (keep the preview one too).
+- Added: CityPage now shows why sign-in failed (?signin=off|cancelled|expired|x_error) inside the sign-in card (data-testid sign-in-error); it used to fail silently.
+- Pending from before: dark invite houses next to yours, poorer/richer section assets, finish invite-3 flow, full testing_agent run of tour/next moves/share cards.

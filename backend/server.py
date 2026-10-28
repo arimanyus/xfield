@@ -2,24 +2,26 @@ import asyncio
 import base64
 import hashlib
 import html
+import io
 import json
 import logging
-import math
 import os
 import random
 import re
 import secrets
+import uuid
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Optional
+from typing import Literal, Optional
 from urllib.parse import urlencode
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import APIRouter, FastAPI, HTTPException, Request, Response
+from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse
 from motor.motor_asyncio import AsyncIOMotorClient
+from PIL import Image
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 from starlette.middleware.cors import CORSMiddleware
@@ -28,14 +30,15 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import arena  # noqa: E402
+import storage  # noqa: E402
 import town  # noqa: E402
 from census import build_census, snapshot_of  # noqa: E402
 from census_card import render_census  # noqa: E402
 from paper import write_paper  # noqa: E402
 from paper_card import render_paper  # noqa: E402
 from safety import contains_blocked  # noqa: E402
-from town_card import render_card  # noqa: E402
-from xreader import is_valid_handle, normalize_handle, read_handle, read_profile_only  # noqa: E402
+from share_card import render_share, widen  # noqa: E402
+from xreader import is_valid_handle, normalize_handle, read_profile_only  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("server")
@@ -78,6 +81,10 @@ CENSUS_DIR.mkdir(parents=True, exist_ok=True)
 PAPER_DIR = ROOT_DIR / "media" / "paper"
 PAPER_DIR.mkdir(parents=True, exist_ok=True)
 CIRCLE_SIZE = 8
+INVITES = 3
+SNAP_W, SNAP_H = 1200, 630
+SNAP_GAP = timedelta(seconds=20)
+MIN_PLAYERS = 3
 READ_TTL = timedelta(days=7)
 REFRESH_AFTER = timedelta(hours=20)
 REFRESH_GAP_S = 5
@@ -162,6 +169,14 @@ class PickRequest(BaseModel):
     pick: int = Field(ge=0, le=1)
 
 
+class PeopleRequest(BaseModel):
+    handles: list[str] = Field(max_length=3)
+
+
+class DoneRequest(BaseModel):
+    step: Literal["tour", "share", "tag"]
+
+
 class DesignRequest(BaseModel):
     design: str
 
@@ -231,26 +246,12 @@ def dev_profile(handle: str) -> dict:
 async def get_profile(handle: str, force: bool = False) -> dict:
     if DEV_MODE:
         return dev_profile(handle)
-    key = handle.lower()
-    doc = None if force else await db.profiles.find_one({"handle_lower": key}, {"_id": 0})
-    if doc and "circle" in doc["data"]:
-        age = now() - datetime.fromisoformat(doc["fetched_at"])
-        if age < (READ_TTL if doc["data"].get("found") else timedelta(hours=1)):
-            return doc["data"]
-    try:
-        data = await asyncio.wait_for(read_handle(handle), timeout=60)
-    except Exception as e:
-        logger.warning("read_handle failed for @%s: %s", handle, e)
-        data = {"handle": handle, "found": False, "protected": False, "throttled": True, "circle": [], "posts": []}
-    if not data.get("throttled"):
-        await db.profiles.update_one({"handle_lower": key},
-                                     {"$set": {"handle_lower": key, "data": data, "fetched_at": now_iso()}}, upsert=True)
-    return data
+    return await get_profile_lite(handle)
 
 
-async def get_profile_lite(handle: str) -> dict:
+async def get_profile_lite(handle: str, force: bool = False) -> dict:
     key = handle.lower()
-    doc = await db.profiles_lite.find_one({"k": key}, {"_id": 0})
+    doc = None if force else await db.profiles_lite.find_one({"k": key}, {"_id": 0})
     if doc and fresh(doc["fetched_at"]):
         return doc["data"]
     data = await read_profile_only(handle)
@@ -274,50 +275,6 @@ async def check_rate(ip: str):
     if await db.movein_events.count_documents({"ip": ip, "ts": {"$gte": since}}) >= MOVEINS_PER_HOUR:
         raise HTTPException(429, "The moving trucks are all out. Try again in a bit.")
     await db.movein_events.insert_one({"ip": ip, "ts": now()})
-
-
-async def prepare_circle(k: str, profile: dict) -> list:
-    hidden = {d["k"] async for d in db.residents.find({"hidden": True}, {"_id": 0, "k": 1})}
-    raw = []
-    for c in profile.get("circle") or []:
-        ck = c["handle"].lower()
-        if ck == k or ck in hidden or not is_valid_handle(c["handle"]) or contains_blocked(c["handle"], c.get("name") or ""):
-            continue
-        raw.append(dict(c))
-    raw = raw[:CIRCLE_SIZE + 4]
-    existing = {d["k"]: d async for d in db.residents.find({"k": {"$in": [c["handle"].lower() for c in raw]}}, {"_id": 0})}
-    sem = asyncio.Semaphore(3)
-
-    async def fill(c):
-        ck = c["handle"].lower()
-        if ck in existing:
-            c["avatar_url"] = c.get("avatar_url") or existing[ck].get("avatar_url")
-            c["ok"] = True
-            return
-        if c.get("avatar_url"):
-            c["ok"] = True
-            return
-        async with sem:
-            p = await get_profile_lite(c["handle"])
-        if p.get("throttled"):
-            c["ok"] = True
-        elif p.get("found"):
-            c.update(handle=p["handle"], name=p.get("name") or c["handle"], avatar_url=p.get("avatar_url"), ok=True)
-        else:
-            c["ok"] = False
-
-    await asyncio.gather(*[fill(c) for c in raw])
-    return [c for c in raw if c.get("ok")][:CIRCLE_SIZE]
-
-
-def ties_of(old: Optional[dict], profile: dict) -> dict:
-    """Everyone someone talks to, remembered across reads and fading slowly, so mutuals build up over time."""
-    ties = {k: round(w * TIE_FADE, 2) for k, w in (old or {}).items() if w * TIE_FADE >= 1}
-    for c in profile.get("circle") or []:
-        if is_valid_handle(c["handle"]):
-            k = c["handle"].lower()
-            ties[k] = max(ties.get(k, 0), c["weight"])
-    return ties
 
 
 async def occupancy() -> tuple:
@@ -386,11 +343,11 @@ async def place_move_in(k: str, profile: dict, circle: list, by: Optional[str], 
     lit_fields = {"verified": True, "finished_at": (owner or {}).get("finished_at") or now_s, "seen_at": now_s} if lit \
         else {"verified": False}
     await db.residents.update_one({"k": k}, {"$set": {
-        "h": profile["handle"], "name": profile.get("name") or profile["handle"], "avatar_url": profile.get("avatar_url"),
-        "status": "finished" if lit else "reserved", "circle": [{"k": c["handle"].lower(), "w": c["weight"]} for c in circle],
-        "ties": ties_of((owner or {}).get("ties"), profile), "read_at": now_s, "x": ox, "y": oy, **lit_fields,
+        "h": profile["handle"], "name": profile.get("name") or profile["handle"],
+        "avatar_url": profile.get("avatar_url") or (owner or {}).get("avatar_url"),
+        "status": "finished" if lit else "reserved", "read_at": now_s, "x": ox, "y": oy, **lit_fields,
         **(credit if host else {}),
-    }, "$setOnInsert": {"k": k, "hidden": False, "nb": None, "floors": 1, "elo": arena.START,
+    }, "$setOnInsert": {"k": k, "hidden": False, "nb": None, "floors": 1, "elo": arena.START, "circle": [], "ties": {},
                         "created_at": now_s, "placed_at": now_s, **({} if host else credit)}}, upsert=True)
     new_reserved = await reserve_circle(k, profile["handle"], ox, oy, circle, occupied, pos, taken)
     kind = ("lights_on" if was_reserved else "moved_in") if verified else "built"
@@ -534,27 +491,29 @@ async def name_neighbourhood(nb_id: str):
 
 
 async def run_move_in(k: str, h: str, by: Optional[str], verified: bool, fallback: Optional[dict] = None):
+    """Your house goes up from your X name and face. Your people are the ones you pick, never guessed from posts."""
     try:
         await set_job(k, "reading")
-        profile = None
+        profile = {**fallback, "found": True} if verified and fallback else None
         for attempt in range(4):
+            if profile:
+                break
             profile = await get_profile(h)
             if not profile.get("throttled"):
                 break
+            profile = None
             await set_job(k, "traffic")
             await asyncio.sleep(12 * (attempt + 1))
-        if not profile.get("found") and verified and fallback and not profile.get("protected"):
-            profile = {**fallback, "circle": [], "found": True}
+        profile = profile or {"handle": h, "found": False, "throttled": True}
         if not profile.get("found"):
             code = "protected" if profile.get("protected") else ("traffic" if profile.get("throttled") else "not_found")
             return await set_job(k, "error", code)
         if contains_blocked(profile["handle"], profile.get("name") or ""):
             return await set_job(k, "error", "blocked")
         await set_job(k, "building", h=profile["handle"])
-        circle = await prepare_circle(k, profile)
         async with TOWN_LOCK:
             try:
-                await place_move_in(k, profile, circle, by, verified)
+                await place_move_in(k, profile, [], by, verified)
             except TownFull:
                 return await set_job(k, "error", "full")
             created = await refresh_neighbourhoods()
@@ -562,6 +521,8 @@ async def run_move_in(k: str, h: str, by: Optional[str], verified: bool, fallbac
         for nb_id in created:
             asyncio.create_task(name_neighbourhood(nb_id))
         await set_job(k, "done", "lit" if verified else "reserved")
+        if fallback:
+            asyncio.create_task(warm_card(k, fallback.get("host") or ""))
     except Exception:
         logger.exception("move-in failed for @%s", h)
         await set_job(k, "error", "failed")
@@ -581,6 +542,8 @@ async def move_in(body: MoveInRequest, request: Request):
     res = await db.residents.find_one({"k": k}, {"_id": 0})
     if res and res.get("hidden"):
         raise HTTPException(403, "That house isn't available.")
+    if not verified:
+        raise HTTPException(403, "Sign in with X to move in. Your friends get houses when you pick them as your people.")
     if res and fresh(res.get("read_at")) and (res["status"] == "finished" or not verified):
         return {"handle": res["h"], "state": "done", "code": "already"}
     job = await db.jobs.find_one({"k": k}, {"_id": 0})
@@ -719,12 +682,25 @@ def near(a: dict, b: dict) -> bool:
     return any(c["k"] == b["k"] for c in a.get("circle") or []) or any(c["k"] == a["k"] for c in b.get("circle") or [])
 
 
-def card_payload(doc: dict, st: dict) -> dict:
+async def card_payload(doc: dict, st: dict) -> dict:
+    """What the share card shows, and which moment the house is in: just moved in, up for votes, uptown, or dark."""
+    pool = await arena_pool()
+    playing, mine = in_arena(doc), arena.score(doc)
+    if doc["status"] != "finished":
+        moment = "dark"
+    elif doc.get("uptown"):
+        moment = "uptown"
+    elif playing and len(pool) >= MIN_PLAYERS:
+        moment = "vote"
+    else:
+        moment = "join"
     nb = st["nb"] or {}
-    return {"k": doc["k"], "h": doc["h"], "floors": st["floors"], "status": doc["status"], "nb_name": nb.get("name"),
-            "landmark": nb.get("landmark"), "color": nb.get("color"), "tags": st["tags"],
-            "neighbours": [{"k": n["k"], "h": n["h"], "floors": n["f"], "status": "reserved" if n["s"] == "r" else "finished"}
-                           for n in st["neighbours"]],
+    snap = doc.get("snap") if doc["status"] == "finished" else None
+    return {"k": doc["k"], "h": doc["h"], "moment": moment, "uptown": bool(doc.get("uptown")), "color": nb.get("color"),
+            "nb_name": nb.get("name"), "tags": st["tags"], "by_h": doc.get("by_h"), "score": mine, "start": arena.START,
+            "line": arena.UPTOWN_AT, "rank": 1 + sum(arena.score(d) > mine for d in pool) if playing else None, "of": len(pool),
+            "neighbours": [{"k": n["k"], "status": "reserved" if n["s"] == "r" else "finished"} for n in st["neighbours"]],
+            "snap": {"path": snap["path"], "me": snap["me"], "faces": snap["faces"]} if snap else None,
             "avatars": {doc["k"]: doc.get("avatar_url"), **{n["k"]: n["a"] for n in st["neighbours"]}}}
 
 
@@ -732,13 +708,61 @@ def card_hash(payload: dict) -> str:
     return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:10]
 
 
-def share_text(doc: dict, st: dict) -> str:
-    if doc["status"] != "finished":
-        return f"@{doc['h']} your house in XField is dark. Only you can turn the lights on \u2192"
-    where = "uptown" if doc.get("uptown") else "on the Docks"
-    if st["tags"]:
-        return f"My house is {where} in XField. " + " ".join(f"@{t}" for t in st["tags"]) + " your houses are dark till you move in \u2192"
-    return f"My house is {where} in XField. Come vote \u2192"
+def share_text(card: dict) -> str:
+    m, tags = card["moment"], " ".join(f"@{t}" for t in card["tags"])
+    if m == "dark":
+        return f"@{card['h']} your house in XField is dark. Only you can turn the lights on \u2192"
+    if m == "join":
+        if tags:
+            return f"I just moved into XField. {tags} I saved you a house next to mine, come turn your lights on \u2192"
+        return "I just moved into a shack on the Docks in XField, a city on X where houses fight for votes. Move in next to me \u2192"
+    rank = f"#{card['rank']} of {card['of']}" if card["rank"] else None
+    if m == "uptown":
+        return "I made it off the Docks. My house is uptown in XField" + (f", {rank}" if rank else "") + " \u2192"
+    to_go = max(0, card["line"] - card["score"])
+    dark = f" {tags} your houses are still dark." if tags else ""
+    return f"My house is {rank} on the Docks in XField, {to_go} points from uptown. Vote for it.{dark} \u2192"
+
+
+def og_text(card: dict) -> tuple:
+    m, h = card["moment"], card["h"]
+    if m == "dark":
+        who = f"@{card['by_h']} saved it for you. " if card.get("by_h") else ""
+        return f"@{h}, your house in XField is dark", f"{who}Sign in with X to turn the lights on."
+    if m == "join":
+        tags = ", ".join(f"@{t}" for t in card["tags"])
+        return f"@{h} just moved into XField", f"Houses are waiting next door for {tags}." if tags else \
+            "A city on X where houses fight for votes. Everyone starts on the Docks."
+    where = f"#{card['rank']} of {card['of']}" if card["rank"] else "On the ladder"
+    if m == "uptown":
+        return f"@{h} made it uptown", f"{where} in XField, a city on X where houses fight for votes."
+    return f"Vote for @{h}'s house", f"{where} on the Docks · {max(0, card['line'] - card['score'])} points from uptown."
+
+
+async def card_bytes(doc: dict, host: str) -> bytes:
+    payload = await card_payload(doc, await street(doc))
+    path = CARD_DIR / f"{doc['k']}-{card_hash({**payload, 'host': host})}.jpg"
+    if not path.exists():
+        urls = payload.pop("avatars")
+        blobs = await asyncio.gather(*[fetch_avatar(u) for u in urls.values()])
+        snap = None
+        if payload["snap"]:
+            try:
+                snap = await storage.get(payload["snap"]["path"])
+            except Exception:
+                logger.exception("couldn't load the snapshot for %s", doc["k"])
+        path.write_bytes(await asyncio.to_thread(render_share, payload, dict(zip(urls.keys(), blobs)), host, snap))
+    return path.read_bytes()
+
+
+async def warm_card(k: str, host: str):
+    """Draw a house's card ahead of time, so X gets it instantly the first time it asks."""
+    try:
+        doc = await db.residents.find_one({"k": k, "hidden": False}, {"_id": 0})
+        if doc:
+            await card_bytes(doc, host)
+    except Exception:
+        logger.exception("warming the card for %s failed", k)
 
 
 @api.get("/residents/{handle}")
@@ -753,7 +777,8 @@ async def resident(handle: str, request: Request):
     is_me = bool(user and user["k"] == doc["k"])
     if is_me:
         await db.residents.update_one({"k": doc["k"]}, {"$set": {"seen_at": now_iso()}})
-    v = card_hash(card_payload(doc, st))
+    card = await card_payload(doc, st)
+    v = card_hash(card)
     out = {"k": doc["k"], "h": doc["h"], "name": doc.get("name"), "avatar_url": doc.get("avatar_url"),
            "status": "finished" if doc["status"] == "finished" else "reserved", "x": doc["x"], "y": doc["y"],
            "tier": st["tier"], "tier_name": town.TIERS[st["tier"]], "inbound": st["inbound"], "by_h": doc.get("by_h"),
@@ -763,10 +788,14 @@ async def resident(handle: str, request: Request):
                              "leader": nb.get("leader_k") == doc["k"]} if nb else None,
            "street": st["street"], "neighbours": st["neighbours"], "brought": brought, "brought_lit": lit, "is_me": is_me,
            "ladder": await ladder_of(doc, is_me),
-           "share": {"text": share_text(doc, st), "url": f"{base}/api/s/{doc['h']}", "tags": st["tags"]},
+           "share": {"text": share_text(card), "url": f"{base}/api/s/{doc['h']}", "tags": st["tags"], "moment": card["moment"]},
            "card_url": f"{base}/api/residents/{doc['h']}/card.jpg?v={v}"}
     if is_me:
         out["news"] = news_of(st)
+        out["done"] = doc.get("done") or {}
+        out["invites_left"] = max(0, INVITES - len(doc.get("circle") or []))
+        out["cast"] = await db.votes.count_documents({"voter": doc["k"]})
+        out["has_snap"] = bool(doc.get("snap"))
     return out
 
 
@@ -778,7 +807,8 @@ async def ladder_of(doc: dict, is_me: bool) -> Optional[dict]:
     pool = await arena_pool()
     mine, playing = arena.score(doc), in_arena(doc)
     out = {"score": mine, "uptown": bool(doc.get("uptown")), "away": away(doc), "ranked": doc.get("ranked", True),
-           "rank": 1 + sum(arena.score(d) > mine for d in pool) if playing else None, "of": len(pool), "line": arena.UPTOWN_AT}
+           "rank": 1 + sum(arena.score(d) > mine for d in pool) if playing else None, "of": len(pool), "line": arena.UPTOWN_AT,
+           "start": arena.START, "need": max(0, MIN_PLAYERS - len(pool))}
     if not is_me:
         return out
     ahead = arena.rabbit(pool, doc["k"]) if playing else None
@@ -827,16 +857,8 @@ async def fetch_avatar(url: Optional[str]) -> Optional[bytes]:
 @api.get("/residents/{handle}/card.jpg")
 async def resident_card(handle: str, request: Request):
     doc = await load_resident(handle)
-    st = await street(doc)
-    payload = card_payload(doc, st)
-    path = CARD_DIR / f"{doc['k']}-{card_hash(payload)}.jpg"
-    if not path.exists():
-        urls = payload.pop("avatars")
-        blobs = await asyncio.gather(*[fetch_avatar(u) for u in urls.values()])
-        host = public_base(request).split("://", 1)[-1]
-        data = await asyncio.to_thread(render_card, payload, dict(zip(urls.keys(), blobs)), host)
-        path.write_bytes(data)
-    return Response(content=path.read_bytes(), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+    data = await card_bytes(doc, public_base(request).split("://", 1)[-1])
+    return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @api.get("/s/{handle}")
@@ -852,17 +874,9 @@ async def share_page(handle: str, request: Request):
         if doc["status"] == "finished":
             resp.set_cookie(INVITE_COOKIE, doc["k"], max_age=7 * 86400, httponly=True, samesite="lax", path="/")
         return resp
-    st = await street(doc)
-    nb_name = (st["nb"] or {}).get("name") or "XField"
-    if doc["status"] == "finished":
-        title = f"@{doc['h']} lives in {nb_name}"
-        tags = ", ".join(f"@{t}" for t in st["tags"])
-        desc = f"{tags}: your houses are next door, still dark." if tags else "A city on X where houses compete for votes."
-    else:
-        title = f"@{doc['h']}, your house in XField is dark"
-        desc = "Your friends already live next door. Sign in with X to turn the lights on."
-    title, desc = html.escape(title), html.escape(desc)
-    img = f"{base}/api/residents/{doc['h']}/card.jpg?v={card_hash(card_payload(doc, st))}"
+    card = await card_payload(doc, await street(doc))
+    title, desc = (html.escape(t) for t in og_text(card))
+    img = f"{base}/api/residents/{doc['h']}/card.jpg?v={card_hash(card)}"
     return og_page(title, desc, img, target)
 
 
@@ -872,7 +886,7 @@ def og_page(title: str, desc: str, img: str, target: str) -> HTMLResponse:
 <meta property="og:type" content="website"><meta property="og:site_name" content="XField">
 <meta property="og:title" content="{title}"><meta property="og:description" content="{desc}">
 <meta property="og:url" content="{target}"><meta property="og:image" content="{img}">
-<meta property="og:image:width" content="1260"><meta property="og:image:height" content="1680">
+<meta property="og:image:width" content="1200"><meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="{title}">
 <meta name="twitter:description" content="{desc}"><meta name="twitter:image" content="{img}">
 <meta http-equiv="refresh" content="0;url={target}"></head>
@@ -962,10 +976,14 @@ async def x_callback(request: Request, code: Optional[str] = None, state: Option
     await db.sessions.insert_one({"token_hash": _hash(token), "x_id": u.get("id"), "k": k, "h": h, "name": u.get("name") or h,
                                   "avatar_url": avatar, "created_at": now_iso(), "expires_at": now() + timedelta(days=30)})
     res = await db.residents.find_one({"k": k}, {"_id": 0})
-    if not (res and res.get("hidden")) and not (res and res["status"] == "finished" and fresh(res.get("read_at"))):
+    fallback = {"handle": h, "name": u.get("name") or h, "avatar_url": avatar, "host": base.split("://", 1)[-1]}
+    if not (res and res.get("hidden")) and not (res and res["status"] == "finished"):
         await db.jobs.update_one({"k": k}, {"$set": {"k": k, "h": h, "state": "queued", "code": None, "updated_at": now_iso()}}, upsert=True)
-        fallback = {"handle": h, "name": u.get("name") or h, "avatar_url": avatar, "bio": ""}
         asyncio.create_task(run_move_in(k, h, request.cookies.get(INVITE_COOKIE), True, fallback))
+    elif res and not res.get("hidden"):
+        await db.residents.update_one({"k": k}, {"$set": {"h": h, "name": fallback["name"], "seen_at": now_iso(),
+                                                          **({"avatar_url": avatar} if avatar else {})}})
+        asyncio.create_task(warm_card(k, base.split("://", 1)[-1]))
     nxt = st.get("next") or "/"
     target = f"{base}/?welcome=1" if nxt in ("/", f"/h/{h}", f"/h/{k}") else f"{base}{nxt}"
     resp = RedirectResponse(target, status_code=302)
@@ -1057,50 +1075,15 @@ async def logout(request: Request, response: Response):
 
 # ---------- town life: weekly re-reads, moves and demolitions ----------
 
-async def apply_refresh(cur: dict, profile: dict, circle: list) -> tuple:
-    k = cur["k"]
-    occupied, pos = await occupancy()
-    ox, oy = cur["x"], cur["y"]
-    old_top = [c["k"] for c in sorted(cur.get("circle") or [], key=lambda c: -c["w"])][:town.TOP_N]
-    new_top = [c["handle"].lower() for c in sorted(circle, key=lambda c: -c["weight"])][:town.TOP_N]
-    moved = None
-    if not cur.get("member") and town.should_move(old_top, new_top):
-        placed = [(pos[c["handle"].lower()], c["weight"]) for c in circle if c["handle"].lower() in pos]
-        if placed:
-            tw = sum(w for _, w in placed)
-            target = (sum(p[0] * w for p, w in placed) / tw, sum(p[1] * w for p, w in placed) / tw)
-            occupied.discard((ox, oy))
-            lot = town.nearest_free_lot(*target, occupied)
-            if math.dist(lot, (ox, oy)) >= town.MOVE_MIN_LOTS:
-                moved, (ox, oy) = (cur["x"], cur["y"]), lot
-            occupied.add((ox, oy))
-    await db.residents.update_one({"k": k}, {"$set": {
-        "h": profile["handle"], "name": profile.get("name") or profile["handle"],
-        "avatar_url": profile.get("avatar_url") or cur.get("avatar_url"), "read_at": now_iso(), "x": ox, "y": oy,
-        "circle": [{"k": c["handle"].lower(), "w": c["weight"]} for c in circle], "ties": ties_of(cur.get("ties"), profile)}})
-    pos[k] = (ox, oy)
-    added = await reserve_circle(k, profile["handle"], ox, oy, circle, occupied, pos, await count_taken())
-    return moved, added
-
-
 async def refresh_resident(d: dict):
-    profile = await get_profile(d["h"], force=True)
-    if profile.get("throttled") or not profile.get("found") or contains_blocked(profile["handle"], profile.get("name") or ""):
+    """Keep names and faces current. Who your people are is yours to pick, so a re-read never changes it."""
+    profile = await get_profile_lite(d["h"], force=True)
+    if profile.get("throttled") or not profile.get("found"):
         return
-    circle = await prepare_circle(d["k"], profile)
-    async with TOWN_LOCK:
-        cur = await db.residents.find_one({"k": d["k"], "hidden": False}, {"_id": 0})
-        if not cur:
-            return
-        moved, added = await apply_refresh(cur, profile, circle)
-        created = await refresh_neighbourhoods()
-        if moved or added:
-            nb = (await db.residents.find_one({"k": d["k"]}, {"_id": 0, "nb": 1})).get("nb")
-            await db.events.insert_one({"type": "moved" if moved else "grew", "h": profile["handle"], "nb": nb, "n": added,
-                                        "at": now_iso()})
-        await bump()
-    for nb_id in created:
-        asyncio.create_task(name_neighbourhood(nb_id))
+    await db.residents.update_one({"k": d["k"]}, {"$set": {
+        "h": profile["handle"], "name": profile.get("name") or profile["handle"], "read_at": now_iso(),
+        **({"avatar_url": profile["avatar_url"]} if profile.get("avatar_url") else {})}})
+    await bump()
 
 
 async def demolish_stale():
@@ -1379,12 +1362,15 @@ async def matchup(k: str) -> tuple:
 
 
 async def arena_state(k: str) -> dict:
-    """Your votes left today and, while you have some, two houses: your mutuals', or strangers' with no names."""
+    """Your votes left today and, while you have some, two houses: your mutuals', or strangers' with no names. Voting
+    opens once enough people have signed in."""
     left = await votes_left(k)
+    players = len(await arena_pool())
     pair, friends = await matchup(k) if left else ([], False)
     colors = {n["id"]: n.get("color") async for n in db.neighbourhoods.find({"active": True}, {"_id": 0, "id": 1, "color": 1})}
     tomorrow = (now() + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
     return {"left": left, "of": arena.VOTES_PER_DAY, "next_at": tomorrow.isoformat(), "friends": friends,
+            "players": players, "need": max(0, MIN_PLAYERS - players),
             "pair": [{"m": arena.model_of(d, d.get("dock") is not None), "c": colors.get(d.get("nb")),
                       "docks": d.get("dock") is not None, **({"p": person(d), "e": arena.score(d)} if friends else {})} for d in pair]}
 
@@ -1455,6 +1441,126 @@ async def set_ranked(body: RankedRequest, request: Request):
     await db.matchups.delete_many({"pair": me["k"]})
     await bump()
     return {"ranked": body.ranked}
+
+
+# ---------- your people: up to 3 invites, whose dark houses wait next to yours ----------
+
+async def find_person(h: str) -> Optional[dict]:
+    """Someone you can pick: from the city if they're here, else their X name and face. None if X has no such account."""
+    k = h.lower()
+    doc = await db.residents.find_one({"k": k}, {"_id": 0, "k": 1, "h": 1, "name": 1, "avatar_url": 1, "status": 1, "hidden": 1})
+    if doc:
+        return None if doc.get("hidden") else {"k": k, "h": doc["h"], "name": doc.get("name") or doc["h"],
+                                               "a": doc.get("avatar_url"), "lit": doc["status"] == "finished"}
+    p = await get_profile_lite(h)
+    if p.get("throttled"):
+        return {"k": k, "h": h, "name": h, "a": None, "lit": False}
+    if not p.get("found") or contains_blocked(p["handle"], p.get("name") or ""):
+        return None
+    return {"k": k, "h": p["handle"], "name": p.get("name") or p["handle"], "a": p.get("avatar_url"), "lit": False}
+
+
+@api.get("/people/lookup")
+async def people_lookup(handle: str, request: Request):
+    user = await current_user(request)
+    if not user:
+        raise HTTPException(401, "Sign in with X first.")
+    h = clean_handle(handle)
+    if h.lower() == user["k"]:
+        raise HTTPException(400, "That's you. Pick the people you talk to.")
+    p = await find_person(h)
+    if not p:
+        raise HTTPException(404, f"Couldn't find @{h} on X.")
+    return p
+
+
+@api.post("/me/people")
+async def set_people(body: PeopleRequest, request: Request):
+    """Invite up to 3 people. Each one not in XField yet gets a dark house next to yours, waiting for them to sign in.
+    Invites are for good: you can fill your empty slots, never swap someone out."""
+    me = await require_citizen(request)
+    had = [c["k"] for c in me.get("circle") or []]
+    handles, seen = [], {me["k"], *had}
+    for raw in body.handles:
+        h = clean_handle(raw)
+        if h.lower() not in seen:
+            seen.add(h.lower())
+            handles.append(h)
+    if not handles:
+        return {"people": len(had), "added": 0, "no_room": 0, "invites_left": max(0, INVITES - len(had))}
+    if len(had) + len(handles) > INVITES:
+        left = max(0, INVITES - len(had))
+        raise HTTPException(400, f"You can invite {INVITES} people in all, and you have {left} {'invite' if left == 1 else 'invites'} left.")
+    found = await asyncio.gather(*[find_person(h) for h in handles])
+    missing = [h for h, p in zip(handles, found) if not p]
+    if missing:
+        raise HTTPException(400, "Couldn't find " + ", ".join(f"@{h}" for h in missing) + " on X.")
+    await check_rate(client_ip(request))
+    circle = [{"handle": p["h"], "name": p["name"], "avatar_url": p["a"], "weight": INVITES - len(had) - i} for i, p in enumerate(found)]
+    async with TOWN_LOCK:
+        occupied, pos = await occupancy()
+        wanted = sum(1 for c in circle if c["handle"].lower() not in pos)
+        await db.residents.update_one({"k": me["k"]}, {"$push": {"circle": {"$each": [{"k": c["handle"].lower(), "w": c["weight"]} for c in circle]}}})
+        added = await reserve_circle(me["k"], me["h"], me["x"], me["y"], circle, occupied, pos, await count_taken())
+        created = await refresh_neighbourhoods()
+        if added:
+            await db.events.insert_one({"type": "grew", "h": me["h"], "n": added, "at": now_iso()})
+        await bump()
+    for nb_id in created:
+        asyncio.create_task(name_neighbourhood(nb_id))
+    asyncio.create_task(warm_card(me["k"], public_base(request).split("://", 1)[-1]))
+    total = len(had) + len(circle)
+    return {"people": total, "added": added, "no_room": wanted - added, "invites_left": INVITES - total}
+
+
+@api.post("/me/done")
+async def mark_done(body: DoneRequest, request: Request):
+    """Ticks off a step of the welcome: the tour, sharing your card, tagging your invites."""
+    me = await require_citizen(request)
+    at = (me.get("done") or {}).get(body.step) or now_iso()
+    await db.residents.update_one({"k": me["k"]}, {"$set": {f"done.{body.step}": at}})
+    return {"step": body.step, "at": at}
+
+
+def _snap_point(v) -> Optional[list]:
+    if not isinstance(v, (list, tuple)) or len(v) != 2 or not all(isinstance(n, (int, float)) for n in v):
+        return None
+    x, y = v
+    return [round(x), round(y)] if -200 <= x <= SNAP_W + 200 and -200 <= y <= SNAP_H + 200 else None
+
+
+@api.post("/me/snapshot")
+async def save_snapshot(request: Request, image: UploadFile = File(...), meta: str = Form("{}")):
+    """A picture of your house and street, taken from the 3D city in your browser. Your share card is drawn over it."""
+    me = await require_citizen(request)
+    last = (me.get("snap") or {}).get("at")
+    if last and now() - datetime.fromisoformat(last) < SNAP_GAP:
+        return {"saved": False}
+    data = await image.read(2_500_001)
+    if len(data) > 2_500_000:
+        raise HTTPException(413, "That picture is too big.")
+    try:
+        pic = Image.open(io.BytesIO(data))
+        pic.verify()
+        pic = Image.open(io.BytesIO(data)).convert("RGB")
+    except Exception:
+        raise HTTPException(400, "That isn't a picture.")
+    if pic.size != (SNAP_W, SNAP_H):
+        pic = pic.resize((SNAP_W, SNAP_H), Image.LANCZOS)
+    buf = io.BytesIO()
+    pic.save(buf, "JPEG", quality=88)
+    try:
+        info = json.loads(meta)
+    except ValueError:
+        info = {}
+    info = info if isinstance(info, dict) else {}
+    faces = [{"k": f["k"].lower(), "x": pt[0], "y": pt[1]} for f in (info.get("faces") or [])[:12]
+             if isinstance(f, dict) and isinstance(f.get("k"), str) and (pt := _snap_point([f.get("x"), f.get("y")]))]
+    me_at = _snap_point(info.get("me")) or [380, 250]
+    path = await storage.put(f"snapshots/{me['k']}/{uuid.uuid4().hex}.jpg", buf.getvalue())
+    await db.residents.update_one({"k": me["k"]}, {"$set": {"snap": {"path": path, "at": now_iso(), "me": me_at, "faces": faces}}})
+    asyncio.create_task(warm_card(me["k"], public_base(request).split("://", 1)[-1]))
+    return {"saved": True}
 
 
 @api.post("/me/leave")
@@ -1568,7 +1674,7 @@ async def census_issue(issue: str, request: Request):
 
 
 @api.get("/census/{issue}/card.jpg")
-async def census_card(issue: str, request: Request):
+async def census_card(issue: str, request: Request, og: int = 0):
     c = await load_census(issue)
     host = public_base(request).split("://", 1)[-1]
     payload = census_card_payload(c, host)
@@ -1578,7 +1684,8 @@ async def census_card(issue: str, request: Request):
         blobs = await asyncio.gather(*[fetch_avatar(u) for u in people.values()])
         data = await asyncio.to_thread(render_census, payload, dict(zip(people.keys(), blobs)), host)
         path.write_bytes(data)
-    return Response(content=path.read_bytes(), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+    data = path.read_bytes()
+    return Response(content=widen(data) if og else data, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
 
 
 @api.get("/c/{issue}")
@@ -1594,7 +1701,7 @@ async def census_share_page(issue: str, request: Request):
     title = html.escape(f"XField City Ledger No. {c['issue']}")
     desc = html.escape(f"{census_lead(c)}. {c['population']['taken']}/{c['capacity']} lots taken.")
     v = card_hash(census_card_payload(c, base.split("://", 1)[-1]))
-    return og_page(title, desc, f"{base}/api/census/{c['issue']}/card.jpg?v={v}", target)
+    return og_page(title, desc, f"{base}/api/census/{c['issue']}/card.jpg?v={v}&og=1", target)
 
 
 # ---------- the daily paper ----------
@@ -1712,7 +1819,7 @@ async def publish_paper(force: bool = False):
 
 
 def paper_card_url(p: dict, base: str) -> str:
-    return f"{base}/api/paper/{p['issue']}/card.jpg?v={card_hash({'p': p, 'host': base})}"
+    return f"{base}/api/paper/{p['issue']}/card.jpg?v={card_hash({'p': p, 'host': base, 'front': 2})}"
 
 
 @api.get("/paper/{issue}")
@@ -1726,10 +1833,10 @@ async def paper_issue(issue: str, request: Request):
 
 
 @api.get("/paper/{issue}/card.jpg")
-async def paper_card(issue: str, request: Request):
+async def paper_card(issue: str, request: Request, og: int = 0):
     p = await load_issue(db.papers, issue, {"_id": 0})
     host = public_base(request).split("://", 1)[-1]
-    path = PAPER_DIR / f"{p['issue']}-{card_hash({'p': p, 'host': host})}.jpg"
+    path = PAPER_DIR / f"{p['issue']}-{card_hash({'p': p, 'host': host, 'front': 2})}.jpg"
     if not path.exists():
         blobs = await asyncio.gather(*[fetch_avatar(f.get("a")) for f in p["featured"][:6]])
         data = await asyncio.to_thread(render_paper, p, {f["k"]: b for f, b in zip(p["featured"], blobs)}, host)
@@ -1748,7 +1855,7 @@ async def paper_share_page(issue: str, request: Request):
     if not BOT_RE.search(request.headers.get("user-agent", "")):
         return RedirectResponse(target, status_code=302)
     title = html.escape(f"The XField Ledger No. {p['issue']}")
-    return og_page(title, html.escape(p["headline"]), paper_card_url(p, base), target)
+    return og_page(title, html.escape(p["headline"]), paper_card_url(p, base) + "&og=1", target)
 
 
 # ---------- platform crons ----------
@@ -1866,6 +1973,11 @@ async def startup():
     await db.matchups.create_index("k", unique=True)
     await migrate_to_night()
     await migrate_to_ladder()
+    await migrate_signed_in_only()
+    try:
+        await storage.init()
+    except Exception:
+        logger.exception("object storage init failed; share cards fall back to drawings")
     if DEV_MODE:
         asyncio.create_task(dev_arrivals())
         asyncio.create_task(dev_voters())
@@ -1914,6 +2026,28 @@ async def migrate_to_ladder():
         await sync_docks()
     await db.meta.insert_one({"_id": "ladder_migrated", "at": now_iso()})
     await bump()
+
+
+async def migrate_signed_in_only():
+    """Once: only people who signed in with X stay. Every house, district, vote, paper and census built from automatic
+    X reads goes, and the ladder starts again from the people who are really here."""
+    if DEV_MODE or await db.meta.find_one({"_id": "signed_in_only"}):
+        return
+    async with TOWN_LOCK:
+        keep = [d["k"] async for d in db.residents.find({"status": "finished", "verified": True, "hidden": False}, {"_id": 0, "k": 1})]
+        await db.residents.delete_many({"k": {"$nin": keep}})
+        await db.residents.update_many({}, {"$set": {"circle": [], "ties": {}, "floors": 1, "elo": arena.START, "uptown": False,
+                                                     "nb": None, "by": None, "by_h": None},
+                                            "$unset": {"dock": "", "revealed": "", "member": "", "design": ""}})
+        for coll in (db.events, db.votes, db.matchups, db.papers, db.census, db.neighbourhoods, db.jobs, db.posts):
+            await coll.delete_many({})
+        for folder in (CARD_DIR, CENSUS_DIR, PAPER_DIR):
+            for f in folder.glob("*.jpg"):
+                f.unlink()
+        await refresh_neighbourhoods()
+    await db.meta.insert_one({"_id": "signed_in_only", "at": now_iso(), "kept": keep})
+    await bump()
+    logger.info("clean-up: kept %d signed-in residents", len(keep))
 
 
 @app.on_event("shutdown")

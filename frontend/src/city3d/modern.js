@@ -9,10 +9,12 @@ const FH = 0.12;
 const BAY = 0.1;
 const C = { white: "#FBF8F3", cream: "#F1E6D2", sand: "#E3D3B8", stone: "#D8D2C8", concrete: "#BFB8AD", dark: "#2E3440",
             wood: "#B98A62", trunk: "#8B6646", lawn: "#86C96E", leaf: "#5DB552", pine: "#2F8F4E", solar: "#27466E",
-            water: "#6CB8F0", lamp: "#FBBF24" };
+            water: "#6CB8F0", lamp: "#FBBF24", gold: "#D4A72C", hedge: "#3F8F3A", rose: "#F472B6", tulip: "#FACC15",
+            marble: "#F5F2EC", pool: "#38BDF8" };
 // The Docks: rust, tin, plywood and dirt.
-const D = { tin: "#8C969C", rust: "#9C4F2E", rust2: "#6E3520", ply: "#B39B72", boards: "#7E6A4E", dirt: "#7A6D5A", grime: "#5E574D",
-            pane: "#3F4753", black: "#26262A", bag: "#1E2530", cinder: "#9A968E", sheet: "#D9D4C7", tarp: "#3E6FA3", hull: "#3B4A52" };
+const D = { tin: "#7F878C", rust: "#8E4628", rust2: "#5F2E1B", ply: "#A38B63", boards: "#6E5C43", dirt: "#655A4A", grime: "#4C463D",
+            pane: "#353B44", black: "#26262A", bag: "#1E2530", cinder: "#8A867E", sheet: "#C9C3B4", tarp: "#3E6FA3", hull: "#3B4A52",
+            fire: "#F97316", flame: "#FDE047", mud: "#4A4238" };
 const corners = (h) => [[-h, -h], [h, -h], [-h, h], [h, h]];
 
 // 4x4 windows, a few with blinds down. A wall's window sits high in its floor over a sill; curtain glass runs edge
@@ -134,6 +136,19 @@ function design(build) {
       g.rotateZ(angle);
       add("solid", g, x, y, z, C.white);
     },
+    // A board nailed on at an angle (boarded windows, leaning planks), in the x-y plane, then turned by rot.
+    plank: (len, x, y, z, angle, color, rot = 0) => add("solid", new THREE.BoxGeometry(len, 0.016, 0.008).rotateZ(angle), x, y, z, color, rot),
+    // A pitched sheet in a fixed colour: tarps and tents.
+    ridge: (w, h, d, x, y, z, color, rot = 0) => add("solid", gable(w, h, d, false), x, y + h / 2, z, color, rot),
+    hedge: (w, d, x, z, y = 0.02) => add("solid", box(w, 0.05, d), x, y + 0.025, z, C.hedge),
+    pool: (w, d, x, z, y = 0.02) => {
+      add("solid", box(w + 0.03, 0.014, d + 0.03), x, y + 0.007, z, C.marble);
+      add("solid", box(w, 0.006, d), x, y + 0.016, z, C.pool);
+    },
+    flowers: (w, x, z, y = 0.02) => {
+      add("solid", box(w, 0.02, 0.05), x, y + 0.01, z, "#6B4F35");
+      for (let i = 0; i < 4; i++) add("solid", box(0.022, 0.022, 0.022), x - w / 2 + (i + 0.5) * (w / 4), y + 0.03, z, i % 2 ? C.rose : C.tulip);
+    },
     tree: (x, y, z, r) => {
       add("solid", new THREE.CylinderGeometry(r * 0.14, r * 0.2, r * 1.2, 6), x, y + r * 0.6, z, C.trunk);
       add("solid", new THREE.IcosahedronGeometry(r, 1), x, y + r * 1.75, z, C.leaf);
@@ -160,7 +175,7 @@ function design(build) {
 
 // Each height has four designs, one per trade: lab, shop, studio, exchange.
 const DESIGNS = {
-  // Homes, one or two floors on a garden.
+  // Homes, one or two floors on a manicured garden: hedges, a pool, flower beds and a little gold.
   h0: (b) => {
     b.solid(0.78, 0.02, 0.68, 0, 0, 0, C.lawn);
     b.solid(0.14, 0.006, 0.16, 0.2, 0.02, 0.26, C.stone);
@@ -168,8 +183,13 @@ const DESIGNS = {
     b.solid(0.16, FH, 0.36, 0.22, 0.02, 0.02, C.wood);
     b.wall(0.6, FH, 0.46, 0.02, 0.02 + FH, -0.03);
     b.accent(0.64, 0.03, 0.5, 0.02, 0.02 + 2 * FH, -0.03);
-    b.solid(0.24, 0.015, 0.2, -0.06, 0.05 + 2 * FH, -0.08, C.solar);
-    b.tree(-0.32, 0.02, 0.27, 0.07);
+    b.solid(0.645, 0.008, 0.505, 0.02, 0.05 + 2 * FH, -0.03, C.gold);
+    b.solid(0.24, 0.015, 0.2, -0.06, 0.058 + 2 * FH, -0.08, C.solar);
+    b.pool(0.2, 0.1, -0.22, 0.27);
+    b.hedge(0.78, 0.035, 0, -0.322);
+    b.hedge(0.035, 0.6, -0.372, -0.02);
+    b.flowers(0.18, 0.2, 0.31);
+    b.tree(0.33, 0.02, -0.25, 0.06);
     b.sign(0.02 + 1.5 * FH, 0.32, 0.2);
   },
   h1: (b) => {
@@ -178,18 +198,28 @@ const DESIGNS = {
     b.awning(0.6, 0, 0.02 + FH - 0.03, 0.29);
     b.wall(0.62, FH, 0.52, 0, 0.02 + FH, 0);
     b.solid(0.66, 0.035, 0.56, 0, 0.02 + 2 * FH, 0, C.white);
-    b.solid(0.12, 0.06, 0.1, -0.15, 0.055 + 2 * FH, -0.1, C.concrete);
-    b.disc(0.05, 0.1, 0.16, 0.055 + 2 * FH, -0.08, C.wood);
+    b.solid(0.67, 0.01, 0.57, 0, 0.055 + 2 * FH, 0, C.gold);
+    b.pool(0.26, 0.16, 0.08, -0.06, 0.065 + 2 * FH);
+    b.solid(0.12, 0.06, 0.1, -0.2, 0.065 + 2 * FH, -0.14, C.concrete);
+    for (const x of [-0.33, 0.33]) {
+      b.solid(0.012, 0.16, 0.012, x, 0.02, 0.31, C.dark);
+      b.solid(0.035, 0.025, 0.035, x, 0.18, 0.31, C.lamp);
+    }
+    b.flowers(0.2, -0.18, 0.31);
     b.sign(0.02 + 1.5 * FH, 0.31, 0.26);
   },
   h2: (b) => {
     b.solid(0.78, 0.02, 0.68, 0, 0, 0, C.lawn);
+    b.solid(0.1, 0.006, 0.12, 0, 0.02, 0.29, C.stone);
     b.wall(0.46, 2 * FH, 0.46, 0, 0.02, 0.02);
     b.roof(0.52, 0.22, 0.52, 0, 0.02 + 2 * FH, 0.02);
+    b.solid(0.012, 0.012, 0.54, 0, 0.24 + 2 * FH, 0.02, C.gold);
     b.accent(0.08, 0.1, 0.012, 0, 0.02, 0.256);
     b.solid(0.06, 0.2, 0.06, 0.14, 0.32, -0.08, C.stone);
+    for (const x of [-0.24, 0.24]) b.hedge(0.28, 0.035, x, 0.32);
+    b.pool(0.12, 0.22, 0.31, -0.05);
     b.tree(-0.31, 0.02, 0.24, 0.07);
-    b.tree(0.31, 0.02, -0.2, 0.06);
+    b.tree(-0.31, 0.02, -0.22, 0.06);
     b.sign(0.02 + 1.5 * FH, 0.23, 0.25);
   },
   h3: (b) => {
@@ -201,25 +231,33 @@ const DESIGNS = {
     b.roof(0.42, 0.14, 0.56, 0, 0.055 + 2 * FH, -0.04, Math.PI / 2, true);
     b.solid(0.24, 0.02, 0.1, 0, 0.02 + FH, 0.22, C.white);
     for (const x of [-0.1, 0.1]) b.solid(0.025, FH, 0.025, x, 0.02, 0.255, C.white);
+    b.solid(0.24, 0.008, 0.1, 0, 0.04 + FH, 0.22, C.gold);
     b.accent(0.08, 0.1, 0.012, 0, 0.02, 0.176);
     for (const x of [-0.26, 0.26]) b.solid(0.16, 0.05, 0.06, x, 0.02, 0.28, C.leaf);
+    b.disc(0.045, 0.02, 0, 0.026, 0.31, C.stone);
+    b.disc(0.03, 0.008, 0, 0.046, 0.31, C.pool);
+    b.hedge(0.78, 0.035, 0, -0.322);
     b.sign(0.02 + 1.5 * FH, 0.28, 0.17);
   },
-  // Docks shacks, one for each home design: a tin shed, stacked containers, a patched plywood hut, a trailer.
+  // Docks shacks, one for each home design: a tin shed, stacked containers, a patched plywood hut, a trailer. Boarded
+  // windows, tarps, cinder blocks holding the roofs down, and rubbish everywhere.
   s0: (b) => {
     const h = 1.6 * FH, y = 0.015;
     b.solid(0.78, y, 0.68, 0, 0, 0, D.dirt);
+    b.solid(0.22, 0.004, 0.14, -0.22, y, 0.25, D.mud);
     b.solid(0.5, h, 0.4, 0, y, -0.04, D.tin);
     b.solid(0.16, 0.1, 0.01, 0.13, y + 0.06, 0.162, D.rust);
     b.solid(0.1, 0.07, 0.01, -0.12, y + 0.08, 0.162, D.pane);
-    b.solid(0.13, 0.014, 0.014, -0.12, y + 0.11, 0.165, D.boards);
+    for (const a of [0.55, -0.55]) b.plank(0.13, -0.12, y + 0.115, 0.168, a, D.boards);
     b.accent(0.09, 0.15, 0.01, 0.06, y, 0.162);
     b.solid(0.58, 0.02, 0.5, 0, y + h, -0.04, D.rust2);
-    b.accent(0.22, 0.012, 0.2, -0.1, y + h + 0.02, -0.1);
-    b.solid(0.03, 0.15, 0.03, 0.17, y + h + 0.02, -0.15, D.black);
+    b.ridge(0.3, 0.03, 0.34, 0.1, y + h + 0.02, -0.06, D.tarp);
+    for (const [x, z] of [[-0.2, 0.12], [0.22, -0.24], [-0.18, -0.24]]) b.solid(0.05, 0.03, 0.035, x, y + h + 0.02, z, D.cinder);
+    b.solid(0.03, 0.15, 0.03, -0.05, y + h + 0.02, -0.15, D.black);
     b.disc(0.045, 0.1, -0.29, y, 0.24, D.rust);
     b.disc(0.05, 0.025, 0.28, y, 0.25, D.black);
     b.disc(0.05, 0.025, 0.29, y + 0.025, 0.24, D.black);
+    b.plank(0.22, 0.31, y + 0.08, -0.05, 1.25, D.boards, Math.PI / 2);
     b.sign(y + 0.8 * FH, 0.25, 0.16);
   },
   s1: (b) => {
@@ -229,45 +267,55 @@ const DESIGNS = {
     for (let i = 0; i < 7; i++) b.solid(0.012, h, 0.272, -0.3 + i * 0.1, y, -0.12, D.rust2);
     b.accent(0.4, 1.3 * FH, 0.24, 0.08, y + h, -0.13);
     b.solid(0.1, 0.07, 0.01, 0.06, y + h + 0.05, -0.006, D.pane);
+    b.plank(0.12, 0.06, y + h + 0.085, 0, 0.5, D.boards);
     b.solid(0.1, 0.13, 0.01, -0.15, y, 0.014, D.pane);
     for (const x of [-0.26, -0.2]) b.solid(0.01, h + 0.04, 0.01, x, y, 0.04, D.black);
     for (let i = 1; i < 5; i++) b.solid(0.06, 0.008, 0.01, -0.23, y + i * 0.04, 0.04, D.black);
     for (const x of [-0.32, 0.32]) b.solid(0.012, 0.18, 0.012, x, y, 0.26, D.boards);
     b.solid(0.64, 0.004, 0.004, 0, y + 0.17, 0.26, D.black);
-    [[-0.18, "#E5E7EB"], [-0.05, "#DC2626"], [0.1, "#2563EB"], [0.22, "#FACC15"]].forEach(([x, c]) => b.solid(0.07, 0.07, 0.006, x, y + 0.1, 0.26, c));
+    [[-0.18, "#9CA3AF"], [-0.05, "#9F3A3A"], [0.1, "#3B5B8C"], [0.22, "#A38B3A"]].forEach(([x, c]) => b.solid(0.07, 0.07, 0.006, x, y + 0.1, 0.26, c));
+    b.disc(0.045, 0.11, 0.3, y, 0.12, D.rust2);
+    b.solid(0.03, 0.03, 0.03, 0.3, y + 0.11, 0.12, D.fire);
+    b.solid(0.016, 0.03, 0.016, 0.3, y + 0.13, 0.12, D.flame, 0.8);
     b.sign(y + 0.75 * FH, 0.31, 0.01);
   },
   s2: (b) => {
     const h = 1.7 * FH, y = 0.015;
     b.solid(0.78, y, 0.68, 0, 0, 0, D.dirt);
+    b.solid(0.2, 0.004, 0.18, 0.24, y, -0.2, D.mud);
     b.solid(0.44, h, 0.4, 0, y, 0, D.ply);
     b.solid(0.18, h, 0.405, -0.13, y, 0, D.boards);
     b.roof(0.5, 0.14, 0.46, 0, y + h, 0);
+    b.ridge(0.28, 0.15, 0.3, -0.1, y + h - 0.005, 0.06, D.tarp);
     b.solid(0.11, 0.08, 0.01, 0.11, y + 0.08, 0.203, D.pane);
-    b.solid(0.14, 0.016, 0.014, 0.11, y + 0.13, 0.206, D.boards);
-    b.solid(0.14, 0.016, 0.014, 0.11, y + 0.095, 0.206, D.boards);
+    for (const a of [0.6, -0.6]) b.plank(0.14, 0.11, y + 0.12, 0.21, a, D.boards);
     b.solid(0.09, 0.15, 0.01, -0.1, y, 0.203, D.grime);
-    b.solid(0.012, 0.08, 0.012, 0.2, y + h, 0.14, D.black);
-    b.disc(0.05, 0.012, 0.2, y + h + 0.08, 0.14, D.sheet);
+    b.solid(0.012, 0.12, 0.012, 0.2, y + h, 0.14, D.black);
+    b.disc(0.05, 0.012, 0.2, y + h + 0.12, 0.14, D.sheet);
     b.solid(0.08, 0.06, 0.07, 0.3, y, 0.26, D.bag);
     b.solid(0.07, 0.05, 0.06, 0.24, y, 0.29, D.bag);
+    b.solid(0.06, 0.05, 0.05, 0.33, y, 0.18, D.bag);
     b.solid(0.1, 0.03, 0.1, -0.3, y, 0.24, D.boards, 0.5);
     b.sign(y + 0.85 * FH, 0.22, 0.2);
   },
   s3: (b) => {
     const y = 0.055;
     b.solid(0.78, 0.015, 0.68, 0, 0, 0, D.grime);
+    b.solid(0.26, 0.004, 0.12, -0.2, 0.015, 0.27, D.mud);
     for (const x of [-0.22, 0.22]) b.solid(0.07, 0.04, 0.07, x, 0.015, -0.02, D.cinder);
     b.solid(0.6, 1.4 * FH, 0.3, 0, y, -0.02, D.sheet);
     b.accent(0.602, 0.025, 0.302, 0, y + 0.6 * FH, -0.02);
     b.solid(0.62, 0.012, 0.32, 0, y + 1.4 * FH, -0.02, D.tin);
+    b.solid(0.16, 0.008, 0.2, 0.18, y + 1.4 * FH + 0.012, 0, D.rust);
     b.solid(0.12, 0.05, 0.01, 0.15, y + 0.09, 0.132, D.pane);
+    b.plank(0.13, 0.15, y + 0.115, 0.138, 0.35, D.boards);
     b.solid(0.08, 0.12, 0.01, -0.15, y, 0.132, D.grime);
     b.solid(0.1, 0.07, 0.008, 0.26, y, 0.131, D.rust);
     b.solid(0.32, 0.008, 0.16, -0.08, y + 1.25 * FH, 0.21, D.tarp);
     for (const x of [-0.23, 0.07]) b.solid(0.01, 0.2, 0.01, x, 0.015, 0.28, D.black);
     b.solid(0.06, 0.03, 0.06, 0.1, 0.015, 0.27, D.sheet);
-    b.solid(0.08, 0.05, 0.05, 0.22, 0.015, 0.27, "#2563EB");
+    b.solid(0.08, 0.05, 0.05, 0.22, 0.015, 0.27, "#2F4A7A");
+    b.disc(0.05, 0.02, -0.3, 0.015, -0.2, D.black);
     b.sign(y + 0.7 * FH, 0.3, 0.13);
   },
   // Mid-rises: five floors over the street.
@@ -282,8 +330,10 @@ const DESIGNS = {
     }
     const top = 0.02 + 5 * FH;
     b.accent(0.84, 0.05, 0.84, 0, top, 0);
-    b.solid(0.3, 0.1, 0.22, 0.12, top + 0.05, -0.12, C.white);
-    b.solid(0.012, 0.25, 0.012, -0.25, top + 0.05, -0.25, C.dark);
+    b.solid(0.85, 0.012, 0.85, 0, top + 0.05, 0, C.gold);
+    b.solid(0.3, 0.1, 0.22, 0.12, top + 0.062, -0.12, C.white);
+    b.pool(0.26, 0.16, -0.16, 0.2, top + 0.062);
+    b.solid(0.012, 0.25, 0.012, -0.25, top + 0.062, -0.25, C.dark);
     b.sign(0.02 + 4.5 * FH, 0.42, 0.42);
   },
   m1: (b) => {
@@ -302,8 +352,10 @@ const DESIGNS = {
     const top = 0.02 + 5 * FH;
     b.solid(0.8, 0.03, 0.8, 0, top, 0, C.white);
     b.solid(0.56, 0.012, 0.56, -0.04, top + 0.03, -0.04, C.lawn);
+    b.pool(0.2, 0.12, 0.08, 0.12, top + 0.042);
     b.tree(-0.2, top + 0.04, -0.18, 0.07);
     b.tree(0.14, top + 0.04, -0.22, 0.06);
+    b.solid(0.81, 0.01, 0.81, 0, top - 0.005, 0, C.gold);
     b.sign(0.02 + FH + 0.06, 0.38, 0.38);
   },
   m2: (b) => {
@@ -341,7 +393,9 @@ const DESIGNS = {
     for (const k of [5, 10]) b.drum(0.315, 0.025, 0, y0 + k * FH - 0.0125, 0);
     b.disc(0.33, 0.03, 0, top, 0, C.white);
     b.drum(0.2, 0.12, 0, top + 0.03, 0);
-    b.solid(0.015, 0.4, 0.015, 0, top + 0.15, 0, C.dark);
+    b.disc(0.205, 0.015, 0, top + 0.15, 0, C.gold);
+    b.disc(0.02, 0.45, 0, top + 0.165, 0, C.gold);
+    b.solid(0.04, 0.04, 0.04, 0, top + 0.6, 0, C.lamp);
     b.sign(top - 0.3, 0.31, 0.31);
   },
   t1: (b) => {
@@ -356,7 +410,11 @@ const DESIGNS = {
     b.wall(0.46, 12 * FH, 0.56, -0.12, y0, 0);
     for (let i = 1; i < 12; i += 2) b.solid(0.3, 0.012, 0.05, -0.12, y0 + i * FH, 0.3, C.white);
     b.accent(0.5, 0.05, 0.6, -0.12, top, 0);
-    b.disc(0.07, 0.12, -0.2, top + 0.05, -0.12, C.wood);
+    b.disc(0.17, 0.012, -0.12, top + 0.05, 0, C.dark);
+    b.solid(0.025, 0.004, 0.14, -0.17, top + 0.062, 0, C.white);
+    b.solid(0.025, 0.004, 0.14, -0.07, top + 0.062, 0, C.white);
+    b.solid(0.1, 0.004, 0.025, -0.12, top + 0.062, 0, C.white);
+    b.pool(0.16, 0.3, 0.27, 0, 0.05 + 2 * FH + 0.012);
     b.sign(0.02 + 1.5 * FH, 0.39, 0.39);
   },
   t2: (b) => {
@@ -372,7 +430,8 @@ const DESIGNS = {
       y += 0.025;
     }
     b.accent(0.3, 0.06, 0.3, 0, y, 0);
-    b.solid(0.012, 0.3, 0.012, 0.1, y, 0.1, C.dark);
+    b.solid(0.31, 0.012, 0.31, 0, y + 0.06, 0, C.gold);
+    b.disc(0.012, 0.3, 0.1, y + 0.072, 0.1, C.gold);
     b.sign(0.02 + 2 * FH, 0.36, 0.22);
   },
   t3: (b) => {
@@ -388,7 +447,8 @@ const DESIGNS = {
     }
     b.accent(0.24, 0.16, 0.24, 0, y, 0);
     b.roof(0.24, 0.16, 0.24, 0, y + 0.16, 0, 0, true);
-    b.solid(0.015, 0.3, 0.015, 0, y + 0.3, 0, C.dark);
+    b.solid(0.25, 0.012, 0.25, 0, y + 0.155, 0, C.gold);
+    b.disc(0.012, 0.3, 0, y + 0.3, 0, C.gold);
     b.sign(0.07 + 6 * FH, 0.37, 0.37);
   },
   // Civic buildings, at the homes' scale so every window in the city is the same size.
@@ -658,6 +718,61 @@ const DESIGNS = {
     for (let i = 0; i < 11; i++) b.solid(0.52, 0.006, 0.02, 0, 0.03, -1.0 + i * 0.2, D.grime);
     for (const z of [-0.9, -0.3, 0.3, 0.9]) for (const x of [-0.23, 0.23]) b.solid(0.04, 0.7, 0.04, x, -0.66, z, D.grime);
     for (const z of [-0.6, 0.6]) b.disc(0.02, 0.05, 0.2, 0.03, z, D.black);
+  },
+  // Street furniture uptown.
+  lamp: (b) => {
+    b.disc(0.03, 0.02, 0, 0, 0, C.dark);
+    b.disc(0.008, 0.3, 0, 0.02, 0, C.dark);
+    b.solid(0.07, 0.008, 0.012, 0.03, 0.3, 0, C.dark);
+    b.solid(0.035, 0.03, 0.035, 0.06, 0.27, 0, C.lamp);
+    b.solid(0.045, 0.008, 0.045, 0.06, 0.3, 0, C.gold);
+  },
+  palm: (b) => {
+    for (let i = 0; i < 5; i++) b.disc(0.022 - i * 0.002, 0.08, i * 0.008, i * 0.08, 0, C.trunk);
+    for (let i = 0; i < 6; i++) {
+      const a = (i / 6) * Math.PI * 2;
+      b.solid(0.2, 0.012, 0.05, Math.cos(a) * 0.1 + 0.04, 0.4 - 0.02, -Math.sin(a) * 0.1, C.leaf, a);
+    }
+    b.solid(0.04, 0.04, 0.04, 0.04, 0.39, 0, "#6B4F35");
+  },
+  flowerbed: (b) => {
+    b.solid(0.26, 0.04, 0.12, 0, 0, 0, C.marble);
+    b.solid(0.24, 0.012, 0.1, 0, 0.04, 0, "#6B4F35");
+    for (let i = 0; i < 6; i++) b.solid(0.026, 0.03, 0.026, -0.1 + i * 0.04, 0.052, (i % 2 ? 0.02 : -0.02), i % 3 ? C.rose : C.tulip);
+  },
+  statue: (b) => {
+    b.solid(0.12, 0.08, 0.12, 0, 0, 0, C.marble);
+    b.solid(0.05, 0.12, 0.04, 0, 0.08, 0, C.gold);
+    b.disc(0.025, 0.04, 0, 0.2, 0, C.gold);
+  },
+  // More of the Docks: an oil drum burning, stacked tyres, a tarp tent, washing lines and a broken fence.
+  barrel: (b) => {
+    b.disc(0.05, 0.12, 0, 0, 0, D.rust2);
+    b.disc(0.052, 0.012, 0, 0.04, 0, D.rust);
+    b.solid(0.04, 0.03, 0.04, 0, 0.12, 0, D.fire, 0.4);
+    b.solid(0.022, 0.04, 0.022, 0.005, 0.14, 0, D.flame, 1.1);
+  },
+  tires: (b) => {
+    for (let i = 0; i < 3; i++) b.disc(0.06, 0.03, 0.01 * i, i * 0.03, 0, D.black);
+    b.disc(0.045, 0.002, 0.02, 0.092, 0, D.grime);
+    b.disc(0.06, 0.03, 0.12, 0, 0.06, D.black);
+  },
+  tent: (b) => {
+    b.solid(0.36, 0.006, 0.3, 0, 0, 0, D.mud);
+    b.ridge(0.28, 0.16, 0.32, 0, 0.006, 0, D.tarp);
+    b.solid(0.08, 0.05, 0.06, 0.16, 0.006, 0.14, D.bag);
+  },
+  laundry: (b) => {
+    for (const x of [-0.18, 0.18]) b.solid(0.012, 0.22, 0.012, x, 0, 0, D.boards);
+    b.solid(0.36, 0.004, 0.004, 0, 0.21, 0, D.black);
+    [[-0.11, "#9F3A3A"], [-0.03, "#C9C3B4"], [0.06, "#3B5B8C"], [0.13, "#8A7A3A"]].forEach(([x, c]) => b.solid(0.06, 0.07, 0.004, x, 0.14, 0, c));
+  },
+  fence: (b) => {
+    for (const x of [-0.42, -0.14, 0.14, 0.42]) b.solid(0.016, 0.2, 0.016, x, 0, 0, D.grime);
+    b.solid(0.86, 0.01, 0.01, 0, 0.18, 0, D.tin);
+    b.solid(0.56, 0.01, 0.01, -0.15, 0.08, 0, D.tin);
+    for (let i = 0; i < 9; i++) if (i !== 5 && i !== 6) b.solid(0.006, 0.16, 0.006, -0.4 + i * 0.1, 0.02, 0, D.cinder);
+    b.plank(0.2, 0.3, 0.05, 0.02, 0.4, D.boards);
   },
   // Street furniture uptown.
   bench: (b) => {
