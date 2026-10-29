@@ -83,6 +83,7 @@ PAPER_DIR.mkdir(parents=True, exist_ok=True)
 CIRCLE_SIZE = 8
 INVITES = 3
 SNAP_W, SNAP_H = 1200, 630
+CARD_VERSION = 3
 SNAP_GAP = timedelta(seconds=20)
 MIN_PLAYERS = 3
 READ_TTL = timedelta(days=7)
@@ -696,12 +697,17 @@ async def card_payload(doc: dict, st: dict) -> dict:
         moment = "join"
     nb = st["nb"] or {}
     snap = doc.get("snap") if doc["status"] == "finished" else None
-    return {"k": doc["k"], "h": doc["h"], "moment": moment, "uptown": bool(doc.get("uptown")), "color": nb.get("color"),
-            "nb_name": nb.get("name"), "tags": st["tags"], "by_h": doc.get("by_h"), "score": mine, "start": arena.START,
+    invites = st["street"][:INVITES]
+    by = st["by_k"].get(doc.get("by")) if doc["status"] != "finished" else None
+    return {"rv": CARD_VERSION, "k": doc["k"], "h": doc["h"], "name": doc.get("name"), "moment": moment,
+            "uptown": bool(doc.get("uptown")), "color": nb.get("color"),
+            "invites": [{"k": p["k"], "h": p["h"], "s": p["s"]} for p in invites],
+            "nb_name": nb.get("name"), "tags": st["tags"], "by_h": doc.get("by_h"), "by_k": by["k"] if by else None, "score": mine, "start": arena.START,
             "line": arena.UPTOWN_AT, "rank": 1 + sum(arena.score(d) > mine for d in pool) if playing else None, "of": len(pool),
             "neighbours": [{"k": n["k"], "status": "reserved" if n["s"] == "r" else "finished"} for n in st["neighbours"]],
             "snap": {"path": snap["path"], "me": snap["me"], "faces": snap["faces"]} if snap else None,
-            "avatars": {doc["k"]: doc.get("avatar_url"), **{n["k"]: n["a"] for n in st["neighbours"]}}}
+            "avatars": {doc["k"]: doc.get("avatar_url"), **{n["k"]: n["a"] for n in st["neighbours"] + invites},
+                        **({by["k"]: by.get("avatar_url")} if by else {})}}
 
 
 def card_hash(payload: dict) -> str:
@@ -712,11 +718,12 @@ def share_text(card: dict) -> str:
     m, tags = card["moment"], " ".join(f"@{t}" for t in card["tags"])
     if m == "dark":
         return f"@{card['h']} your house in XField is dark. Only you can turn the lights on \u2192"
-    if m == "join":
-        if tags:
-            return f"I just moved into XField. {tags} I saved you a house next to mine, come turn your lights on \u2192"
-        return "I just moved into a shack on the Docks in XField, a city on X where houses fight for votes. Move in next to me \u2192"
     rank = f"#{card['rank']} of {card['of']}" if card["rank"] else None
+    if m == "join":
+        at = f" I'm {rank} on the Docks." if rank else ""
+        if tags:
+            return f"I just moved into XField.{at} {tags} I saved you a house next to mine, come turn your lights on \u2192"
+        return f"I just moved into a shack on the Docks in XField, a city on X where houses fight for votes.{at} Move in next to me \u2192"
     if m == "uptown":
         return "I made it off the Docks. My house is uptown in XField" + (f", {rank}" if rank else "") + " \u2192"
     to_go = max(0, card["line"] - card["score"])
@@ -729,11 +736,11 @@ def og_text(card: dict) -> tuple:
     if m == "dark":
         who = f"@{card['by_h']} saved it for you. " if card.get("by_h") else ""
         return f"@{h}, your house in XField is dark", f"{who}Sign in with X to turn the lights on."
+    where = f"#{card['rank']} of {card['of']}" if card["rank"] else "On the ladder"
     if m == "join":
         tags = ", ".join(f"@{t}" for t in card["tags"])
-        return f"@{h} just moved into XField", f"Houses are waiting next door for {tags}." if tags else \
-            "A city on X where houses fight for votes. Everyone starts on the Docks."
-    where = f"#{card['rank']} of {card['of']}" if card["rank"] else "On the ladder"
+        return f"@{h} just moved into XField", f"{where} on the Docks. Houses are waiting next door for {tags}." if tags else \
+            f"{where} on the Docks, in a city on X where houses fight for votes."
     if m == "uptown":
         return f"@{h} made it uptown", f"{where} in XField, a city on X where houses fight for votes."
     return f"Vote for @{h}'s house", f"{where} on the Docks · {max(0, card['line'] - card['score'])} points from uptown."
@@ -751,7 +758,7 @@ async def card_bytes(doc: dict, host: str) -> bytes:
                 snap = await storage.get(payload["snap"]["path"])
             except Exception:
                 logger.exception("couldn't load the snapshot for %s", doc["k"])
-        path.write_bytes(await asyncio.to_thread(render_share, payload, dict(zip(urls.keys(), blobs)), host, snap))
+        path.write_bytes(await asyncio.to_thread(render_share, payload, dict(zip(urls.keys(), blobs)), snap))
     return path.read_bytes()
 
 
@@ -788,7 +795,7 @@ async def resident(handle: str, request: Request):
                              "leader": nb.get("leader_k") == doc["k"]} if nb else None,
            "street": st["street"], "neighbours": st["neighbours"], "brought": brought, "brought_lit": lit, "is_me": is_me,
            "ladder": await ladder_of(doc, is_me),
-           "share": {"text": share_text(card), "url": f"{base}/api/s/{doc['h']}", "tags": st["tags"], "moment": card["moment"]},
+           "share": {"text": share_text(card), "url": f"{base}/api/s/{doc['h']}?v={v}", "tags": st["tags"], "moment": card["moment"]},
            "card_url": f"{base}/api/residents/{doc['h']}/card.jpg?v={v}"}
     if is_me:
         out["news"] = news_of(st)

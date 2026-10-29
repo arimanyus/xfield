@@ -12,8 +12,10 @@ import { AwayCard, CARD, Face, HouseCard, Minimap, PlaceCard, TickerBar, VoteCar
 
 const TITLE = "XField: your city on X, lit up by your friends";
 const DAY = 86400000;
+const SNAP_VERSION = "close-up-3";
 const newsToast = (n) => ({ text: `💡 @${n.p.h} just moved in near you`, face: n.p, visit: n.p, cta: "Visit" });
 const roof = (home) => 0.6 + 0.25 * home.stories;
+const top = (home) => (home.owner.d != null ? 0.36 : roof(home));
 const SIGNIN_ERRORS = {
   off: "Sign in with X is switched off right now.",
   cancelled: "Sign in was cancelled on X.",
@@ -24,7 +26,7 @@ const SIGNIN_ERRORS = {
 // Pictures your house and street from the city, for your share card. Only when something on it changed, or a day on.
 function useSnapshot({ me, mine, homeOf, snapRef, onSaved }) {
   const key = me?.status === "finished" && mine
-    ? [mine.x, mine.z, mine.owner.m, mine.owner.f, mine.owner.e, ...me.neighbours.map((p) => p.k + p.s)].join("|") : null;
+    ? [SNAP_VERSION, mine.x, mine.z, mine.owner.m, mine.owner.f, mine.owner.e, ...me.neighbours.map((p) => p.k + p.s)].join("|") : null;
   useEffect(() => {
     if (!key) return;
     const store = `xf_snap_${me.k}`;
@@ -33,9 +35,9 @@ function useSnapshot({ me, mine, homeOf, snapRef, onSaved }) {
     const id = setTimeout(async () => {
       if (!snapRef.current) return;
       const dark = me.neighbours.filter((p) => p.s === "r" && homeOf[p.k]).map((p) => homeOf[p.k]);
-      const points = [{ k: me.k, pos: [mine.x, roof(mine) + 0.1, mine.z] }, ...dark.map((h) => ({ k: h.owner.k, pos: [h.x, roof(h) + 0.05, h.z] }))];
+      const points = [{ k: me.k, pos: [mine.x, top(mine) + 0.1, mine.z] }, ...dark.map((h) => ({ k: h.owner.k, pos: [h.x, top(h) + 0.05, h.z] }))];
       const { blob, points: at } = await snapRef.current({ at: [mine.x, mine.z], points });
-      const inFrame = (p) => p.x > 30 && p.x < 660 && p.y > 90 && p.y < 610;
+      const inFrame = (p) => p.x > 30 && p.x < 610 && p.y > 90 && p.y < 610;
       const form = new FormData();
       form.append("image", blob, "house.jpg");
       form.append("meta", JSON.stringify({ me: [at[0].x, at[0].y], faces: at.slice(1).filter(inFrame).map(({ k, x, y }) => ({ k, x, y })) }));

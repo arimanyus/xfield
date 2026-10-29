@@ -4,7 +4,7 @@ import io
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 from town import djb2
-from town_card import BODY, BRAND, DARK, DISPLAY, INK, LIT, NEUTRAL, WALLS, _circle, _font, _shade, _wrap, rgb
+from town_card import BODY, BRAND, DARK, DISPLAY, INK, LIT, NEUTRAL, WALLS, _circle, _font, _shade, rgb
 
 W, H = 1200, 630
 TW, TH = 150, 75
@@ -140,11 +140,6 @@ def _pill(d, x, y, text, font, fill, fg, pad=22, h=None):
     return y + hh
 
 
-def _names(tags):
-    names = [f"@{t}" for t in tags]
-    return names[0] if len(names) == 1 else ", ".join(names[:-1]) + " & " + names[-1]
-
-
 HEAD = {
     "join": "I just moved into XField",
     "vote": "Vote my house uptown",
@@ -152,92 +147,162 @@ HEAD = {
     "dark": "Your house is waiting",
 }
 CTA = {"join": "MOVE IN NEXT TO ME", "vote": "VOTE FOR ME", "uptown": "COME VISIT", "dark": "TURN YOUR LIGHTS ON"}
-PX0, PX1, PY0, PY1 = 692, 1168, 26, 604
-PAD = 34
+PX0, PX1, PY0, PY1 = 640, 1174, 24, 606
+PAD = 30
+SOFT = (241, 245, 249)
 
 
-def _fitw(d, text, name, max_w, size, bold=True):
-    while size > 12 and d.textlength(text, font=_font(name, size, bold)) > max_w:
+def _fitw(d, text, name, max_w, size, bold=True, low=12):
+    while size > low and d.textlength(text, font=_font(name, size, bold)) > max_w:
         size -= 1
     return _font(name, size, bold)
 
 
-def _where(data):
+def _clip(d, text, font, max_w):
+    while len(text) > 2 and d.textlength(text, font=font) > max_w:
+        text = text[:-2] + "\u2026"
+    return text
+
+
+def _grey(av):
+    a = av.split()[3]
+    return Image.merge("RGBA", (*ImageOps.grayscale(av.convert("RGB")).convert("RGB").split(), a))
+
+
+def _face(img, avatar, x, y, size, ring, grey=False):
+    av = _circle(avatar, size, ring)
+    av = _grey(av) if grey else av
+    img.paste(av, (int(x), int(y)), av)
+
+
+def _header(img, d, data, avatars, x0, y, w):
+    """Big face, name and handle, with where the house stands."""
     m = data["moment"]
-    if m == "dark":
-        return f"Saved for you by @{data['by_h']}" if data.get("by_h") else "Saved for you, next to a friend"
-    if m == "uptown":
-        return f"Uptown in {data['nb_name']}" if data.get("nb_name") else "A house of my own, uptown"
-    return "A shack on the Docks, for now"
+    size = 120
+    _face(img, avatars.get(data["k"]), x0, y, size, NEUTRAL if m == "dark" else LIT, grey=m == "dark")
+    tx, tw = x0 + size + 18, w - size - 18
+    where = {"dark": "A DARK HOUSE", "uptown": "UPTOWN"}.get(m, "THE DOCKS")
+    _pill(d, tx, y + 4, f"XFIELD \u00b7 {where}", _font(BODY, 17, True), INK, (255, 255, 255), pad=14, h=34)
+    name = data.get("name") or data["h"]
+    f = _fitw(d, name, DISPLAY, tw, 40, low=26)
+    d.text((tx, y + 44), _clip(d, name, f, tw), font=f, fill=INK)
+    handle = f"@{data['h']}"
+    f = _fitw(d, handle, BODY, tw, 26, low=16)
+    d.text((tx, y + 88), _clip(d, handle, f, tw), font=f, fill=_shade(BRAND, 0.6))
+    return y + size + 12
+
+
+def _rank(d, data, x0, y, w):
+    """The house's place on the ladder, big, with its points."""
+    d.rounded_rectangle([x0, y, x0 + w, y + 84], radius=18, fill=SOFT, outline=INK, width=3)
+    big = f"#{data['rank']}" if data.get("rank") else "\u2013"
+    font = _font(DISPLAY, 60, True)
+    bb = d.textbbox((0, 0), big, font=font)
+    d.text((x0 + 22, y + (84 - (bb[3] - bb[1])) / 2 - bb[1]), big, font=font, fill=INK)
+    tx = x0 + 22 + (bb[2] - bb[0]) + 22
+    where = "uptown" if data["moment"] == "uptown" else "on the Docks"
+    top = f"of {data['of']} {where}" if data.get("rank") else f"Not ranked yet, {where}"
+    d.text((tx, y + 13), top, font=_fitw(d, top, BODY, x0 + w - tx - 16, 24), fill=INK)
+    pts = f"{data['score']:,} points"
+    d.text((tx, y + 45), pts, font=_fitw(d, pts, BODY, x0 + w - tx - 16, 24, False), fill=_shade(INK, 2.2))
+    return y + 84 + 12
 
 
 def _bar(d, x0, x1, y, data):
     start, line = data["start"], data["line"]
     frac = max(0.0, min(1.0, (data["score"] - start) / max(1, line - start)))
-    d.rounded_rectangle([x0, y, x1, y + 26], radius=13, fill=(226, 232, 240), outline=INK, width=3)
-    d.rounded_rectangle([x0, y, x0 + max(26, (x1 - x0) * frac), y + 26], radius=13, fill=LIT, outline=INK, width=3)
+    d.rounded_rectangle([x0, y, x1, y + 22], radius=11, fill=(226, 232, 240), outline=INK, width=3)
+    d.rounded_rectangle([x0, y, x0 + max(22, (x1 - x0) * frac), y + 22], radius=11, fill=LIT, outline=INK, width=3)
     to_go = max(0, line - data["score"])
-    d.text((x0, y + 36), f"{to_go} POINTS TO UPTOWN" if to_go else "MOVING UPTOWN", font=_font(BODY, 21, True), fill=INK)
-    return y + 66
+    d.text((x0, y + 28), f"{to_go} POINTS TO UPTOWN" if to_go else "MOVING UPTOWN", font=_font(BODY, 18, True), fill=INK)
+    return y + 62
 
 
-def _panel(img, data, host):
-    """The right-hand card: where the house is in its story, and what a friend should do about it."""
+def _invites(img, d, data, avatars, x0, y, w):
+    """My three invites: lit faces moved in, grey faces still dark next to me, empty lots still open."""
+    people = (data.get("invites") or [])[:3]
+    dark = sum(p["s"] == "r" for p in people)
+    label = f"MY 3 INVITES \u00b7 {dark} STILL DARK" if dark else "MY 3 INVITES"
+    d.text((x0, y), label, font=_font(BODY, 17, True), fill=_shade(INK, 2.4))
+    y += 26
+    slot, size = w / 3, 52
+    for i in range(3):
+        sx = x0 + i * slot + (slot - size) / 2
+        if i < len(people):
+            p = people[i]
+            _face(img, avatars.get(p["k"]), sx, y, size, LIT if p["s"] == "f" else NEUTRAL, grey=p["s"] != "f")
+            text = f"@{p['h']}"
+            color = INK if p["s"] == "f" else _shade(INK, 2.6)
+        else:
+            d.ellipse([sx + 2, y + 2, sx + size - 2, y + size - 2], fill=SOFT, outline=NEUTRAL, width=3)
+            plus = _font(BODY, 30, True)
+            bb = d.textbbox((0, 0), "+", font=plus)
+            d.text((sx + (size - (bb[2] - bb[0])) / 2 - bb[0], y + (size - (bb[3] - bb[1])) / 2 - bb[1]), "+", font=plus, fill=NEUTRAL)
+            text, color = "open lot", _shade(INK, 3.0)
+        tw = slot - 8
+        f = _fitw(d, text, BODY, tw, 17, low=13)
+        text = _clip(d, text, f, tw)
+        d.text((sx + size / 2, y + size + 4), text, font=f, fill=color, anchor="mt")
+    return y + size + 28
+
+
+def _saved_by(img, d, data, avatars, x0, y, w):
+    """Who saved this dark house, and that only its owner can light it."""
+    y += 6
+    d.text((x0, y), "SAVED FOR YOU BY", font=_font(BODY, 17, True), fill=_shade(INK, 2.4))
+    y += 28
+    if data.get("by_k"):
+        d.rounded_rectangle([x0, y, x0 + w, y + 112], radius=18, fill=SOFT, outline=INK, width=3)
+        _face(img, avatars.get(data["by_k"]), x0 + 14, y + 12, 88, LIT)
+        tx, tw = x0 + 118, w - 132
+        who = f"@{data['by_h']}"
+        f = _fitw(d, who, BODY, tw, 30, low=16)
+        d.text((tx, y + 26), _clip(d, who, f, tw), font=f, fill=INK)
+        d.text((tx, y + 66), "lives right next door", font=_font(BODY, 20, False), fill=_shade(INK, 2.2))
+        y += 128
+    else:
+        d.text((x0, y), "A friend, right next door", font=_font(BODY, 24, False), fill=_shade(INK, 2.2))
+        y += 44
+    d.text((x0, y), "Only you can turn the lights on.", font=_fitw(d, "Only you can turn the lights on.", BODY, w, 24, False),
+           fill=_shade(INK, 2.2))
+
+
+def _panel(img, data, avatars):
+    """The right-hand card: who lives here, their rank, their invites, and what a friend should do about it."""
     shade = Image.new("RGBA", img.size, (0, 0, 0, 0))
     ImageDraw.Draw(shade).rounded_rectangle([PX0 + 4, PY0 + 10, PX1 + 4, PY1 + 10], radius=30, fill=(15, 23, 42, 70))
     shade = shade.filter(ImageFilter.GaussianBlur(14))
     img.paste(shade, (0, 0), shade)
     sheet = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(sheet).rounded_rectangle([PX0, PY0, PX1, PY1], radius=30, fill=(255, 255, 255, 240), outline=INK, width=4)
+    ImageDraw.Draw(sheet).rounded_rectangle([PX0, PY0, PX1, PY1], radius=30, fill=(255, 255, 255, 244), outline=INK, width=4)
     img.paste(sheet, (0, 0), sheet)
     d = ImageDraw.Draw(img)
     m, x0, w = data["moment"], PX0 + PAD, PX1 - PX0 - 2 * PAD
-    where = {"dark": "A DARK HOUSE", "uptown": "UPTOWN"}.get(m, "THE DOCKS")
-    y = _pill(d, x0, PY0 + PAD - 4, f"XFIELD \u00b7 {where}", _font(BODY, 21, True), INK, (255, 255, 255), pad=18) + 20
+    y = _header(img, d, data, avatars, x0, PY0 + PAD, w)
     head = HEAD[m]
-    for size in range(62, 40, -2):
-        font = _font(DISPLAY, size, True)
-        lines = _wrap(d, head, font, w)
-        if len(lines) <= 2:
-            break
-    for line in lines[:2]:
-        d.text((x0, y), line, font=font, fill=INK)
-        y += size + 4
-    handle = f"@{data['h']}"
-    d.text((x0, y + 8), handle, font=_fitw(d, handle, BODY, w, 36), fill=_shade(BRAND, 0.6))
-    y += 58
-    where = _where(data)
-    d.text((x0, y), where, font=_fitw(d, where, BODY, w, 23, False), fill=_shade(INK, 2.2))
-    y += 44
-    limit = PY1 - PAD - 100
-    if m in ("vote", "uptown") and data.get("rank") and y + 44 <= limit:
-        d.text((x0, y), f"#{data['rank']} of {data['of']} \u00b7 {data['score']} pts", font=_font(DISPLAY, 30, True), fill=INK)
-        y += 46
-    if m in ("vote", "join") and y + 62 <= limit:
-        y = _bar(d, x0, x0 + w, y, data)
-    tags = data.get("tags") or []
-    if tags and m != "dark" and y + 28 <= limit:
-        who = f"@{tags[0]}" + (f" & {len(tags) - 1} more" if len(tags) > 1 else "")
-        line = f"Dark houses wait for {who}"
-        d.text((x0, y), line, font=_fitw(d, line, BODY, w, 21), fill=_shade(INK, 2.4))
+    d.text((x0, y), head, font=_fitw(d, head, DISPLAY, w, 36, low=24), fill=INK)
+    y += 46
+    if m == "dark":
+        _saved_by(img, d, data, avatars, x0, y, w)
+    else:
+        y = _rank(d, data, x0, y, w)
+        if m != "uptown":
+            y = _bar(d, x0, x0 + w, y, data)
+        _invites(img, d, data, avatars, x0, y, w)
     cta = f"{CTA[m]} \u2192"
-    _pill(d, x0, PY1 - PAD - 86, cta, _fitw(d, cta, BODY, w - 44, 27), BRAND, INK, h=56)
-    d.text((x0 + 4, PY1 - PAD - 18), host, font=_fitw(d, host, BODY, w - 8, 20), fill=_shade(INK, 2.6))
+    _pill(d, x0, PY1 - PAD - 52, cta, _fitw(d, cta, BODY, w - 44, 26), BRAND, INK, h=52)
 
 
 def _marker(img, avatar, x, y, size, ring, grey=False):
     """A face floating over a house, like in the city."""
-    av = _circle(avatar, size, ring)
-    if grey:
-        a = av.split()[3]
-        av = Image.merge("RGBA", (*ImageOps.grayscale(av.convert("RGB")).convert("RGB").split(), a))
+    av = _grey(_circle(avatar, size, ring)) if grey else _circle(avatar, size, ring)
     d = ImageDraw.Draw(img)
     tip = y - 6
     d.polygon([(x - 12, tip - 18), (x + 12, tip - 18), (x, tip)], fill=ring, outline=INK, width=3)
     img.paste(av, (int(x - size / 2), int(tip - 14 - size)), av)
 
 
-def render_share(data: dict, avatars: dict, host: str, snap: bytes = None) -> bytes:
+def render_share(data: dict, avatars: dict, snap: bytes = None) -> bytes:
     shot = None
     if snap and data.get("snap"):
         try:
@@ -249,13 +314,13 @@ def render_share(data: dict, avatars: dict, host: str, snap: bytes = None) -> by
         for f in data["snap"]["faces"]:
             _marker(img, avatars.get(f["k"]), f["x"], f["y"], 58, NEUTRAL, grey=True)
         mx, my = data["snap"]["me"]
-        _marker(img, avatars.get(data["k"]), mx, my, 116, LIT)
+        _marker(img, avatars.get(data["k"]), mx, my, 104, LIT)
     else:
         img = Image.new("RGB", (W, H))
         d = ImageDraw.Draw(img)
         _sky(d)
         _scene(img, d, data, avatars)
-    _panel(img, data, host)
+    _panel(img, data, avatars)
     buf = io.BytesIO()
     img.save(buf, "JPEG", quality=88)
     return buf.getvalue()

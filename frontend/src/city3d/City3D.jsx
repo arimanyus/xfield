@@ -824,9 +824,10 @@ function Controls({ center, focus, span }) {
   return null;
 }
 
-// Takes a 1200x630 picture of one house and its street from a fixed corner, the house left of centre so a card can
-// sit on the right. Returns the JPEG and where the given points landed in it.
-const SNAP = { W: 1200, H: 630, zoom: 92, shift: 230 };
+// Takes a 1200x630 close-up of one house and its street from a fixed corner, the house left of centre and a little
+// low, so a card can sit on the right and the owner's face above the roof. Returns the JPEG and where the given points landed in it.
+const SNAP = { W: 1200, H: 630, zoom: 185, shift: 280, drop: 60 };
+const TILT = Math.sin(Math.atan(1 / Math.SQRT2));
 const until = (ok, ms = 20000) => new Promise((done) => {
   const start = performance.now();
   const tick = () => (ok() || performance.now() - start > ms ? done() : setTimeout(tick, 250));
@@ -841,11 +842,12 @@ function Snapshot({ snapRef, center, ready }) {
   const { gl, scene, camera } = useThree();
   useEffect(() => {
     const shoot = (at, points) => {
-      const { W, H, zoom, shift } = SNAP;
+      const { W, H, zoom, shift, drop } = SNAP;
       const cam = new THREE.OrthographicCamera(-W / 2, W / 2, H / 2, -H / 2, -200, 400);
       cam.zoom = zoom;
       const house = new THREE.Vector3(at[0] - center[0], 0, at[1] - center[1]);
-      const target = house.clone().add(new THREE.Vector3(1, 0, -1).normalize().multiplyScalar(shift / zoom));
+      const target = house.clone().add(new THREE.Vector3(1, 0, -1).normalize().multiplyScalar(shift / zoom))
+        .add(new THREE.Vector3(-1, 0, -1).normalize().multiplyScalar(drop / (zoom * TILT)));
       cam.position.copy(target).add(new THREE.Vector3(40, 40, 40));
       cam.lookAt(target);
       cam.updateProjectionMatrix();
