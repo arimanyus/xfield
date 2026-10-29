@@ -4,7 +4,7 @@ import io
 from PIL import Image, ImageDraw, ImageFilter, ImageOps
 
 from town import djb2
-from town_card import BODY, BRAND, DARK, DISPLAY, INK, LIT, NEUTRAL, WALLS, _circle, _font, _shade, rgb
+from town_card import BODY, BRAND, DARK, DISPLAY, INK, LIT, NEUTRAL, WALLS, _circle, _font, _shade, _wrap, rgb
 
 W, H = 1200, 630
 TW, TH = 150, 75
@@ -106,11 +106,9 @@ def _scene(img, d, data, avatars):
         tops.append((mine, i + j, _house(d, i, j, kind, key, color, sc), key, kind))
     for mine, _, top, key, kind in sorted(tops, key=lambda t: (t[0], t[1])):
         size = 132 if mine else 66
-        ring = LIT if mine and kind != "dark" else BRAND if mine else (LIT if kind != "dark" else NEUTRAL)
-        av = _circle(avatars.get(key), size, ring)
-        if kind == "dark" and not mine:
-            rgba = av.split()
-            av = Image.merge("RGBA", (*ImageOps.grayscale(av.convert("RGB")).convert("RGB").split(), rgba[3]))
+        av = _circle(avatars.get(key), size, LIT if kind != "dark" else NEUTRAL)
+        if kind == "dark":
+            av = _grey(av)
         img.paste(av, (int(top[0] - size / 2), int(top[1] - size - 8)), av)
 
 
@@ -263,8 +261,12 @@ def _saved_by(img, d, data, avatars, x0, y, w):
     else:
         d.text((x0, y), "A friend, right next door", font=_font(BODY, 24, False), fill=_shade(INK, 2.2))
         y += 44
-    d.text((x0, y), "Only you can turn the lights on.", font=_fitw(d, "Only you can turn the lights on.", BODY, w, 24, False),
-           fill=_shade(INK, 2.2))
+    d.text((x0, y), "Only you can turn the lights on.", font=_fitw(d, "Only you can turn the lights on.", BODY, w, 24, True), fill=INK)
+    y += 38
+    small = _font(BODY, 20, False)
+    for line in _wrap(d, "Sign in with X and it lights up with your face on it. Then win votes to move uptown.", small, w)[:2]:
+        d.text((x0, y), line, font=small, fill=_shade(INK, 2.4))
+        y += 28
 
 
 def _panel(img, data, avatars):

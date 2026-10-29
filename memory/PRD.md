@@ -32,3 +32,10 @@
 - User action: add that URL in X Developer Portal > App > User authentication settings > Callback URI (keep the preview one too).
 - Added: CityPage now shows why sign-in failed (?signin=off|cancelled|expired|x_error) inside the sign-in card (data-testid sign-in-error); it used to fail silently.
 - Pending from before: dark invite houses next to yours, poorer/richer section assets, finish invite-3 flow, full testing_agent run of tour/next moves/share cards.
+
+## 2026-10-29: House share card v3 (rank, big face, real house close-up, invites)
+- Card 1200x630: left = close-up 3D snapshot of the exact house (zoom 185, house left/low, face pin on the roof); right panel = big avatar + name + @handle, "#rank of N" + points, progress bar to uptown, "MY 3 INVITES" row (lit faces, grey dark faces, "+ open lot"), CTA.
+- Dark (reserved) card: "SAVED FOR YOU BY" box with inviter face + handle, sign-in nudge.
+- CARD_VERSION=3 in card payload busts old cached cards; share url is /api/s/{h}?v=<hash> so X re-crawls when the card changes; share/og text now include rank on first share.
+- Frontend snapshot key has SNAP_VERSION so every player's browser re-shoots the close-up on next visit. Players who haven't revisited get the drawn fallback scene with the same panel.
+- Tested: iteration_12 (backend 9/9, frontend 100%), tests in backend/tests/test_share_card_v3.py.

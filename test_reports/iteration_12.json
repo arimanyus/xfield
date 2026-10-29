@@ -1,0 +1,24 @@
+{
+  "summary": "Share card v3 (rank, big avatar, real house snapshot, invites) tested end-to-end. Backend 9/9 pytest pass (card 1200x630 jpeg, share url ?v hash == card_url ?v, join share text has 'I'm #1 of 1 on the Docks', Twitterbot OG page w/ og:image/width/height/summary_large_image/'#1 of', human 302 to /?at=, dark-house card w/ 'Your house is waiting' + SAVED FOR YOU BY @zz_CardTest, owner card 'MY 3 INVITES · 1 STILL DARK' w/ grey face, cache bust when pool/rank changes). Visually inspected all cards - correct. Frontend: signin=x_error/cancelled/expired show the right sign-in-error text and ?signin is stripped; signed-in city POSTs /api/me/snapshot (200), share-card-preview loads new card (naturalWidth 1200), goal-share-button href is x.com/intent/post with /api/s/loverboiWrites?v=<hash>.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Dark-house share card (no snapshot fallback)", "issues": ["Large empty gap between 'Only you can turn the lights on.' and the CTA pill (~100px)", "Illustrated scene shows the dark owner's own face in full colour with a green ring while the header avatar is greyed - minor inconsistency"]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_share_card_v3.py", "/app/test_reports/pytest/share_card_v3.xml"],
+  "action_items": ["Optional polish: fill/tighten the empty space on the dark-house card panel"],
+  "critical_code_review_comments": [
+    "resident() hashes card payload without host while card_bytes hashes payload+host for the file name - fine, but the ?v param and file name differ; OK as cache-buster.",
+    "backend.err.log contains old transient 'cannot import name widen' ImportErrors from hot-reload mid-edit; current process healthy.",
+    "server.py is 2063 lines - should be split into modules."
+  ],
+  "updated_files": ["/app/backend/tests/test_share_card_v3.py"],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "seed_data_creation": "Temporary zz_cardtest, zz_inv1, zz_rival residents inserted and deleted by fixtures; zz_* card files removed. No POST /api/me/people called. A real snapshot for loverboiwrites was taken by the browser test (expected).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run pytest /app/backend/tests/test_share_card_v3.py (self-cleaning). Session cookie xf_session=test_snap_token_loverboi_2026. Card images saved to /app/test_reports/cards/ for visual check."
+}
