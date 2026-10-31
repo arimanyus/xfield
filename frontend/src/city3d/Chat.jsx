@@ -195,11 +195,12 @@ function MentionToast({ m, count, onJump, onClose }) {
   );
 }
 
-// Mentions you haven't seen: shown once as toasts (or one summary when many piled up), then marked seen.
-// With the chat already open the message just lights up instead.
+// Mentions you haven't seen: shown once as toasts (or one summary when many piled up), then marked seen. A tab in the
+// background waits until you come back. With the chat already open the message just lights up instead.
 function useMentionAlerts(openRef, jump) {
   const shown = useRef(new Set());
   return useCallback((list) => {
+    if (document.hidden) return;
     const fresh = list.filter((m) => !shown.current.has(m.id));
     if (!fresh.length) return;
     fresh.forEach((m) => shown.current.add(m.id));

@@ -118,7 +118,7 @@ class TestChat:
         assert set(m) >= {"id", "k", "h", "a", "text", "at", "where", "rank"}
         assert m["where"] == "docks" and m["k"] == "loverboiwrites"
         got = requests.get(f"{API}/chat", headers=LOVER).json()
-        assert got["messages"][-1]["id"] == m["id"] and got["me"] == {"muted": False}
+        assert got["messages"][-1]["id"] == m["id"] and got["me"]["muted"] is False
         assert requests.post(f"{API}/chat", headers=LOVER, json={"text": ""}).status_code in (400, 422)
         assert requests.post(f"{API}/chat", headers=LOVER, json={"text": "   \n "}).status_code in (400, 422)
         assert requests.post(f"{API}/chat", headers=LOVER, json={"text": "x" * 281}).status_code == 422
@@ -133,10 +133,10 @@ class TestChat:
         time.sleep(0.05)
         b = requests.post(f"{API}/chat", headers=JONAS, json={"text": "TEST jonas two"}).json()
         r = requests.get(f"{API}/chat", params={"after": a["at"]}).json()
-        assert [m["id"] for m in r["messages"]] == [b["id"]]
+        assert b["id"] in [m["id"] for m in r["messages"]]  # 5 s overlap (iter 17) may also return a
         assert requests.delete(f"{API}/admin/chat/{a['id']}", headers=HDR).status_code == 200
         r = requests.get(f"{API}/chat", params={"after": b["at"]}).json()
-        assert a["id"] in r["removed"] and r["messages"] == []
+        assert a["id"] in r["removed"] and a["id"] not in [m["id"] for m in r["messages"]]
         full = requests.get(f"{API}/chat").json()
         assert a["id"] not in [m["id"] for m in full["messages"]]
         assert requests.delete(f"{API}/admin/chat/nope_unknown", headers=HDR).status_code == 404
@@ -175,10 +175,10 @@ class TestChat:
         assert r.status_code == 200 and r.json()["muted"] is True
         r = requests.post(f"{API}/chat", headers=LOVER, json={"text": "TEST muted?"})
         assert r.status_code == 403 and r.json()["detail"] == "You're muted in the city chat."
-        assert requests.get(f"{API}/chat", headers=LOVER).json()["me"] == {"muted": True}
+        assert requests.get(f"{API}/chat", headers=LOVER).json()["me"]["muted"] is True
         d = requests.get(f"{API}/admin/chat", headers=HDR).json()
         assert "loverboiwrites" in [p["k"] for p in d["muted"]]
         assert all(m["muted"] for m in d["messages"] if m["k"] == "loverboiwrites")
         requests.post(f"{API}/admin/chat/mute/@loverboiWrites", headers=HDR, json={"muted": False})
-        assert requests.get(f"{API}/chat", headers=LOVER).json()["me"] == {"muted": False}
+        assert requests.get(f"{API}/chat", headers=LOVER).json()["me"]["muted"] is False
         assert requests.post(f"{API}/admin/chat/mute/nobody_zz_999", headers=HDR, json={"muted": True}).status_code == 404

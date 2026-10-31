@@ -95,3 +95,10 @@
 ## Backlog additions
 - P2: stadium big screen can sit under the minimap in the default desktop view (pan to see it).
 - P2: chat reactions / reply-to, chat mention notifications.
+
+## 2026-10-31: Chat reactions + mention alerts
+- Reactions: 🔥 😂 ❤️ 👀 💎 (fire, lol, love, eyes, gem) on any message; tap to add, tap again to take back. POST /api/chat/{id}/react {r} (lit, not muted). Stored as chat.reactions.{r}: [k], updated_at bumps so polls pick changes up.
+- Polling: GET /api/chat returns `cursor`; ?after=<cursor> returns messages posted or reacted to since then (5 s overlap) + removed ids. Client merges by id (3 s open / 10 s closed).
+- Mentions: @handles (up to 5, not self, existing non-hidden residents) create db.mentions {id,to,msg_id,from,h,a,text,at,seen}. GET /api/chat me.mentions = unseen ones (senders hidden later are skipped); POST /api/chat/mentions/seen {ids}. Admin removing a message deletes its mentions.
+- UI: toast "@x mentioned you" + Jump in (opens chat, scrolls to and highlights the message) / Dismiss; more than 3 missed -> one summary toast; with the chat open the message just lights up; background tabs wait until visible. Own handle highlighted in messages. Toaster added to CityPage.
+- Tested: iteration_17 (backend 70/70 incl. tests/test_chat_reactions_mentions.py; frontend all flows). Chat left empty for launch.

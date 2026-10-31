@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="8" time="13.096" timestamp="2026-10-31T14:09:11.781898+00:00" hostname="agent-env-992f2b3a-baa0-49f3-876c-040732168ccf"><testcase classname="tests.test_chat_reactions_mentions.TestReactions" name="test_toggle_and_order" time="0.740" /><testcase classname="tests.test_chat_reactions_mentions.TestReactions" name="test_counts_add_up_and_mine_per_viewer" time="0.742"><failure message="AssertionError: assert [{'r': 'love'...mine': False}] == [{'r': 'love'...'mine': True}]&#10;  &#10;  At index 0 diff: {'r': 'love', 'n': 1, 'mine': False} != {'r': 'love', 'n': 1, 'mine': True}&#10;  &#10;  Full diff:&#10;    [&#10;        {&#10;            'r': 'love',...&#10;  &#10;  ...Full output truncated (7 lines hidden), use '-vv' to show">tests/test_chat_reactions_mentions.py:85: in test_counts_add_up_and_mine_per_viewer
+    assert r["reactions"] == [{"r": "love", "n": 1, "mine": True}]
+E   AssertionError: assert [{'r': 'love'...mine': False}] == [{'r': 'love'...'mine': True}]
+E     
+E     At index 0 diff: {'r': 'love', 'n': 1, 'mine': False} != {'r': 'love', 'n': 1, 'mine': True}
+E     
+E     Full diff:
+E       [
+E           {
+E               'r': 'love',...
+E     
+E     ...Full output truncated (7 lines hidden), use '-vv' to show</failure></testcase><testcase classname="tests.test_chat_reactions_mentions.TestReactions" name="test_errors" time="1.653" /><testcase classname="tests.test_chat_reactions_mentions.TestCursor" name="test_cursor_after_reacted_removed" time="7.772" /><testcase classname="tests.test_chat_reactions_mentions.TestCursor" name="test_bad_cursor" time="0.117" /><testcase classname="tests.test_chat_reactions_mentions.TestMentions" name="test_mention_rules" time="0.515" /><testcase classname="tests.test_chat_reactions_mentions.TestMentions" name="test_five_limit_and_hidden" time="0.249" /><testcase classname="tests.test_chat_reactions_mentions.TestMentions" name="test_order_seen_and_admin_delete" time="1.158" /></testsuite></testsuites>

@@ -1,0 +1,33 @@
+{
+  "summary": "Iteration 17: chat reactions, polling cursor, and @mention alerts (live and missed-while-away). Backend: new suite test_chat_reactions_mentions.py has 8 tests and all pass. The full regression run also passes: chat_billboards, admin_panel, mansions and the new suite, 70/70 run serially. Frontend, using Playwright on the 3D city: adding, removing and counting reactions works. Chips turn amber when the reaction is yours. A reaction from another session showed up live. Signed out, chips are disabled and there is no react button. Live mention toasts appear when the chat is closed. Jump in opens the chat, scrolls to the message and highlights it amber for about 3.5 s. Dismiss works. With the chat open there is no toast and the message is highlighted. Your own handle is highlighted amber. 4 missed mentions give one summary toast ('You were mentioned 4 times while you were away'). 2 missed mentions give 2 separate toasts. No toasts come back after a reload. No functional bugs found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/chat/{id}/react (and POST /api/chat)", "issue": "A resident whose house is not lit gets 404 'Light your house first.' from require_citizen, not the 403 stated in the review request. This is existing behaviour and probably intended. The tests accept 403 or 404."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Reaction tap while a poll is in flight", "issue": "Small chance of a stale state for one poll. If a GET /api/chat?after= poll goes out before the react POST and comes back after it, merge() can briefly bring back the old reactions. The next poll fixes it, because the 5 s overlap returns the updated message again. Not seen as a lasting bug. In headless mode the UI took about 1.5-3 s to reflect a tap, because the 3D scene keeps the main thread busy.", "affected_selectors": ["chat-reaction-<id>-<r>"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": ["/app/backend/tests/test_chat_reactions_mentions.py", "/app/backend/tests/test_chat_billboards.py", "/app/test_reports/pytest/iter17_all.xml"],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "get_chat?after: to_list(100), sorted by 'at' ascending. If more than 100 messages were posted or reacted to in one window, the newest ones are cut off. Fine at the current scale.",
+    "unseen_mentions keeps returning mentions from a sender who was later hidden. The message itself drops out of the chat, so 'Jump in' would scroll to nothing. Consider filtering out mentions from hidden senders, or deleting them when someone is hidden.",
+    "useMentionAlerts marks mentions seen as soon as the toast is shown, as specified. If the tab is in the background, the user may never actually see the toast.",
+    "The react endpoint reads the doc and then decides between $pull and $addToSet. Two quick taps at once from the same user could both add, or both remove. This is harmless because $addToSet is idempotent."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_chat_reactions_mentions.py (new)",
+    "/app/backend/tests/test_chat_billboards.py (updated for iteration 17 changes: me now includes mentions, and the after query has a 5 s overlap)"
+  ],
+  "success_rate": {"backend": "100% (70/70)", "frontend": "100% of tested flows"},
+  "seed_data_creation": "Temporary sessions for jonas_trades, theo_makes and idris_bakes (dark resident) were deleted. Chat and mentions were wiped at the end, nobody is left muted, db.mansions is still empty and billboards are untouched.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Run the chat suites serially (-n 0): the module-level fixtures wipe db.chat and db.mentions, so parallel workers interfere with each other. idris_bakes is a resident with status 'reserved' and can be used for 'dark' tests. On desktop, react buttons only show on hover, so click them with page.evaluate(el.click()). The 3D city takes about 30-40 s to load in headless mode. The admin Chat tab UI was not re-tested in the browser this round; its backend is covered by the regression tests."
+}

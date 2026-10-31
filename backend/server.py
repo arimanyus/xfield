@@ -2324,7 +2324,8 @@ async def chat_rows(msgs: list, viewer: Optional[str] = None) -> list:
 
 async def unseen_mentions(k: str) -> list:
     docs = await db.mentions.find({"to": k, "seen": False}, {"_id": 0}).sort("at", -1).to_list(20)
-    return [{f: d[f] for f in ("id", "msg_id", "h", "a", "text", "at")} for d in docs[::-1]]
+    gone = {d["k"] async for d in db.residents.find({"k": {"$in": list({d["from"] for d in docs})}, "hidden": True}, {"_id": 0, "k": 1})}
+    return [{f: d[f] for f in ("id", "msg_id", "h", "a", "text", "at")} for d in docs[::-1] if d["from"] not in gone]
 
 
 @api.get("/chat")
