@@ -30,8 +30,8 @@ export function Btn({ children, onClick, disabled, tone = "ink", className = "",
   );
 }
 
-const XLink = ({ href, onClick, className = "", children }) => (
-  <a href={href} target="_blank" rel="noreferrer" onClick={onClick}
+const XLink = ({ href, onClick, className = "", testId, children }) => (
+  <a href={href} target="_blank" rel="noreferrer" onClick={onClick} data-testid={testId}
     className={`rounded-lg bg-ink px-2.5 py-1.5 text-center text-xs font-bold text-white whitespace-nowrap hover:bg-slate-700 ${className}`}>{children}</a>
 );
 const Close = ({ onClick }) => <button type="button" onClick={onClick} className="self-start text-ink/40 hover:text-ink text-lg leading-none">×</button>;
@@ -267,8 +267,35 @@ function MyLadder({ l, onChanged, onLeft }) {
   );
 }
 
+// Who lives in a building that grew floors, top floor first, and which floor is this house's.
+function BuildingInfo({ b, k, share, onVisit }) {
+  if (!b || b.size < 2) return null;
+  const line = b.floor > 1 ? `Floor ${b.floor} of @${b.base.h}'s building` : `${b.size} people live on ${share ? "my" : "this"} building`;
+  return (
+    <div className="mt-2 rounded-lg bg-slate-100 px-2.5 py-2" data-testid="house-building">
+      <div className="flex items-center justify-between gap-2 text-xs font-bold">
+        <span data-testid="house-building-line">🏢 {line}</span>
+        {b.rank && <span className="shrink-0 text-ink/60 tabular-nums" data-testid="house-building-rank">#{b.rank} tallest</span>}
+      </div>
+      <ol className="mt-1.5 flex max-h-40 flex-col gap-0.5 overflow-y-auto" data-testid="house-building-people">
+        {b.people.map((p) => (
+          <li key={p.k}>
+            <button type="button" onClick={() => onVisit(p)} data-testid={`house-building-floor-${p.floor}`}
+              className="flex w-full items-center gap-1.5 text-left text-[11px] hover:text-ink/70">
+              <span className="w-6 shrink-0 font-bold tabular-nums text-ink/50">F{p.floor}</span>
+              <Face p={p} size={18} ring={p.s === "f" ? WARM : "#CBD5E1"} dim={p.s !== "f"} />
+              <span className={`truncate ${p.k === k ? "font-bold" : ""}`}>@{p.h}{p.floor === 1 ? " · ground" : ""}{p.s !== "f" ? " · dark" : ""}</span>
+            </button>
+          </li>
+        ))}
+      </ol>
+      {share && <XLink href={onX(share.text, share.url)} className="mt-2 block" testId="share-building-button">𝕏 Share my building</XLink>}
+    </div>
+  );
+}
+
 // A house: whose it is, whether its lights are on, and where it stands on the ladder.
-export function HouseCard({ house, nb, signedIn, onChanged, onLeft, onClose }) {
+export function HouseCard({ house, nb, signedIn, onChanged, onLeft, onVisit, onClose }) {
   const o = house.owner, lit = o.s === "f";
   const [d, setD] = useState(null);
   const load = () => api(`/residents/${o.h}`).then(setD).catch(() => {});
@@ -276,22 +303,25 @@ export function HouseCard({ house, nb, signedIn, onChanged, onLeft, onClose }) {
     let live = true;
     api(`/residents/${o.h}`).then((r) => live && setD(r)).catch(() => {});
     return () => { live = false; };
-  }, [o.h, o.s, o.e, o.m]);
+  }, [o.h, o.s, o.e, o.m, house.stack.length]);
   const fresh = d?.k === o.k ? d : null, l = fresh?.ladder;
+  const tall = house.stack.length > 1;
   return (
-    <div className={`${CARD} pop w-[min(92vw,330px)] p-3 pointer-events-auto`}>
+    <div className={`${CARD} pop w-[min(92vw,330px)] p-3 pointer-events-auto`} data-testid="house-card">
       <div className="flex items-start gap-2.5">
         <Face p={o} size={44} ring={lit ? WARM : "#475569"} dim={!lit} />
         <div className="min-w-0 flex-1 leading-tight">
           <div className="font-display font-bold truncate">{fresh?.is_me ? "Your house" : `@${o.h}'s house`}</div>
           <div className="text-xs text-ink/70">
-            {lit ? "💡 Lights on" : "🌑 Dark: not moved in yet"} · 🏢 {o.f} {o.f === 1 ? "floor" : "floors"}
+            {lit ? "💡 Lights on" : "🌑 Dark: not moved in yet"} · 🏢 {tall ? `floor ${house.level + 1} of ${house.stack.length}` : `${o.f} ${o.f === 1 ? "floor" : "floors"}`}
             {nb && <> · <b style={{ color: nb.color }}>{nameOf(nb)}</b></>}
           </div>
         </div>
         <Close onClick={onClose} />
       </div>
       {l && <div className="mt-2 text-xs"><Standing l={l} /></div>}
+      {fresh && <BuildingInfo b={fresh.building} k={o.k} onVisit={onVisit}
+        share={fresh.is_me && fresh.building.floor === 1 && lit ? fresh.tower_share : null} />}
       {fresh?.is_me && l && <MyLadder l={l} onChanged={async () => { await load(); await onChanged(); }} onLeft={onLeft} />}
       <div className="mt-2.5 flex flex-wrap gap-1.5">
         {signedIn && !lit && fresh && <XLink href={onX(fresh.share.text, fresh.share.url)}>𝕏 Tag them</XLink>}
@@ -343,13 +373,18 @@ export function TickerBar({ events, people, onVisit }) {
   );
 }
 
-const PLACES = { hall: "🏛 City Hall", timeline: "📰 The Timeline", post: "📮 Post Office", arrivals: "🛎 Arrivals", docks: "⚓ The Docks" };
+const PLACES = { hall: "🏛 City Hall", timeline: "📰 The Timeline", post: "📮 Post Office", arrivals: "🛎 Arrivals", docks: "⚓ The Docks",
+  towers: "🏗 Tallest buildings" };
+
+// Buildings that grew floors, tallest first; equals by their ground owner's handle, as the server ranks them.
+export const towersOf = (homes) => homes.filter((h) => h.level === 0 && h.stack.length > 1)
+  .sort((a, b) => b.stack.length - a.stack.length || (a.owner.k < b.owner.k ? -1 : 1));
 
 // What each building downtown is for.
-export function PlaceCard({ id, town, me, onVisit, onClose }) {
+export function PlaceCard({ id, town, city, me, onVisit, onClose }) {
   if (!PLACES[id]) return null;
   return (
-    <div className={`${CARD} pop w-[min(92vw,360px)] p-3 pointer-events-auto`}>
+    <div className={`${CARD} pop w-[min(92vw,360px)] p-3 pointer-events-auto`} data-testid={`place-card-${id}`}>
       <div className="flex items-center justify-between">
         <div className="font-display font-bold text-lg">{PLACES[id]}</div>
         <Close onClick={onClose} />
@@ -360,8 +395,50 @@ export function PlaceCard({ id, town, me, onVisit, onClose }) {
         {id === "post" && <PostOffice me={me} />}
         {id === "arrivals" && <Arrivals people={town.newest} onVisit={onVisit} />}
         {id === "docks" && <Docks town={town} me={me} />}
+        {id === "towers" && <Towers town={town} homes={city.homes} me={me} onVisit={onVisit} />}
       </div>
     </div>
+  );
+}
+
+const areaOf = (o) => (o.d != null ? "⚓ Docks" : o.s === "f" ? "🏙 Uptown" : "🌑 Dark lot");
+
+// The city's tallest buildings, from the floors stacked on them once the ground filled up.
+function Towers({ town, homes, me, onVisit }) {
+  const list = towersOf(homes).slice(0, 20), { stats } = town;
+  if (!list.length) {
+    return <div className="text-sm text-ink/70" data-testid="towers-empty">No building has grown yet. Once all {stats.capacity} ground spots are taken, newcomers move in on top.</div>;
+  }
+  return (
+    <>
+      <div className="text-sm text-ink/70">
+        {stats.floors} {stats.floors === 1 ? "floor" : "floors"} built on {stats.capacity} ground spots. Newcomers move in on top of whoever brought them, or the shortest building on the Docks.
+      </div>
+      <ol className="mt-2 space-y-1" data-testid="towers-list">
+        {list.map((h, i) => {
+          const mine = me && h.stack.some((p) => p.k === me.k), lit = h.stack.filter((p) => p.s === "f").length;
+          return (
+            <li key={h.owner.k}>
+              <button type="button" onClick={() => onVisit(h.owner)} data-testid={`tower-row-${i + 1}`}
+                className={`flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left text-sm transition-colors ${mine ? "bg-amber-50 ring-1 ring-amber-300" : "hover:bg-slate-50"}`}>
+                <span className="w-5 shrink-0 font-bold tabular-nums text-ink/50">{i + 1}.</span>
+                <Face p={h.owner} size={26} ring={h.owner.s === "f" ? WARM : "#CBD5E1"} dim={h.owner.s !== "f"} />
+                <span className="min-w-0 flex-1 leading-tight">
+                  <b className="block truncate">@{h.owner.h}'s building</b>
+                  <span className="text-[11px] text-ink/60">{areaOf(h.owner)} · {lit} lit{mine ? " · you live here" : ""}</span>
+                </span>
+                <span className="flex -space-x-1.5">
+                  {h.stack.slice(1).reverse().slice(0, 3).map((p) => <Face key={p.k} p={p} size={18} ring={p.s === "f" ? WARM : "#CBD5E1"} dim={p.s !== "f"} />)}
+                </span>
+                <span className="w-9 shrink-0 text-right font-display font-bold tabular-nums" data-testid={`tower-row-${i + 1}-size`}>
+                  {h.stack.length}<span className="text-[10px] text-ink/50"> fl</span>
+                </span>
+              </button>
+            </li>
+          );
+        })}
+      </ol>
+    </>
   );
 }
 
@@ -383,6 +460,7 @@ function Hall({ town, onVisit }) {
         <li>⚓ Every house starts on the Docks. At {town.ladder.uptown_at} points it moves uptown, next to your friends.</li>
         <li>📉 Each week, uptown houses that fell under the line go back to the Docks.</li>
         <li>🏢 Every friend who moves in adds a floor, and floors unlock taller designs.</li>
+        <li>🏗 Once all {stats.capacity} ground spots are taken, newcomers move in on top: on the building of whoever brought them, or the shortest one on the Docks.</li>
         <li>🗞 The Ledger comes out every morning with the day's climbers.</li>
       </ul>
       {top.length > 0 && <Heading>Top of the ladder</Heading>}

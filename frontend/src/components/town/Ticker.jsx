@@ -5,6 +5,8 @@ const plural = (n, one, many) => (n === 1 ? one : many);
 const where = (e, fallback = "their district") => e.nb_name || fallback;
 
 const LINES = {
+  moved_in: (e) => (e.on_h ? `🏗 @${e.h} moved in on floor ${e.lv + 1} of @${e.on_h}'s building`
+    : `@${e.h} moved in${e.n ? ` · ${e.n} neighbours reserved` : ""}`),
   lights_on: (e) => `@${e.h} signed in and lit up their building`,
   built: (e) => `A lot went up for @${e.h}${e.n ? ` · ${e.n} neighbours reserved` : ""}`,
   moved: (e) => (e.nb_name ? `@${e.h} moved to ${e.nb_name}` : `@${e.h} moved closer to their people`),

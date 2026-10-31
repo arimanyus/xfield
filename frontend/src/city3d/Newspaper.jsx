@@ -114,6 +114,22 @@ function Front({ p, census, votes, visit }) {
               </div>
             </Box>
           )}
+          {p.towers?.length > 0 && (
+            <Box title="Tallest Buildings">
+              <ol className="space-y-1" data-testid="paper-towers">
+                {p.towers.map((t, i) => (
+                  <li key={t.k} className="flex items-center gap-1.5" data-testid={`paper-tower-${i + 1}`}>
+                    <span className="w-4 text-[13px] font-bold">{i + 1}.</span>
+                    <Who p={t} visit={visit}>
+                      <span className="ml-auto whitespace-nowrap font-bold tabular-nums">
+                        {t.size} fl.{t.grew > 0 && <span className="ml-1 text-emerald-800">+{t.grew}</span>}
+                      </span>
+                    </Who>
+                  </li>
+                ))}
+              </ol>
+            </Box>
+          )}
           {p.districts?.length > 0 && (
             <Box title="New Districts">
               <ul className="space-y-0.5 text-[13px] italic">{p.districts.map((d) => <li key={d}>{d}</li>)}</ul>
@@ -122,7 +138,8 @@ function Front({ p, census, votes, visit }) {
           {n && (
             <Box title="By the Numbers">
               <dl className="grid grid-cols-[1fr_auto] gap-x-2 text-[13px]">
-                {[["Lights on", n.lit], ["On the Docks", n.docks], ["Uptown", n.uptown], ["Votes cast", n.votes], ["Lots taken", `${n.taken}/${n.capacity}`]].map(([k, v]) => (
+                {[["Lights on", n.lit], ["On the Docks", n.docks], ["Uptown", n.uptown], ["Votes cast", n.votes], ["Lots taken", `${n.taken}/${n.capacity}`],
+                  ...(n.floors ? [["Floors built", n.floors]] : [])].map(([k, v]) => (
                   <div key={k} className="contents"><dt className="border-b border-dotted" style={{ borderColor: INK }}>{k}</dt><dd className="text-right font-bold tabular-nums">{v}</dd></div>
                 ))}
               </dl>

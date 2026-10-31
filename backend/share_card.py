@@ -179,7 +179,8 @@ def _header(img, d, data, avatars, x0, y, w):
     size = 120
     _face(img, avatars.get(data["k"]), x0, y, size, NEUTRAL if m == "dark" else LIT, grey=m == "dark")
     tx, tw = x0 + size + 18, w - size - 18
-    where = {"dark": "A DARK HOUSE", "uptown": "UPTOWN"}.get(m, "THE DOCKS")
+    dark = "A DARK FLOOR" if data.get("floor", 1) > 1 else "A DARK HOUSE"
+    where = {"dark": dark, "uptown": "UPTOWN"}.get(m, "THE DOCKS")
     _pill(d, tx, y + 4, f"XFIELD \u00b7 {where}", _font(BODY, 17, True), INK, (255, 255, 255), pad=14, h=34)
     name = data.get("name") or data["h"]
     f = _fitw(d, name, DISPLAY, tw, 40, low=26)
@@ -244,6 +245,18 @@ def _invites(img, d, data, avatars, x0, y, w):
     return y + size + 28
 
 
+def _headline(data):
+    """What the card says first: which floor of whose building, how many live on mine, or the moment."""
+    m, floor, size = data["moment"], data.get("floor", 1), data.get("size", 1)
+    if m == "dark":
+        return "Your floor is waiting" if floor > 1 else HEAD[m]
+    if floor > 1:
+        return f"Floor {floor} of @{data['base_h']}'s building"
+    if size > 1:
+        return f"{size} people live on my building"
+    return HEAD[m]
+
+
 def _saved_by(img, d, data, avatars, x0, y, w):
     """Who saved this dark house, and that only its owner can light it."""
     y += 6
@@ -269,19 +282,24 @@ def _saved_by(img, d, data, avatars, x0, y, w):
         y += 28
 
 
-def _panel(img, data, avatars):
-    """The right-hand card: who lives here, their rank, their invites, and what a friend should do about it."""
+def sheet(img):
+    """The white right-hand panel with its soft shadow."""
     shade = Image.new("RGBA", img.size, (0, 0, 0, 0))
     ImageDraw.Draw(shade).rounded_rectangle([PX0 + 4, PY0 + 10, PX1 + 4, PY1 + 10], radius=30, fill=(15, 23, 42, 70))
     shade = shade.filter(ImageFilter.GaussianBlur(14))
     img.paste(shade, (0, 0), shade)
-    sheet = Image.new("RGBA", img.size, (0, 0, 0, 0))
-    ImageDraw.Draw(sheet).rounded_rectangle([PX0, PY0, PX1, PY1], radius=30, fill=(255, 255, 255, 244), outline=INK, width=4)
-    img.paste(sheet, (0, 0), sheet)
-    d = ImageDraw.Draw(img)
+    top = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(top).rounded_rectangle([PX0, PY0, PX1, PY1], radius=30, fill=(255, 255, 255, 244), outline=INK, width=4)
+    img.paste(top, (0, 0), top)
+    return ImageDraw.Draw(img)
+
+
+def _panel(img, data, avatars):
+    """The right-hand card: who lives here, their rank, their invites, and what a friend should do about it."""
+    d = sheet(img)
     m, x0, w = data["moment"], PX0 + PAD, PX1 - PX0 - 2 * PAD
     y = _header(img, d, data, avatars, x0, PY0 + PAD, w)
-    head = HEAD[m]
+    head = _headline(data)
     d.text((x0, y), head, font=_fitw(d, head, DISPLAY, w, 36, low=24), fill=INK)
     y += 46
     if m == "dark":

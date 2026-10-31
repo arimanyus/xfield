@@ -31,6 +31,7 @@ load_dotenv(ROOT_DIR / ".env")
 
 import arena  # noqa: E402
 import storage  # noqa: E402
+import stacks  # noqa: E402
 import town  # noqa: E402
 from census import build_census, snapshot_of  # noqa: E402
 from census_card import render_census  # noqa: E402
@@ -38,6 +39,7 @@ from paper import write_paper  # noqa: E402
 from paper_card import render_paper  # noqa: E402
 from safety import contains_blocked  # noqa: E402
 from share_card import render_share, widen  # noqa: E402
+from tower_card import WHERE, render_tower  # noqa: E402
 from xreader import is_valid_handle, normalize_handle, read_profile_only  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
@@ -117,10 +119,6 @@ PAPER_LOCK = asyncio.Lock()
 REFRESH_LOCK = asyncio.Lock()
 ARENA_LOCK = asyncio.Lock()
 AVATAR_CACHE: dict = {}
-
-
-class TownFull(Exception):
-    pass
 
 
 def now() -> datetime:
@@ -210,8 +208,18 @@ async def town_version() -> int:
     return (doc or {}).get("version", 0)
 
 
+GROUND = {"hidden": False, "$or": [{"lv": {"$exists": False}}, {"lv": 0}]}
+STACK_FIELDS = {"_id": 0, "k": 1, "h": 1, "x": 1, "y": 1, "dock": 1, "lv": 1, "on": 1, "status": 1, "uptown": 1,
+                "placed_at": 1, "created_at": 1, "avatar_url": 1}
+
+
 async def count_taken() -> int:
-    return await db.residents.count_documents({"hidden": False})
+    """Ground spots in use: one per building, however tall it has grown."""
+    return await db.residents.count_documents(GROUND)
+
+
+async def load_buildings() -> dict:
+    return stacks.buildings(await db.residents.find({"hidden": False}, STACK_FIELDS).to_list(None))
 
 
 # ---------- sessions ----------
@@ -293,24 +301,46 @@ def placed(d: dict) -> str:
 
 
 async def reserve_circle(k: str, h: str, ox: int, oy: int, circle: list, occupied: set, pos: dict, taken: int) -> int:
-    added = 0
+    """Each invitee not in XField yet gets a dark house next door, or, once the city is full, a dark floor on the
+    inviter's building."""
+    added, blds, ground = 0, None, 0
     for c in sorted(circle, key=lambda c: -c["weight"]):
         ck = c["handle"].lower()
         if ck in pos:
             if c.get("avatar_url"):
                 await db.residents.update_one({"k": ck, "avatar_url": None}, {"$set": {"avatar_url": c["avatar_url"]}})
             continue
-        if taken + added >= TOWN_CAPACITY:
-            break
-        p = town.nearest_free_lot(ox, oy, occupied)
-        occupied.add(p)
-        pos[ck] = p
+        if taken + ground < TOWN_CAPACITY:
+            p = town.nearest_free_lot(ox, oy, occupied)
+            occupied.add(p)
+            spot = {"x": p[0], "y": p[1]}
+            ground += 1
+        else:
+            if blds is None:
+                blds = await load_buildings()
+                inviter = await db.residents.find_one({"k": k}, STACK_FIELDS)
+                home = stacks.key_of(inviter)
+            key = stacks.with_room(blds, home) or stacks.shortest(blds, "docks")
+            if not key:
+                continue
+            spot = stacks.floor_spot(key, blds[key])
+            blds[key].append({"k": ck, **spot, "status": "reserved"})
+        pos[ck] = (spot["x"], spot["y"])
         await db.residents.insert_one({
             "k": ck, "h": c["handle"], "name": c.get("name") or c["handle"], "avatar_url": c.get("avatar_url"),
-            "status": "reserved", "verified": False, "hidden": False, "x": p[0], "y": p[1], "by": k,
-            "by_h": h, "circle": [], "nb": None, "floors": 1, "elo": arena.START, "created_at": now_iso()})
+            "status": "reserved", "verified": False, "hidden": False, "by": k, "by_h": h, "circle": [], "nb": None,
+            "floors": 1, "elo": arena.START, "created_at": now_iso(), "placed_at": now_iso(), **spot})
         added += 1
     return added
+
+
+async def floor_target(by_doc: Optional[dict]):
+    """Where a newcomer goes once the ground is full: on top of the building of whoever's link brought them, else the
+    shortest building on the Docks, else the shortest anywhere. With the handle of that building's ground owner."""
+    blds = await load_buildings()
+    key = stacks.with_room(blds, stacks.key_of(by_doc)) if by_doc else None
+    key = key or stacks.shortest(blds, "docks") or stacks.shortest(blds, "uptown")
+    return (stacks.floor_spot(key, blds[key]), blds[key][0]["h"]) if key else None
 
 
 async def place_move_in(k: str, profile: dict, circle: list, by: Optional[str], verified: bool):
@@ -318,13 +348,15 @@ async def place_move_in(k: str, profile: dict, circle: list, by: Optional[str], 
     taken = await count_taken()
     owner = await db.residents.find_one({"k": k}, {"_id": 0})
     was_reserved = bool(owner and owner["status"] == "reserved")
-    host = await db.residents.find_one({"k": by, "status": "finished", "hidden": False}, {"_id": 0, "x": 1, "y": 1}) \
+    host = await db.residents.find_one({"k": by, "status": "finished", "hidden": False}, STACK_FIELDS) \
         if verified and by and by != k and not (owner and owner["status"] == "finished") else None
+    spot, on_h = {}, None
     if owner:
         ox, oy = owner["x"], owner["y"]
+    elif taken >= TOWN_CAPACITY and (target := await floor_target(host)):
+        spot, on_h = target
+        ox, oy = spot["x"], spot["y"]
     else:
-        if taken >= TOWN_CAPACITY:
-            raise TownFull()
         taken += 1
         placed = [(pos[c["handle"].lower()], c["weight"]) for c in circle if c["handle"].lower() in pos]
         if host:
@@ -347,13 +379,14 @@ async def place_move_in(k: str, profile: dict, circle: list, by: Optional[str], 
         "h": profile["handle"], "name": profile.get("name") or profile["handle"],
         "avatar_url": profile.get("avatar_url") or (owner or {}).get("avatar_url"),
         "status": "finished" if lit else "reserved", "read_at": now_s, "x": ox, "y": oy, **lit_fields,
-        **(credit if host else {}),
+        **(credit if host else {}), **spot,
     }, "$setOnInsert": {"k": k, "hidden": False, "nb": None, "floors": 1, "elo": arena.START, "circle": [], "ties": {},
                         "created_at": now_s, "placed_at": now_s, **({} if host else credit)}}, upsert=True)
     new_reserved = await reserve_circle(k, profile["handle"], ox, oy, circle, occupied, pos, taken)
     kind = ("lights_on" if was_reserved else "moved_in") if verified else "built"
     await db.events.insert_one({"type": kind, "h": profile["handle"],
-                                "by_h": (owner or {}).get("by_h") or (by_doc or {}).get("h"), "n": new_reserved, "at": now_s})
+                                "by_h": (owner or {}).get("by_h") or (by_doc or {}).get("h"), "n": new_reserved, "at": now_s,
+                                **({"on_h": on_h, "lv": spot["lv"]} if on_h else {})})
 
 
 def new_district(anchor: str, lot: tuple, size: int, **extra) -> dict:
@@ -426,24 +459,63 @@ async def refresh_neighbourhoods() -> list:
     await tidy_blocks()
     await sync_floors()
     await sync_docks()
+    await sync_stacks()
     return created
 
 
 async def sync_docks():
     """Everyone who moves in starts on the Docks, and keeps their place there until they move uptown."""
-    docs = await db.residents.find({}, {"_id": 0, "k": 1, "status": 1, "hidden": 1, "uptown": 1, "dock": 1,
+    docs = await db.residents.find({}, {"_id": 0, "k": 1, "status": 1, "hidden": 1, "uptown": 1, "dock": 1, "lv": 1,
                                         "finished_at": 1}).to_list(None)
 
     def docked(d):
-        return d["status"] == "finished" and not d.get("hidden") and not d.get("uptown")
+        return d["status"] == "finished" and not d.get("hidden") and not d.get("uptown") and not stacks.stacked(d)
 
-    gone = [d["k"] for d in docs if d.get("dock") is not None and not docked(d)]
+    gone = [d["k"] for d in docs if d.get("dock") is not None and not stacks.stacked(d) and not docked(d)]
     if gone:
         await db.residents.update_many({"k": {"$in": gone}}, {"$unset": {"dock": ""}})
-    taken = {d["dock"] for d in docs if d.get("dock") is not None and docked(d)}
+    taken = {d["dock"] for d in docs if d.get("dock") is not None and not d.get("hidden") and (docked(d) or stacks.stacked(d))}
     new = sorted((d for d in docs if docked(d) and d.get("dock") is None), key=lambda d: d.get("finished_at") or "")
     for d, slot in zip(new, arena.free_slots(taken, len(new))):
         await db.residents.update_one({"k": d["k"]}, {"$set": {"dock": slot}})
+
+
+async def sync_stacks():
+    """Floors close up when someone leaves or moves; a building whose ground owner left keeps standing."""
+    for k, lv in stacks.renumber(await load_buildings()).items():
+        await db.residents.update_one({"k": k}, {"$set": {"lv": lv}})
+
+
+async def relocate(doc: dict, area: str):
+    """A floor resident moving to the other side of town: their own lot if a ground spot is free, else the top of the
+    shortest building there."""
+    blds = await load_buildings()
+    for ds in blds.values():
+        ds[:] = [d for d in ds if d["k"] != doc["k"]]
+    key = stacks.shortest({k: ds for k, ds in blds.items() if ds}, area, stacks.key_of(doc))
+    up = area == "uptown"
+    if key and await count_taken() >= TOWN_CAPACITY:
+        spot = stacks.floor_spot(key, blds[key])
+        unset = {} if spot["on"] == "dock" else {"dock": ""}
+        await db.residents.update_one({"k": doc["k"]}, {"$set": {**spot, "uptown": up, "placed_at": now_iso()},
+                                                        **({"$unset": unset} if unset else {})})
+        return
+    occupied, _ = await occupancy()
+    x, y = town.nearest_free_lot(doc["x"], doc["y"], occupied)
+    await db.residents.update_one({"k": doc["k"]}, {"$set": {"x": x, "y": y, "uptown": up, "placed_at": now_iso()},
+                                                    "$unset": {"lv": "", "on": "", "dock": ""}})
+
+
+async def go_uptown(k: str):
+    """A house that wins its way off the Docks. From a floor, its old floor goes and the ones above drop down."""
+    doc = await db.residents.find_one({"k": k}, {"_id": 0})
+    if stacks.stacked(doc):
+        await relocate(doc, "uptown")
+        await db.residents.update_one({"k": k}, {"$set": {"earned": True}})
+    else:
+        await db.residents.update_one({"k": k}, {"$set": {"uptown": True}, "$unset": {"dock": ""}})
+    await sync_docks()
+    await sync_stacks()
 
 
 async def sync_floors():
@@ -513,10 +585,7 @@ async def run_move_in(k: str, h: str, by: Optional[str], verified: bool, fallbac
             return await set_job(k, "error", "blocked")
         await set_job(k, "building", h=profile["handle"])
         async with TOWN_LOCK:
-            try:
-                await place_move_in(k, profile, [], by, verified)
-            except TownFull:
-                return await set_job(k, "error", "full")
+            await place_move_in(k, profile, [], by, verified)
             created = await refresh_neighbourhoods()
             await bump()
         for nb_id in created:
@@ -550,8 +619,6 @@ async def move_in(body: MoveInRequest, request: Request):
     job = await db.jobs.find_one({"k": k}, {"_id": 0})
     if job and job["state"] in ACTIVE_JOB and now() - datetime.fromisoformat(job["updated_at"]) < timedelta(minutes=3):
         return job_public(job)
-    if not res and await count_taken() >= TOWN_CAPACITY:
-        raise HTTPException(409, f"XField is full. All {TOWN_CAPACITY} spots are taken.")
     await check_rate(client_ip(request))
     by = user["k"] if user and not verified else None
     await db.jobs.update_one({"k": k}, {"$set": {"k": k, "h": h, "state": "queued", "code": None, "updated_at": now_iso()}}, upsert=True)
@@ -571,7 +638,7 @@ async def move_in_status(handle: str):
 
 TOWN_FIELDS = {"_id": 0, "k": 1, "h": 1, "name": 1, "avatar_url": 1, "status": 1, "x": 1, "y": 1, "by_h": 1, "nb": 1,
                "circle": 1, "floors": 1, "finished_at": 1, "placed_at": 1, "created_at": 1, "elo": 1, "uptown": 1,
-               "dock": 1, "design": 1, "ranked": 1, "seen_at": 1}
+               "dock": 1, "design": 1, "ranked": 1, "seen_at": 1, "lv": 1, "on": 1}
 DISTRICT_PUBLIC = {"_id": 0, "votes": 0}
 
 
@@ -613,6 +680,7 @@ async def get_town(v: Optional[int] = None):
                           "s": "f" if d["status"] == "finished" else "r", "x": d["x"], "y": d["y"], "f": f,
                           "t": town.tier_of(f), "by": d.get("by_h"), "nb": d.get("nb"), "d": d.get("dock"),
                           "m": arena.model_of(d, d.get("dock") is not None),
+                          **({"lv": d["lv"], "on": d.get("on")} if stacks.stacked(d) else {}),
                           **({"e": arena.score(d), "u": bool(d.get("uptown")), "out": not in_arena(d)} if d["status"] == "finished" else {})})
     nbs = await db.neighbourhoods.find({"active": True}, DISTRICT_PUBLIC).to_list(None)
     handles = {d["k"]: d["h"] for d in docs}
@@ -625,6 +693,7 @@ async def get_town(v: Optional[int] = None):
         if e.get("nb"):
             e["nb_name"] = names.get(e["nb"])
     finished = sum(1 for r in residents if r["s"] == "f")
+    floors = sum(1 for r in residents if r.get("lv"))
     biggest = max(nbs, key=lambda n: n.get("size", 0), default=None)
     return {"version": version, "residents": residents, "neighbourhoods": nbs, "ticker": events,
             "town_hall": {"bx": town.TOWN_HALL[0], "by": town.TOWN_HALL[1]},
@@ -632,7 +701,7 @@ async def get_town(v: Optional[int] = None):
             "paper": await db.papers.find_one({}, {"_id": 0, "issue": 1}, sort=[("issue", -1)]),
             "ladder": {"uptown_at": arena.UPTOWN_AT, "votes": arena.VOTES_PER_DAY},
             "options": {"colors": town.FACTION_COLORS, "landmarks": LANDMARKS},
-            "stats": {"taken": len(residents), "capacity": TOWN_CAPACITY, "finished": finished,
+            "stats": {"taken": len(residents) - floors, "capacity": TOWN_CAPACITY, "floors": floors, "finished": finished,
                       "reserved": len(residents) - finished, "neighbourhoods": len(nbs),
                       "biggest": {"name": biggest.get("name"), "size": biggest.get("size")} if biggest and biggest.get("name") else None}}
 
@@ -683,6 +752,13 @@ def near(a: dict, b: dict) -> bool:
     return any(c["k"] == b["k"] for c in a.get("circle") or []) or any(c["k"] == a["k"] for c in b.get("circle") or [])
 
 
+def building_of(doc: dict, blds: dict) -> dict:
+    """Who lives in a home's building, top floor first, and which floor is theirs (1 is the ground)."""
+    b = stacks.info(doc, blds)
+    people = [{**person(d), "s": "f" if d["status"] == "finished" else "r", "floor": i + 1} for i, d in enumerate(b["people"])]
+    return {"floor": b["level"] + 1, "size": b["size"], "area": b["area"], "base": people[0], "people": people[::-1]}
+
+
 async def card_payload(doc: dict, st: dict) -> dict:
     """What the share card shows, and which moment the house is in: just moved in, up for votes, uptown, or dark."""
     pool = await arena_pool()
@@ -698,10 +774,12 @@ async def card_payload(doc: dict, st: dict) -> dict:
     nb = st["nb"] or {}
     snap = doc.get("snap") if doc["status"] == "finished" else None
     invites = st["street"][:INVITES]
+    bld = building_of(doc, await load_buildings())
     by = st["by_k"].get(doc.get("by")) if doc["status"] != "finished" else None
     return {"rv": CARD_VERSION, "k": doc["k"], "h": doc["h"], "name": doc.get("name"), "moment": moment,
             "uptown": bool(doc.get("uptown")), "color": nb.get("color"),
             "invites": [{"k": p["k"], "h": p["h"], "s": p["s"]} for p in invites],
+            "floor": bld["floor"], "size": bld["size"], "base_h": bld["base"]["h"],
             "nb_name": nb.get("name"), "tags": st["tags"], "by_h": doc.get("by_h"), "by_k": by["k"] if by else None, "score": mine, "start": arena.START,
             "line": arena.UPTOWN_AT, "rank": 1 + sum(arena.score(d) > mine for d in pool) if playing else None, "of": len(pool),
             "neighbours": [{"k": n["k"], "status": "reserved" if n["s"] == "r" else "finished"} for n in st["neighbours"]],
@@ -714,8 +792,21 @@ def card_hash(payload: dict) -> str:
     return hashlib.sha1(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:10]
 
 
+def building_line(card: dict, me: bool = True) -> Optional[str]:
+    if card.get("floor", 1) > 1:
+        return f"floor {card['floor']} of @{card['base_h']}'s building"
+    if card.get("size", 1) > 1:
+        return f"{card['size']} people live on {'my' if me else 'this'} building"
+    return None
+
+
 def share_text(card: dict) -> str:
     m, tags = card["moment"], " ".join(f"@{t}" for t in card["tags"])
+    if m != "dark" and card.get("floor", 1) > 1:
+        rank = f" I'm #{card['rank']} of {card['of']} on the ladder." if card["rank"] else ""
+        where = "uptown" if m == "uptown" else "on the Docks"
+        bring = f" {tags} I saved you a floor in my building, come turn your lights on" if tags else " Move in above me"
+        return f"I live on {building_line(card)} {where} in XField, a city on X where houses fight for votes.{rank}{bring} \u2192"
     if m == "dark":
         return f"@{card['h']} your house in XField is dark. Only you can turn the lights on \u2192"
     rank = f"#{card['rank']} of {card['of']}" if card["rank"] else None
@@ -733,6 +824,9 @@ def share_text(card: dict) -> str:
 
 def og_text(card: dict) -> tuple:
     m, h = card["moment"], card["h"]
+    if m != "dark" and card.get("floor", 1) > 1:
+        where = f"#{card['rank']} of {card['of']} on the ladder" if card["rank"] else "On the ladder"
+        return f"@{h} lives on {building_line(card)}", f"{where}, in a city on X where houses fight for votes."
     if m == "dark":
         who = f"@{card['by_h']} saved it for you. " if card.get("by_h") else ""
         return f"@{h}, your house in XField is dark", f"{who}Sign in with X to turn the lights on."
@@ -772,6 +866,36 @@ async def warm_card(k: str, host: str):
         logger.exception("warming the card for %s failed", k)
 
 
+def tower_payload(doc: dict, blds: dict) -> dict:
+    """A building's card: everyone in it, ground first, and its place among the city's tallest."""
+    b = stacks.info(doc, blds)
+    rank, of = stacks.rank_of(b["key"], blds)
+    base = b["people"][0]
+    return {"tv": 1, "k": base["k"], "h": base["h"], "area": b["area"], "size": b["size"], "rank": rank, "of": of,
+            "floors": [{"k": d["k"], "h": d["h"], "s": "f" if d["status"] == "finished" else "r"} for d in b["people"]],
+            "avatars": {d["k"]: d.get("avatar_url") for d in b["people"]}}
+
+
+def tower_text(t: dict) -> str:
+    where = WHERE[t["area"]]
+    rank = f", #{t['rank']} tallest in the city" if t["rank"] else ""
+    above = t["floors"][1:][::-1]
+    lit = " ".join(f"@{p['h']}" for p in [p for p in above if p["s"] == "f"][:3])
+    dark = " ".join(f"@{p['h']}" for p in [p for p in above if p["s"] == "r"][:2])
+    who = (f" {lit} live above me." if lit else "") + (f" {dark} your floors are dark, come turn your lights on." if dark else "")
+    return f"My building in XField is {t['size']} floors tall {where}{rank}.{who} Move in on top \u2192"
+
+
+async def tower_bytes(doc: dict, host: str) -> bytes:
+    payload = tower_payload(doc, await load_buildings())
+    path = CARD_DIR / f"tower-{payload['k']}-{card_hash({**payload, 'host': host})}.jpg"
+    if not path.exists():
+        urls = payload.pop("avatars")
+        blobs = await asyncio.gather(*[fetch_avatar(u) for u in urls.values()])
+        path.write_bytes(await asyncio.to_thread(render_tower, payload, dict(zip(urls.keys(), blobs))))
+    return path.read_bytes()
+
+
 @api.get("/residents/{handle}")
 async def resident(handle: str, request: Request):
     doc = await load_resident(handle)
@@ -786,7 +910,11 @@ async def resident(handle: str, request: Request):
         await db.residents.update_one({"k": doc["k"]}, {"$set": {"seen_at": now_iso()}})
     card = await card_payload(doc, st)
     v = card_hash(card)
-    out = {"k": doc["k"], "h": doc["h"], "name": doc.get("name"), "avatar_url": doc.get("avatar_url"),
+    blds = await load_buildings()
+    bld = building_of(doc, blds)
+    tower = tower_payload(doc, blds) if bld["size"] > 1 else None
+    bld["rank"], bld["of"] = (tower["rank"], tower["of"]) if tower else stacks.rank_of(stacks.key_of(doc), blds)
+    out = {"building": bld, "k": doc["k"], "h": doc["h"], "name": doc.get("name"), "avatar_url": doc.get("avatar_url"),
            "status": "finished" if doc["status"] == "finished" else "reserved", "x": doc["x"], "y": doc["y"],
            "tier": st["tier"], "tier_name": town.TIERS[st["tier"]], "inbound": st["inbound"], "by_h": doc.get("by_h"),
            "floors": st["floors"], "member": bool(doc.get("member")),
@@ -797,6 +925,10 @@ async def resident(handle: str, request: Request):
            "ladder": await ladder_of(doc, is_me),
            "share": {"text": share_text(card), "url": f"{base}/api/s/{doc['h']}?v={v}", "tags": st["tags"], "moment": card["moment"]},
            "card_url": f"{base}/api/residents/{doc['h']}/card.jpg?v={v}"}
+    if tower:
+        tv = card_hash(tower)
+        out["tower_share"] = {"text": tower_text(tower), "url": f"{base}/api/t/{tower['h']}?v={tv}",
+                              "card_url": f"{base}/api/residents/{tower['h']}/tower.jpg?v={tv}"}
     if is_me:
         out["news"] = news_of(st)
         out["done"] = doc.get("done") or {}
@@ -859,6 +991,34 @@ async def fetch_avatar(url: Optional[str]) -> Optional[bytes]:
         AVATAR_CACHE.pop(next(iter(AVATAR_CACHE)))
     AVATAR_CACHE[url] = data
     return data
+
+
+@api.get("/residents/{handle}/tower.jpg")
+async def resident_tower(handle: str, request: Request):
+    doc = await load_resident(handle)
+    data = await tower_bytes(doc, public_base(request).split("://", 1)[-1])
+    return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@api.get("/t/{handle}")
+async def tower_share_page(handle: str, request: Request):
+    """A shared building: X shows everyone who lives in it, and newcomers who follow the link move in on top."""
+    base = public_base(request)
+    doc = await db.residents.find_one({"k": normalize_handle(handle).lower(), "hidden": False}, {"_id": 0})
+    if not doc:
+        return RedirectResponse(f"{base}/", status_code=302)
+    t = tower_payload(doc, await load_buildings())
+    target = f"{base}/?at={t['h']}"
+    if not BOT_RE.search(request.headers.get("user-agent", "")):
+        resp = RedirectResponse(target, status_code=302)
+        if t["floors"][0]["s"] == "f":
+            resp.set_cookie(INVITE_COOKIE, t["k"], max_age=7 * 86400, httponly=True, samesite="lax", path="/")
+        return resp
+    where = WHERE[t["area"]]
+    rank = f"#{t['rank']} tallest of {t['of']} buildings" if t["rank"] else "A building"
+    title = html.escape(f"@{t['h']}'s building is {t['size']} floors tall")
+    desc = html.escape(f"{rank} {where} in XField. Move in on top.")
+    return og_page(title, desc, f"{base}/api/residents/{t['h']}/tower.jpg?v={card_hash(t)}", target)
 
 
 @api.get("/residents/{handle}/card.jpg")
@@ -1405,7 +1565,8 @@ async def cast(k: str, pick: int):
         await db.events.insert_one({"type": "top", "h": w["h"], "rank": rank, "at": now_iso()})
     moved = not w.get("uptown") and won >= arena.UPTOWN_AT
     if moved:
-        await db.residents.update_one({"k": w["k"]}, {"$set": {"uptown": True}, "$unset": {"dock": ""}})
+        async with TOWN_LOCK:
+            await go_uptown(w["k"])
         await db.events.insert_one({"type": "uptown", "h": w["h"], "nb": w.get("nb"), "at": now_iso()})
     await bump()
     return {"pick": pick, "pts": pts, "e": won, "rank": rank, "of": len(pool), "moved": moved,
@@ -1587,13 +1748,18 @@ async def leave_city(request: Request, response: Response):
 async def reshuffle():
     """Each week, uptown houses that fell below the line go back to the Docks. The ticker counts them; it never
     names them."""
-    down = [d["k"] async for d in db.residents.find({"uptown": True, "hidden": False, "elo": {"$lt": arena.UPTOWN_AT}},
-                                                     {"_id": 0, "k": 1})]
+    down = await db.residents.find({"uptown": True, "hidden": False, "status": "finished", "elo": {"$lt": arena.UPTOWN_AT},
+                                    "$or": [{"lv": {"$exists": False}}, {"earned": True}]}, {"_id": 0}).to_list(None)
     if not down:
         return
     async with TOWN_LOCK:
-        await db.residents.update_many({"k": {"$in": down}}, {"$set": {"uptown": False}})
+        for d in down:
+            if stacks.stacked(d) and d.get("on") == "lot":
+                await relocate(d, "docks")
+            else:
+                await db.residents.update_one({"k": d["k"]}, {"$set": {"uptown": False}})
         await sync_docks()
+        await sync_stacks()
     await db.events.insert_one({"type": "docked", "h": "", "n": len(down), "at": now_iso()})
     await bump()
 
@@ -1714,7 +1880,9 @@ async def census_share_page(issue: str, request: Request):
 # ---------- the daily paper ----------
 
 FACTS = {
-    "moved_in": lambda e: f"New blood: @{e['h']} moved in" + (f" on {e['where']}" if e.get("where") else "") + ", starting on the Docks",
+    "moved_in": lambda e: f"New blood: @{e['h']} moved in" + (
+        f" on floor {e['lv'] + 1} of @{e['on_h']}'s building" if e.get("on_h") else
+        (f" on {e['where']}" if e.get("where") else "") + ", starting on the Docks"),
     "new_nb": lambda e: f"New district: {e['name']}",
     "nb_gone": lambda e: f"The district {e['name']} emptied out",
     "uptown": lambda e: f"@{e['h']}'s house won enough votes to move off the Docks and uptown",
@@ -1734,6 +1902,22 @@ def climbers(votes: list) -> list:
     return [(k, n) for k, n in net.most_common(5) if n > 0]
 
 
+def tower_rows(blds: dict, before: dict) -> tuple:
+    """The five tallest buildings, with how many floors each grew since the last paper, and every building's height."""
+    heights = {ds[0]["k"]: len(ds) for _, ds in stacks.towers(blds)}
+    rows = [{**person(ds[0]), "size": len(ds), "area": stacks.area_of(key, ds),
+             "grew": len(ds) - before.get(ds[0]["k"], 1) if before else 0} for key, ds in stacks.towers(blds)[:5]]
+    return rows, heights
+
+
+def tower_facts(towers: list) -> str:
+    if not towers:
+        return ""
+    lines = [f"- @{t['h']}'s building: {t['size']} floors, {'uptown' if t['area'] == 'uptown' else 'on the Docks'}"
+             + (f" (+{t['grew']} since the last paper)" if t["grew"] > 0 else "") for t in towers]
+    return "\n\nTallest buildings (newcomers live on floors stacked on top once the ground is full):\n" + "\n".join(lines)
+
+
 def paper_sections(events: list, top: list, people: dict) -> dict:
     """The boxes around the stories: climbers, who moved uptown, new faces and new districts."""
     def who(types):
@@ -1748,10 +1932,16 @@ def paper_sections(events: list, top: list, people: dict) -> dict:
             "districts": list(dict.fromkeys(e["name"] for e in events if e["type"] == "new_nb" and e.get("name")))}
 
 
-def plain_paper(events: list, top: list, people: dict) -> dict:
+def plain_paper(events: list, top: list, people: dict, towers: list = ()) -> dict:
     """A front page written from the facts alone, for when the writer is away."""
     sec, stories = paper_sections(events, top, people), []
     up = sec["uptown"]
+    tall = max(towers, key=lambda t: (t["grew"], t["size"]), default=None)
+    if tall and tall["grew"] > 0:
+        stories.append({"title": f"@{tall['h']}'s building climbs to {tall['size']} floors", "people": [tall],
+                        "body": f"{tall['grew']} new {'floor' if tall['grew'] == 1 else 'floors'} went up on @{tall['h']}'s building "
+                                f"{'uptown' if tall['area'] == 'uptown' else 'on the Docks'} since the last paper. With every ground spot "
+                                "taken, XField is growing up."})
     if len(up) > 2:
         shown, rest = (up[:4], f"{len(up) - 4} others") if len(up) > 4 else (up[:-1], f"@{up[-1]['h']}")
         stories.append({"title": f"{len(up)} houses leave the Docks", "people": up[:4],
@@ -1778,6 +1968,11 @@ def plain_paper(events: list, top: list, people: dict) -> dict:
     if sec["districts"]:
         stories.append({"title": f"New on the map: {sec['districts'][0]}", "people": [],
                         "body": "A circle of friends filled enough lots to earn a district name of its own."})
+    if towers and not (tall and tall["grew"] > 0):
+        t = towers[0]
+        stories.append({"title": f"Tallest in town: @{t['h']}'s building", "people": [t],
+                        "body": f"{t['size']} floors stand on @{t['h']}'s ground spot "
+                                f"{'uptown' if t['area'] == 'uptown' else 'on the Docks'}, more than any other building in XField."})
     headline = stories[0]["title"] if stories else "A quiet day in XField"
     return {"headline": headline, "stories": stories[:5], "quotes": []}
 
@@ -1799,15 +1994,19 @@ async def publish_paper(force: bool = False):
         top = [(k, n) for k, n in climbers(await db.votes.find({"at": {"$gte": since}}, {"_id": 0}).to_list(None)) if k in people]
         lit = await db.residents.count_documents({"hidden": False, "status": "finished"})
         happened = [FACTS[e["type"]](e) for e in events if e["type"] in FACTS][-60:]
-        facts = (f"XField today: {lit} people live here, {len(people)} of {TOWN_CAPACITY} lots taken.\n\n"
+        ground = await count_taken()
+        stacked = await db.residents.count_documents({"hidden": False, "lv": {"$gte": 1}})
+        towers, heights = tower_rows(await load_buildings(), (last or {}).get("heights") or {})
+        facts = (f"XField today: {lit} people live here, {ground} of {TOWN_CAPACITY} ground spots taken"
+                 f"{f' and {stacked} floors built on top' if stacked else ''}.\n\n"
                  "Happened since the last paper:\n" + ("\n".join(f"- {line}" for line in happened) or "- nothing much") +
                  "\n\nBiggest climbers on the ladder:\n" +
-                 ("\n".join(f"- @{people[k]['h']} +{n} points" for k, n in top) or "- nobody yet"))
+                 ("\n".join(f"- @{people[k]['h']} +{n} points" for k, n in top) or "- nobody yet") + tower_facts(towers))
         try:
             edition = await write_paper(facts, people)
         except Exception as e:
             logger.warning("paper writing failed: %s", e)
-            edition = plain_paper(events, top, people)
+            edition = plain_paper(events, top, people, towers)
         sections = paper_sections(events, top, people)
         votes = await db.votes.count_documents({"at": {"$gte": since}})
         docked = await db.residents.count_documents({"hidden": False, "status": "finished", "dock": {"$exists": True}})
@@ -1817,8 +2016,8 @@ async def publish_paper(force: bool = False):
         end = now()
         issue = (last or {}).get("issue", 0) + 1
         await db.papers.insert_one({"issue": issue, "label": f"{end:%A}, {end:%B} {end.day}", "published_at": end.isoformat(),
-                                    **edition, **sections, "featured": list(featured.values()),
-                                    "numbers": {"lit": lit, "taken": len(people), "capacity": TOWN_CAPACITY, "votes": votes,
+                                    **edition, **sections, "featured": list(featured.values()), "towers": towers, "heights": heights,
+                                    "numbers": {"lit": lit, "taken": ground, "floors": stacked, "capacity": TOWN_CAPACITY, "votes": votes,
                                                 "docks": docked, "uptown": lit - docked}})
         await db.events.insert_one({"type": "paper", "h": "", "issue": issue, "headline": edition["headline"], "at": end.isoformat()})
         await bump()

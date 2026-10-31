@@ -69,6 +69,18 @@ function TagStep({ me, onPeople, onDone }) {
   );
 }
 
+// Your building, once people live on top of it or you live on top of someone's.
+function MyBuilding({ b, share }) {
+  if (!b || b.size < 2) return null;
+  const line = b.floor > 1 ? `You live on floor ${b.floor} of @${b.base.h}'s building` : `${b.size} people live on my building`;
+  return (
+    <div className="mt-2.5 flex items-center gap-2 rounded-lg bg-slate-100 px-2.5 py-1.5 text-xs font-bold" data-testid="next-move-building">
+      <span className="min-w-0 flex-1">🏢 {line}{b.rank ? ` · #${b.rank} tallest` : ""}</span>
+      {share && b.floor === 1 && <Small href={onX(share.text, share.url)} testId="next-move-share-building">𝕏 Share</Small>}
+    </div>
+  );
+}
+
 // What to do now you live here: vote, share your card, and bring your people in.
 export function NextMove({ me, onFocus, onPeople, onVisit, onDone, onTour }) {
   const l = me.ladder, shared = Boolean(me.done?.share);
@@ -85,6 +97,7 @@ export function NextMove({ me, onFocus, onPeople, onVisit, onDone, onTour }) {
         </button>
       </div>
       {l && <Progress l={l} />}
+      <MyBuilding b={me.building} share={me.tower_share} />
       <ol className="mt-3 space-y-2.5">
         {l && <VoteStep l={l} cast={me.cast} />}
         <Step n={2} done={shared} title="Share your card on X" testId="goal-share"

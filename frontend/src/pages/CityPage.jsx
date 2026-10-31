@@ -12,10 +12,8 @@ import { AwayCard, CARD, Face, HouseCard, Minimap, PlaceCard, TickerBar, VoteCar
 
 const TITLE = "XField: your city on X, lit up by your friends";
 const DAY = 86400000;
-const SNAP_VERSION = "close-up-3";
+const SNAP_VERSION = "close-up-4";
 const newsToast = (n) => ({ text: `💡 @${n.p.h} just moved in near you`, face: n.p, visit: n.p, cta: "Visit" });
-const roof = (home) => 0.6 + 0.25 * home.stories;
-const top = (home) => (home.owner.d != null ? 0.36 : roof(home));
 const SIGNIN_ERRORS = {
   off: "Sign in with X is switched off right now.",
   cancelled: "Sign in was cancelled on X.",
@@ -26,7 +24,7 @@ const SIGNIN_ERRORS = {
 // Pictures your house and street from the city, for your share card. Only when something on it changed, or a day on.
 function useSnapshot({ me, mine, homeOf, snapRef, onSaved }) {
   const key = me?.status === "finished" && mine
-    ? [SNAP_VERSION, mine.x, mine.z, mine.owner.m, mine.owner.f, mine.owner.e, ...me.neighbours.map((p) => p.k + p.s)].join("|") : null;
+    ? [SNAP_VERSION, mine.x, mine.z, mine.level, mine.stack.length, mine.owner.m, mine.owner.f, mine.owner.e, ...me.neighbours.map((p) => p.k + p.s)].join("|") : null;
   useEffect(() => {
     if (!key) return;
     const store = `xf_snap_${me.k}`;
@@ -35,8 +33,8 @@ function useSnapshot({ me, mine, homeOf, snapRef, onSaved }) {
     const id = setTimeout(async () => {
       if (!snapRef.current) return;
       const dark = me.neighbours.filter((p) => p.s === "r" && homeOf[p.k]).map((p) => homeOf[p.k]);
-      const points = [{ k: me.k, pos: [mine.x, top(mine) + 0.1, mine.z] }, ...dark.map((h) => ({ k: h.owner.k, pos: [h.x, top(h) + 0.05, h.z] }))];
-      const { blob, points: at } = await snapRef.current({ at: [mine.x, mine.z], points });
+      const points = [{ k: me.k, pos: [mine.x, mine.top + 0.1, mine.z] }, ...dark.map((h) => ({ k: h.owner.k, pos: [h.x, h.top + 0.05, h.z] }))];
+      const { blob, points: at } = await snapRef.current({ at: [mine.x, mine.z, mine.y], points });
       const inFrame = (p) => p.x > 30 && p.x < 610 && p.y > 90 && p.y < 610;
       const form = new FormData();
       form.append("image", blob, "house.jpg");
@@ -88,6 +86,7 @@ export default function CityPage() {
   const snapRef = useRef(null);
   const flashId = useRef(0);
   const lastLots = useRef(null);
+  const pending = useRef([]);
   const seen = useRef(null);
   const startedRef = useRef(false);
   const atHandle = new URLSearchParams(window.location.search).get("at")?.toLowerCase();
@@ -100,9 +99,10 @@ export default function CityPage() {
   const loadTown = useCallback(() => api(`/town${version.current === null ? "" : `?v=${version.current}`}`).then((t) => {
     if (t.unchanged) return;
     version.current = t.version;
-    const was = lastLots.current;
-    lastLots.current = new Map(t.residents.map((r) => [r.k, `${r.s}${r.f}${r.u}`]));
-    if (was) flash(t.residents.filter((r) => was.has(r.k) && was.get(r.k) !== `${r.s}${r.f}${r.u}`).map((r) => ({ x: r.x, y: r.y, color: "#FCD34D" })));
+    const was = lastLots.current, sig = (r) => `${r.s}${r.f}${r.u}${r.lv ?? ""}`;
+    lastLots.current = new Map(t.residents.map((r) => [r.k, sig(r)]));
+    if (was) pending.current = t.residents.filter((r) => (was.has(r.k) ? was.get(r.k) !== sig(r) : r.lv != null))
+      .map((r) => ({ k: r.k, rise: !was.has(r.k) }));
     setTown(t);
   }).catch(() => {}), []);
   const loadMe = useCallback(() => {
@@ -149,6 +149,14 @@ export default function CityPage() {
   }, [town, auth.user]);
   const homeOf = useMemo(() => Object.fromEntries((city?.homes || []).map((h) => [h.owner.k, h])), [city]);
   const myHome = homeOf[auth.user?.k];
+  useEffect(() => {
+    const list = pending.current.filter((p) => homeOf[p.k]).map((p) => {
+      const h = homeOf[p.k];
+      return { x: h.x, z: h.z, y: h.y, rise: p.rise, color: p.rise && h.owner.s === "r" ? "#94A3B8" : "#FCD34D" };
+    });
+    pending.current = [];
+    if (list.length) flash(list);
+  }, [homeOf]); // eslint-disable-line react-hooks/exhaustive-deps
   useSnapshot({ me, mine: myHome, homeOf, snapRef, onSaved: loadMe });
   useEffect(() => {
     if (!city || startedRef.current) return;
@@ -166,12 +174,12 @@ export default function CityPage() {
 
   if (!city) return <div className="fixed inset-0 grid place-items-center"><Logo size={72} /></div>;
   const nbById = Object.fromEntries(town.neighbourhoods.map((n) => [n.id, n]));
-  const h = hover?.item;
+  const h = hover?.item, hs = h?.owner && homeOf[h.owner.k];
   const lit = me?.status === "finished";
   const touring = lit && myHome && (replay || (!me.done?.tour && !skipped));
   const labels = [...city.labels,
-    ...(myHome ? [{ kind: "me", key: "me", pos: [myHome.x, roof(myHome) + 0.5, myHome.z], avatar: auth.user.avatar_url, score: myHome.owner.e }] : []),
-    ...(myHome && me && myHome.owner.d != null ? [{ kind: "lot", key: "lot", pos: [tileOf(me.x), 0.35, tileOf(me.y)] }] : [])];
+    ...(myHome ? [{ kind: "me", key: "me", pos: [myHome.x, myHome.top + 0.5, myHome.z], avatar: auth.user.avatar_url, score: myHome.owner.e }] : []),
+    ...(myHome && me && myHome.owner.d != null && !myHome.level ? [{ kind: "lot", key: "lot", pos: [tileOf(me.x), 0.35, tileOf(me.y)] }] : [])];
   const refresh = () => Promise.all([loadTown(), loadMe()]);
   const pick = (it) => {
     setFocus([it.x, it.z]);
@@ -192,7 +200,8 @@ export default function CityPage() {
     markDone("tour");
     if (me.invites_left > 0) setPicking(true);
   };
-  const stops = touring ? [[myHome.x, myHome.z, 84], city.hall && [city.hall.x, city.hall.z, 40], [tileOf(me.x), tileOf(me.y), 64]] : [];
+  const stops = touring ? [[myHome.x, myHome.z, 84], city.hall && [city.hall.x, city.hall.z, 40],
+    myHome.level ? [myHome.x, myHome.z, 64] : [tileOf(me.x), tileOf(me.y), 64]] : [];
   const pickedNow = picked && homeOf[picked.owner.k];
   const at = atHandle && homeOf[atHandle]?.owner;
   const calm = !touring && !picking;
@@ -244,7 +253,15 @@ export default function CityPage() {
       <div className="absolute left-4 top-4 pointer-events-none">
         <Logo size={44} />
         <div className="mt-1.5 flex gap-1.5 text-xs font-bold">
-          <span className="rounded-full bg-white/85 px-2 py-0.5 shadow-sm tabular-nums" title="Lots with a house on them" data-testid="lots-stat">🏠 {town.stats.taken}/{town.stats.capacity} lots</span>
+          <span className="rounded-full bg-white/85 px-2 py-0.5 shadow-sm tabular-nums" title="Ground spots with a building on them" data-testid="lots-stat">
+            🏠 {Math.min(town.stats.taken, town.stats.capacity)}/{town.stats.capacity} ground spots
+          </span>
+          {(town.stats.floors > 0 || town.stats.taken >= town.stats.capacity) && (
+            <button type="button" onClick={() => { setPlace("towers"); setPicked(null); }} title="The tallest buildings in the city"
+              className="pointer-events-auto rounded-full bg-white/85 px-2 py-0.5 shadow-sm tabular-nums hover:bg-white transition-colors" data-testid="floors-stat">
+              🏗 {town.stats.floors} {town.stats.floors === 1 ? "floor" : "floors"} built
+            </button>
+          )}
           <span className="rounded-full bg-white/85 px-2 py-0.5 shadow-sm tabular-nums" title="Houses on the Docks and uptown" data-testid="docks-stat">
             ⚓ {town.residents.filter((r) => r.d != null).length} · 🏙 {town.residents.filter((r) => r.u).length}
           </span>
@@ -252,7 +269,7 @@ export default function CityPage() {
       </div>
       {touring && (
         <div className="absolute bottom-12 left-1/2 -translate-x-1/2 z-20">
-          <Tour me={me} model={myHome.owner.m} line={town.ladder.uptown_at} stops={stops} onFocus={setFocus} onDone={endTour} />
+          <Tour me={me} model={myHome.owner.m} home={myHome} line={town.ladder.uptown_at} stops={stops} onFocus={setFocus} onDone={endTour} />
         </div>
       )}
       {lit && picking && (
@@ -269,9 +286,9 @@ export default function CityPage() {
         <Minimap city={city} me={city.mine} onPick={setFocus} />
       </div>
       <div className="absolute left-4 bottom-12 flex flex-col gap-2 items-start">
-        {place && !pickedNow && <PlaceCard id={place} town={town} me={me} onVisit={visit} onClose={() => setPlace(null)} />}
+        {place && !pickedNow && <PlaceCard id={place} town={town} city={city} me={me} onVisit={visit} onClose={() => setPlace(null)} />}
         {pickedNow && (
-          <HouseCard house={pickedNow} nb={nbById[pickedNow.owner.nb]} signedIn={Boolean(me)} onChanged={refresh}
+          <HouseCard house={pickedNow} nb={nbById[pickedNow.owner.nb]} signedIn={Boolean(me)} onChanged={refresh} onVisit={visit}
             onLeft={() => { window.location.href = "/"; }} onClose={() => setPicked(null)} />
         )}
         {away && me && calm && !pickedNow && !place && <AwayCard news={away} onVisit={(p) => { setAway(null); visit(p); }} onClose={() => setAway(null)} />}
@@ -290,7 +307,9 @@ export default function CityPage() {
             <div>
               <div className="text-sm font-bold">@{h.owner.h}</div>
               <div className="text-[11px] text-ink/70">
-                {h.owner.s === "f" ? (h.owner.u ? "🏙 Uptown" : "⚓ Docks") : "🌑 dark"} · 🏢 {h.owner.f} {h.owner.f === 1 ? "floor" : "floors"}
+                {h.owner.s === "f" ? (h.owner.u ? "🏙 Uptown" : "⚓ Docks") : "🌑 dark"} · 🏢 {hs?.stack.length > 1
+                  ? (hs.level ? `floor ${hs.level + 1} of @${hs.stack[0].h}'s` : `${hs.stack.length} live here`)
+                  : `${h.owner.f} ${h.owner.f === 1 ? "floor" : "floors"}`}
                 {h.owner.s === "f" && ` · ${h.owner.e} pts`}
                 {nbById[h.owner.nb] ? ` · ${nbById[h.owner.nb].name || "New district"}` : ""}
               </div>

@@ -140,6 +140,8 @@ def _sidebar(img, d, p, avatars, x0, x1, y):
     _spaced(d, x0, y + 22, "BY THE NUMBERS", _serif(16, "Bold"))
     rows = [("Lights on", n.get("lit", 0)), ("On the Docks", n.get("docks", 0)), ("Uptown", n.get("uptown", 0)),
             ("Votes cast", n.get("votes", 0)), ("Lots taken", f"{n.get('taken', 0)}/{n.get('capacity', 0)}")]
+    if n.get("floors"):
+        rows.append(("Floors built", n["floors"]))
     f, fb = _serif(21), _serif(21, "Bold")
     for i, (k, v) in enumerate(rows):
         yy = y + 58 + i * 31

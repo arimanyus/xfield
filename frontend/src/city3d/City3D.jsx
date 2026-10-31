@@ -571,7 +571,7 @@ function Signals({ signals }) {
   );
 }
 
-// A house that just lit up or grew a floor flashes from the ground.
+// A house that just lit up or grew flashes where it stands.
 function Flash({ f }) {
   const ref = useRef();
   useFrame(() => {
@@ -581,10 +581,29 @@ function Flash({ f }) {
     ref.current.material.opacity = Math.max(0, 1 - t);
   });
   return (
-    <mesh ref={ref} position={[tileOf(f.x), 0.3, tileOf(f.y)]} rotation-x={-Math.PI / 2} renderOrder={3}>
+    <mesh ref={ref} position={[f.x, (f.y || 0) + 0.3, f.z]} rotation-x={-Math.PI / 2} renderOrder={3}>
       <planeGeometry args={[1, 1]} />
       <meshBasicMaterial color={f.color} transparent depthTest={false} />
     </mesh>
+  );
+}
+
+// A new floor rises onto its building: a glowing block grows up from the roof below, then fades.
+function Rise({ f }) {
+  const group = useRef(), mat = useRef();
+  useFrame(() => {
+    const t = (performance.now() - f.at) / 1400;
+    group.current.visible = t < 1;
+    group.current.scale.set(1, Math.max(0.02, Math.min(1, t * 1.8)), 1);
+    mat.current.opacity = 0.6 * Math.min(1, Math.max(0, (1 - t) / 0.4));
+  });
+  return (
+    <group ref={group} position={[f.x, (f.y || 0) + 0.02, f.z]}>
+      <mesh position={[0, 0.11, 0]} renderOrder={3}>
+        <boxGeometry args={[0.74, 0.22, 0.74]} />
+        <meshBasicMaterial ref={mat} color={f.color} transparent depthWrite={false} />
+      </mesh>
+    </group>
   );
 }
 
@@ -845,7 +864,7 @@ function Snapshot({ snapRef, center, ready }) {
       const { W, H, zoom, shift, drop } = SNAP;
       const cam = new THREE.OrthographicCamera(-W / 2, W / 2, H / 2, -H / 2, -200, 400);
       cam.zoom = zoom;
-      const house = new THREE.Vector3(at[0] - center[0], 0, at[1] - center[1]);
+      const house = new THREE.Vector3(at[0] - center[0], at[2] || 0, at[1] - center[1]);
       const target = house.clone().add(new THREE.Vector3(1, 0, -1).normalize().multiplyScalar(shift / zoom))
         .add(new THREE.Vector3(-1, 0, -1).normalize().multiplyScalar(drop / (zoom * TILT)));
       cam.position.copy(target).add(new THREE.Vector3(40, 40, 40));
@@ -953,7 +972,7 @@ export function City3D({ city, labels, labelNodes, focus, flashes, onHover, onPi
       {snapRef && <Snapshot snapRef={snapRef} center={city.center} ready={ready} />}
       <group position={[-city.center[0], 0, -city.center[1]]}>
         <Terrain city={shape} />
-        {flashes.map((f) => <Flash key={f.id} f={f} />)}
+        {flashes.map((f) => (f.rise ? <Rise key={f.id} f={f} /> : <Flash key={f.id} f={f} />))}
         <Signals signals={city.signals} />
         {city.hall && <CityHall hall={city.hall} onHover={onHover} onPick={onPick} />}
         {city.venue && <Venue at={city.venue} people={newest.slice(0, 3)} onPick={onFace}

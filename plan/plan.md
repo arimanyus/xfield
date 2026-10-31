@@ -1,55 +1,71 @@
-# XField Master Plan: The Multiplayer SimCity for X
+# XField: Building Up When the City Is Full
 
-## 1. Core Vision
-XField is a multiplayer isometric city-builder where corners of X form **colour-coded Districts (Boroughs)** around real handles, compete for land and skyline dominance, and grow by recruiting real X users.
-- **No Simpsons IP:** Clean, crisp SimCity-style isometric architecture, road grids, faction colours, and civic landmarks.
-- **Community + Selfish Pull:** The map seeds itself automatically from who talks to whom on X, but once inside, players choose a District, claim prime real estate, add floors to their buildings, elect Mayors, and expand their District’s borders.
+Once all 200 ground spots in XField are taken, the city grows upwards instead of outwards. Every new player, and every friend they invite, moves in as a new floor on top of an existing building, so nobody is ever turned away.
 
----
+## Who it's for
+- **New players** who arrive after the city fills up. They still get a home with their face on it straight away.
+- **Current players** who invite friends or share their card. The people they bring in stack onto their building, which grows taller.
+- **The site owner**, who wants the city to keep growing on X without people hitting a dead end.
 
-## 2. Visual & Brand Overhaul (Dropping the Simpsons Layer)
-We keep the isometric projection and SVG/Pillow rendering engines (`frontend/src/lib/iso.js`, `TownMap.jsx`, `backend/town_card.py`), and strip all Simpsons references:
-- **Remove:** `WobbleDefs.jsx` (wobbly cartoon outlines), Simpsons yellow (`#FFD90F`), drifting cartoon clouds (`Sky.jsx`), Simpsons landmarks (`moes`, `kwik_e_mart`, `lard_lad`, `krusty_studios`, etc.), and the Fox/Disney disclaimer.
-- **New SimCity Aesthetic:**
-  - **Crisp Isometric Grid:** Clean architectural outlines, asphalt roads with lane markings, zoned lot bases, and **District Faction Colours** painted on street curbs, flags, and roof trims.
-  - **Civic Landmarks:** SimCity-style procedural isometric landmarks: `city_hall`, `stock_exchange`, `power_grid`, `tech_campus`, `central_station`, `harbor`, `stadium`, and `broadcast_tower`.
-  - **Building Progression:** Procedural isometric buildings where **each floor is visibly stacked** (1-story Lot → 2-story Rowhouse → 4-story Mid-Rise → 8-story High-Rise → 12-story Glass Skyscraper).
+## Core features and experience
+- **200 ground spots, then floors.** The first 200 homes each get their own building, as now. Lit homes and dark homes both count. From home 201 on, every new home is a floor added on top of a building that already exists.
+- **Where a new floor goes:**
+  1. An invited friend goes on top of the inviter's building, as a dark floor waiting for them to sign in. Before the city is full, invites still get a dark house next door, as now.
+  2. Someone who arrives through a player's share link goes on top of that player's building.
+  3. Anyone else goes on top of the shortest building on the Docks, so stacks grow evenly.
+- **Each floor is a real home.** The floor shows its resident's face. It's lit when they've signed in and dark when they haven't. Dark floors stay dark forever, the same rule as dark houses.
+- **Floor residents are full players.** They appear on the vote ladder, vote, get 3 invites, see Next Moves, and get a share card, exactly like ground-floor players.
+- **Rich vs poor stacks:**
+  - On the Docks, extra floors look patched together: stacked containers, plywood, tarps and ladders, with dim lights.
+  - Uptown, extra floors are glass and steel with warm lit windows and a rooftop garden on top.
+- **Building info.** Tapping a building lists who lives on each floor, top to bottom. The ground owner's card shows "N people live on my building."
+- **Share cards know the floor.** A floor resident's card shows a close-up of their building with their floor marked, plus "Floor 3 of @alice's building", their rank and points, and their invites.
+- **City counter.** The city shows "200/200 ground spots · N floors built" so people can see it's building up.
+- **No more silent failure.** Today, people who sign in after the city is full get no home and no message. That stops: everyone who signs in gets a floor.
 
----
+## User flow
+1. A newcomer taps "Sign in with X" after all 200 ground spots are taken.
+2. The camera flies to their building and a new floor rises on top, with their face on it.
+3. Their card reads "You live on floor 4 of @alice's building on the Docks."
+4. The usual walkthrough and Next Moves follow: cast votes, share the card on X, invite 3 people.
+5. Each person they invite gets a dark floor stacked on their building. When that friend signs in, their floor lights up.
+6. A floor resident who wins enough votes moves uptown:
+   - They take a free uptown lot if there is one. Otherwise they go on top of the shortest uptown building.
+   - Their old floor disappears and the floors above it drop down one.
 
-## 3. Cold-Start Hook + District Membership
-1. **Graph-Seeded "Unclaimed Districts" (Cold Start):**
-   - Typing *any* X handle reads their public posts (`backend/xreader.py`), places reserved lots for their circle, and runs clustering (`backend/town.py`).
-   - Any cluster of 6+ accounts automatically forms an **Unclaimed District** anchored by its most-connected handle (`anchor` / `founder_k`).
-2. **Joining Any Handle’s District (Community Choice):**
-   - When a user signs in with X, they can either:
-     - **Light up their auto-placed lot** in the district their social graph put them in, **OR**
-     - **Move Into a Specific Handle’s District** (`POST /api/districts/{id}/join`), relocating to an open plot in that district and adopting that district’s **Faction Colour**.
-3. **Founding / Chartering a District:**
-   - Any signed-in user can charter a new frontier District or claim their anchor District (`POST /api/districts/charter`), picking its name and faction colour.
+## UI/UX feel
+- Same look as the current 3D city. Stacks read as one building that grew over time, not as separate houses floating in the air.
+- Docks stacks look crooked and makeshift. Uptown stacks look tall, clean and bright, which strengthens the poor Docks vs rich Uptown contrast.
+- A short rising-floor animation plays when someone moves in. Each floor has a small face badge, like today's house badges.
 
----
+## Implementation phases
+- **Phase 1 (MVP, built now):**
+  - Floors start once the 200 ground spots are full.
+  - The three placement rules above (invite, share link, shortest building on the Docks).
+  - Invites become dark floors on the inviter's building once the city is full.
+  - Floor residents are full players.
+  - Docks and Uptown floor styles in 3D.
+  - Building residents list and the "N people live on my building" line.
+  - Share cards with the floor number.
+  - The city counter.
+  - The rules for moving uptown from a floor.
+  - Replacing today's silent "city full" failure.
+- **Phase 2:**
+  - The daily Ledger reports on towers, for example "Tallest building: @alice, 11 floors" and "XField starts building up."
+  - A tallest-buildings leaderboard.
+  - A tower share card for building owners.
+- **Phase 3:**
+  - Tower life: residents name their building together.
+  - A view inside the building, floor by floor.
+  - The top floor as a penthouse earned by the highest-ranked resident of the building.
 
-## 4. Governance: Founder vs. Mayor
-| Role | Who it is | Powers & Rules |
-| :--- | :--- | :--- |
-| **Founder** | The anchor handle the District is built around | **Permanent.** Owns the District Charter, name, and faction colour. Cannot be deposed. |
-| **Mayor** | The operational leader of the District | Defaults to the Founder at start. Citizens can endorse/vote for a Mayor (`POST /api/districts/{id}/vote`), and the top-voted verified citizen becomes Mayor once threshold is reached. |
-
-### How Expansion Works
-- Every District has a **Plot Cap** (`plot_cap`, starts at 12) and a **Zoning Height Cap** (`max_floors`, starts at 4 floors).
-- Every citizen action feeds the **District Expansion Meter** (`treasury` vs `expansion_cost`).
-- **Mayor Power:** The Mayor chooses the next District Project (`POST /api/districts/{id}/project`: `"plots"` for +6 plots, `"height"` for +2 max floors, or `"highway"` to connect to a neighbouring district).
-- **Auto-Trigger:** When treasury reaches `expansion_cost`, the active project immediately executes and resets the meter so growth never stalls.
-
----
-
-## 5. The Individual Loop: Credits, Land Value & Floors
-1. **How Citizens Earn Credits (`credits`):**
-   - **Sign-In Mint:** Claiming and lighting your lot grants starting capital (`500 Credits`).
-   - **Recruit Bounty:** When someone moves into a reserved lot you spawned—or joins your District—and signs in with X, **both earn `300 Credits`**.
-   - **Adjacency Yield (`POST /api/me/claim`):** Daily Credits based on your building’s floors + adjacent lit floors + highway bonus.
-2. **What Citizens Spend Credits On:**
-   - **Adding Floors (`POST /api/me/upgrade`):** Spend Credits to add floors (`1 → 2 → ... → max_floors`), increasing daily yield, Land Value, and physical building height on the map.
-   - **Prime Real Estate (`POST /api/me/relocate`):** Lots adjacent to the Founder, Mayor, or District Landmark are **Prime Lots**. Verified citizens can buy/relocate onto an open or unclaimed Prime Lot near the District center.
-   - **Funding the District Treasury (`POST /api/districts/{id}/contribute`):** Contribute Credits to trigger District Expansion and climb the District contributor leaderboard.
+## Assumptions
+- 200 stays the number of ground spots, and lit and dark homes both count, as today. The number can be changed later.
+- Below 200, nothing changes.
+- "Invited friends skip the line" means invites always work. Once the city is full there is no line at all: an invited friend gets a dark floor on the inviter's building straight away.
+- A building holds up to 12 floors. When a building is full, the next newcomer goes on top of the nearest shorter building in the same area (Docks or Uptown).
+- Which floor someone lives on gives no advantage in votes or points in Phase 1.
+- A building owner can't refuse floors on their building.
+- If a ground-floor owner moves uptown or leaves, the stack stays where it is and the resident on the next floor down becomes the ground floor.
+- Before the city is full, a share link only credits the player whose link was used. Their building only gets the newcomer as a floor once the city is full.
+- Building floors are added on top of whatever height the building already has from its owner's own progress.
