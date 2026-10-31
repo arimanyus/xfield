@@ -58,7 +58,7 @@ function BillboardEditor({ board, onSaved }) {
   const pick = (e) => {
     const f = e.target.files?.[0];
     e.target.value = "";
-    if (f) run("upload", () => upload(board.id, f), "Picture uploaded");
+    if (f) run("upload", () => upload(board.id, f), form.enabled ? "Picture uploaded" : "Picture uploaded. Switch the billboard on to show it in the city.");
   };
   const clear = () => run("clear", () => api(`/admin/billboards/${board.id}/image`, { method: "DELETE" }), "Picture removed");
   const id = board.id;

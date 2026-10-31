@@ -76,7 +76,7 @@ export function ResidentsPanel() {
   }, [load]);
   return (
     <Panel testId="residents-panel">
-      <Title hint="Moving uptown lifts points to 1030 if they're lower; sending to the Docks drops them to 1029.">Residents</Title>
+      <Title hint="Points alone never move anyone. Move uptown lifts points to 1030 if they're lower; Send to Docks drops them to 1029.">Residents</Title>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative w-full max-w-xs">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />

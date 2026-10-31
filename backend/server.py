@@ -3,6 +3,7 @@ import base64
 import hashlib
 import html
 import io
+import ipaddress
 import json
 import logging
 import os
@@ -18,7 +19,7 @@ from urllib.parse import urlencode
 
 import httpx
 from dotenv import load_dotenv
-from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
+from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from PIL import Image, ImageOps
@@ -142,9 +143,26 @@ def public_base(request: Request) -> str:
     return f"{proto}://{host}"
 
 
+# Cloudflare's edges sit in front of the load balancer; their hops are never the visitor.
+PROXY_NETS = [ipaddress.ip_network(n) for n in (
+    "173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22", "141.101.64.0/18", "108.162.192.0/18",
+    "190.93.240.0/20", "188.114.96.0/20", "197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
+    "104.24.0.0/14", "172.64.0.0/13", "131.0.72.0/22", "2400:cb00::/32", "2606:4700::/32", "2803:f800::/32",
+    "2405:b500::/32", "2405:8100::/32", "2a06:98c0::/29", "2c0f:f248::/32")]
+
+
 def client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for")
-    return fwd.split(",")[0].strip() if fwd else (request.client.host if request.client else "unknown")
+    """The visitor's address: the rightmost X-Forwarded-For hop that isn't ours. Hops on the left are whatever the
+    caller sent, so they're never trusted; the last hop is the load balancer itself, then Cloudflare's edge."""
+    hops = [h.strip() for h in (request.headers.get("x-forwarded-for") or "").split(",") if h.strip()]
+    for h in reversed(hops[:-1]):
+        try:
+            ip = ipaddress.ip_address(h)
+        except ValueError:
+            continue
+        if not ip.is_private and not any(ip in n for n in PROXY_NETS):
+            return h
+    return hops[0] if hops else (request.client.host if request.client else "unknown")
 
 
 def clean_handle(raw: str) -> str:
@@ -2139,6 +2157,9 @@ async def require_admin(request: Request):
     await check_admin_key(request, request.headers.get("x-admin-key", ""))
 
 
+ADMIN = Depends(require_admin)
+
+
 class AdminLogin(BaseModel):
     password: str = Field(max_length=200)
 
@@ -2163,15 +2184,13 @@ async def admin_logout(request: Request):
     return resp
 
 
-@api.get("/admin/me")
+@api.get("/admin/me", dependencies=[ADMIN])
 async def admin_me(request: Request):
-    await require_admin(request)
     return {"ok": True}
 
 
-@api.post("/admin/check")
+@api.post("/admin/check", dependencies=[ADMIN])
 async def admin_check(request: Request):
-    await require_admin(request)
     return {"ok": True}
 
 
@@ -2204,15 +2223,13 @@ async def limits_out() -> dict:
             "floors": await db.residents.count_documents({"hidden": False, "lv": {"$gte": 1}})}
 
 
-@api.get("/admin/settings")
+@api.get("/admin/settings", dependencies=[ADMIN])
 async def admin_settings(request: Request):
-    await require_admin(request)
     return await limits_out()
 
 
-@api.put("/admin/settings")
+@api.put("/admin/settings", dependencies=[ADMIN])
 async def admin_save_settings(body: LimitsBody, request: Request):
-    await require_admin(request)
     await db.meta.update_one({"_id": "settings"}, {"$set": body.model_dump()}, upsert=True)
     await load_settings()
     await bump()
@@ -2267,15 +2284,13 @@ async def billboard_image(slot: str):
     return Response(content=path.read_bytes(), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=604800"})
 
 
-@api.get("/admin/billboards")
+@api.get("/admin/billboards", dependencies=[ADMIN])
 async def admin_billboards(request: Request):
-    await require_admin(request)
     return {"billboards": await all_billboards()}
 
 
-@api.put("/admin/billboards/{slot}")
+@api.put("/admin/billboards/{slot}", dependencies=[ADMIN])
 async def admin_save_billboard(slot: str, body: BillboardBody, request: Request):
-    await require_admin(request)
     link = body.link.strip()
     if link and not re.match(r"^https?://[^\s]+$", link):
         raise HTTPException(400, "The link must start with http:// or https://")
@@ -2285,9 +2300,8 @@ async def admin_save_billboard(slot: str, body: BillboardBody, request: Request)
     return billboard_out(slot, await db.billboards.find_one({"slot": slot}, {"_id": 0}))
 
 
-@api.post("/admin/billboards/{slot}/image")
+@api.post("/admin/billboards/{slot}/image", dependencies=[ADMIN])
 async def admin_billboard_image(slot: str, request: Request, file: UploadFile = File(...)):
-    await require_admin(request)
     billboard_slot(slot)
     raw = await file.read(BILLBOARD_MAX_BYTES + 1)
     if len(raw) > BILLBOARD_MAX_BYTES:
@@ -2304,14 +2318,13 @@ async def admin_billboard_image(slot: str, request: Request, file: UploadFile = 
     path = await storage.put(f"billboards/{slot}-{v}.jpg", data)
     (CARD_DIR / f"bb-{slot}-{v}.jpg").write_bytes(data)
     await db.billboards.update_one({"slot": slot}, {"$set": {"image": path, "v": v, "updated_at": now_iso()},
-                                                     "$setOnInsert": {"caption": "", "link": "", "enabled": True}}, upsert=True)
+                                                     "$setOnInsert": {"caption": "", "link": "", "enabled": False}}, upsert=True)
     await bump()
     return billboard_out(slot, await db.billboards.find_one({"slot": slot}, {"_id": 0}))
 
 
-@api.delete("/admin/billboards/{slot}/image")
+@api.delete("/admin/billboards/{slot}/image", dependencies=[ADMIN])
 async def admin_clear_billboard(slot: str, request: Request):
-    await require_admin(request)
     await db.billboards.update_one({"slot": billboard_slot(slot)}, {"$unset": {"image": "", "v": ""}, "$set": {"updated_at": now_iso()}})
     await bump()
     return billboard_out(slot, await db.billboards.find_one({"slot": slot}, {"_id": 0}) or {})
@@ -2344,9 +2357,8 @@ async def admin_resident(handle: str) -> dict:
     return d
 
 
-@api.get("/admin/residents")
+@api.get("/admin/residents", dependencies=[ADMIN])
 async def admin_residents(request: Request, q: str = "", hidden: bool = False):
-    await require_admin(request)
     filt = {"hidden": True} if hidden else {}
     q = q.strip().lstrip("@").lower()[:15]
     if q:
@@ -2359,9 +2371,8 @@ class PointsBody(BaseModel):
     points: int = Field(ge=0, le=5000)
 
 
-@api.post("/admin/residents/{handle}/points")
+@api.post("/admin/residents/{handle}/points", dependencies=[ADMIN])
 async def admin_points(handle: str, body: PointsBody, request: Request):
-    await require_admin(request)
     d = await admin_resident(handle)
     if d["status"] != "finished":
         raise HTTPException(400, "Only people who moved in have points.")
@@ -2374,10 +2385,9 @@ class MoveBody(BaseModel):
     to: Literal["uptown", "docks"]
 
 
-@api.post("/admin/residents/{handle}/move")
+@api.post("/admin/residents/{handle}/move", dependencies=[ADMIN])
 async def admin_move(handle: str, body: MoveBody, request: Request):
     """Uptown lifts their points to the uptown line if they're below it; the Docks drops them just under it."""
-    await require_admin(request)
     d = await admin_resident(handle)
     if d["status"] != "finished" or d.get("hidden"):
         raise HTTPException(400, "Only visible people who moved in can move.")
@@ -2414,15 +2424,13 @@ def admin_paper_out(p: Optional[dict]) -> dict:
             "publishing": PAPER_LOCK.locked()}
 
 
-@api.get("/admin/paper")
+@api.get("/admin/paper", dependencies=[ADMIN])
 async def admin_paper(request: Request):
-    await require_admin(request)
     return admin_paper_out(await db.papers.find_one({}, {"_id": 0}, sort=[("issue", -1)]))
 
 
-@api.put("/admin/paper")
+@api.put("/admin/paper", dependencies=[ADMIN])
 async def admin_save_paper(body: PaperBody, request: Request):
-    await require_admin(request)
     p = await db.papers.find_one({}, {"_id": 0}, sort=[("issue", -1)])
     if not p:
         raise HTTPException(404, "No paper yet. Publish one first.")
@@ -2434,9 +2442,8 @@ async def admin_save_paper(body: PaperBody, request: Request):
     return admin_paper_out(await db.papers.find_one({"issue": p["issue"]}, {"_id": 0}))
 
 
-@api.post("/admin/paper/publish")
+@api.post("/admin/paper/publish", dependencies=[ADMIN])
 async def admin_publish_paper(request: Request):
-    await require_admin(request)
     if PAPER_LOCK.locked():
         raise HTTPException(409, "A paper is already being written.")
     asyncio.create_task(publish_paper(force=True))
@@ -2449,9 +2456,8 @@ async def track_share(kind: str, h: str, request: Request):
     await db.share_visits.insert_one({"kind": kind, "h": h, "bot": bot, "at": now_iso()})
 
 
-@api.get("/admin/stats")
+@api.get("/admin/stats", dependencies=[ADMIN])
 async def admin_stats(request: Request):
-    await require_admin(request)
     day, week = (now() - timedelta(days=1)).isoformat(), (now() - timedelta(days=7)).isoformat()
     R, live = db.residents, {"hidden": False}
     lit = {**live, "status": "finished"}
@@ -2478,9 +2484,8 @@ async def admin_stats(request: Request):
     }
 
 
-@api.post("/admin/residents/{handle}/hide")
+@api.post("/admin/residents/{handle}/hide", dependencies=[ADMIN])
 async def admin_hide(handle: str, body: HideRequest, request: Request):
-    await require_admin(request)
     k = normalize_handle(handle).lower()
     res = await db.residents.update_one({"k": k}, {"$set": {"hidden": body.hidden}})
     if not res.matched_count:
@@ -2620,3 +2625,4 @@ async def migrate_signed_in_only():
 @app.on_event("shutdown")
 async def shutdown_db_client():
     client.close()
+

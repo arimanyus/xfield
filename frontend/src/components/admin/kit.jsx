@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 // Small building blocks shared by the admin panels.
 export const Panel = ({ children, className = "", testId }) => (
   <section className={`rounded-2xl border border-slate-200 bg-white p-5 shadow-sm ${className}`} data-testid={testId}>{children}</section>
@@ -29,9 +31,14 @@ export const Stat = ({ label, value, sub, testId }) => (
   </div>
 );
 
-export const Avatar = ({ src, alt, size = 28 }) => (
-  <img src={src} alt={alt} className="shrink-0 rounded-full bg-sky-light object-cover" style={{ width: size, height: size }} />
-);
+export function Avatar({ src, alt, size = 28 }) {
+  const [broken, setBroken] = useState(false);
+  if (!src || broken) {
+    return <span className="grid shrink-0 place-items-center rounded-full bg-slate-200 text-xs font-bold uppercase text-slate-600"
+      style={{ width: size, height: size }}>{(alt || "?").replace("@", "")[0]}</span>;
+  }
+  return <img src={src} alt={alt} onError={() => setBroken(true)} className="shrink-0 rounded-full bg-sky-light object-cover" style={{ width: size, height: size }} />;
+}
 
 export const ago = (iso) => {
   if (!iso) return "";

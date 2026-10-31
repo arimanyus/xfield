@@ -8,7 +8,7 @@ const SIZES = { huge: { w: 6, h: 3.375, lift: 2.8 }, big: { w: 2.4, h: 1.35, lif
 const STEEL = "#475569";
 
 // The admin's picture, cropped to fill the screen, with the caption on a dark band along the bottom.
-function paint(canvas, img, caption) {
+function paint(canvas, img, caption, big) {
   const ctx = canvas.getContext("2d"), { width: W, height: H } = canvas;
   ctx.fillStyle = "#0F172A";
   ctx.fillRect(0, 0, W, H);
@@ -17,10 +17,10 @@ function paint(canvas, img, caption) {
     ctx.drawImage(img, (W - w) / 2, (H - h) / 2, w, h);
   }
   if (!caption) return;
-  const band = H * 0.17;
+  const band = H * (big ? 0.17 : 0.24);
   ctx.fillStyle = "rgba(15,23,42,0.82)";
   ctx.fillRect(0, H - band, W, band);
-  let size = band * 0.52;
+  let size = band * 0.6;
   ctx.font = `700 ${size}px ${FONT}`;
   while (ctx.measureText(caption).width > W * 0.92 && size > 10) ctx.font = `700 ${(size -= 2)}px ${FONT}`;
   ctx.fillStyle = "#FFFFFF";
@@ -28,7 +28,7 @@ function paint(canvas, img, caption) {
   ctx.fillText(caption, W * 0.04, H - band / 2);
 }
 
-function useScreen(url, caption, aspect) {
+function useScreen(url, caption, aspect, big) {
   const screen = useMemo(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 1600;
@@ -42,12 +42,12 @@ function useScreen(url, caption, aspect) {
     let live = true;
     const img = new Image();
     img.crossOrigin = "anonymous";
-    img.onload = () => { if (live) { paint(screen.canvas, img, caption); screen.map.needsUpdate = true; } };
+    img.onload = () => { if (live) { paint(screen.canvas, img, caption, big); screen.map.needsUpdate = true; } };
     img.src = `${ORIGIN}${url}`;
-    paint(screen.canvas, null, caption);
+    paint(screen.canvas, null, caption, big);
     screen.map.needsUpdate = true;
     return () => { live = false; };
-  }, [url, caption, screen]);
+  }, [url, caption, screen, big]);
   useEffect(() => () => screen.map.dispose(), [screen]);
   return screen.map;
 }
@@ -55,7 +55,7 @@ function useScreen(url, caption, aspect) {
 // One billboard on steel legs with a catwalk and lamps, turned to face the camera. Clicking it opens its link.
 function Billboard({ board }) {
   const { w, h, lift } = SIZES[board.size] || SIZES.big;
-  const map = useScreen(board.image_url, board.caption, w / h);
+  const map = useScreen(board.image_url, board.caption, w / h, board.size === "huge");
   const legX = w * 0.3, top = lift + h, post = board.size === "huge" ? 0.16 : 0.1;
   const hover = (on) => { if (board.link) document.body.style.cursor = on ? "pointer" : ""; };
   const open = (e) => {

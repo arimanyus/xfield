@@ -61,3 +61,12 @@
 - city3d/layout.js: every house (lots and Docks) now scales to fill its lot (LOT = 0.98 of a tile, was shrink-only to 0.86, so most homes grew ~25%); stacked floors, their spacing and roof caps scale with the house under them.
 - Verified by screenshots (uptown, Docks towers, floors aligned). Then published to live.
 - Note: Docks blocks keep gaps where residents moved uptown (slots aren't compacted) — possible follow-up.
+
+## 2026-10-31: 2x2 house blocks, admin panel, billboards
+- House lots now sit in 2x2 blocks (backend town.py BLOCK=2, HOMES_PER_BLOCK=4, CITY_MARGIN=4; CIVIC_BLOCKS range(-4,6) keeps the same 20x20 civic lots). Frontend layout.js: civic core, downtown ring and Docks use "big blocks" (2x2 house blocks, 5 tiles, no inner streets; BIG/BIG_W/SIDE/bigLot); 16 shacks per Docks block; land widened to cover the Docks strip. Existing districts re-pack into the new blocks on the next refresh.
+- Admin panel at /admin (password = ADMIN_KEY; POST /api/admin/login -> httpOnly xf_admin cookie, 12h; X-Admin-Key header still accepted). Tabs: Live stats (lit/dark/hidden, sign-ups, votes, share clicks + X previews, ground, uptown, latest Ledger, top 5, tallest 5, newest 8; refresh 15s), Billboards, Residents (search, hidden only, set points, move uptown/Docks, hide/unhide), The Ledger (edit headline/stories, publish fresh now), City limits (ground spots + move-ins/hour stored in db.meta settings, reloaded every 30s).
+- Billboards: 6 fixed slots (hero huge downtown north of City Hall, west, east, corner, ledger, docks yard) — image (object storage, browser-shrunk, re-encoded <=2048px) + caption + link; rendered by city3d/Billboard.jsx facing the camera; click opens link. First upload to a never-saved slot stays off. Hero is switched on with no picture, ready for the owner's Sydney Sweeney image.
+- Security: client_ip() now takes the rightmost X-Forwarded-For hop that isn't the load balancer or Cloudflare (was spoofable); admin routes use dependencies=[ADMIN] so unauthenticated calls get 401 before body validation.
+- Share-link tracking: /api/s, /api/t, /api/p log db.share_visits (bot = X preview).
+- Tested: iteration_14 (backend 39/39 + regressions, frontend all admin flows, 3D blocks + billboards). Fixes after it verified by curl/pytest/screenshot.
+- Not yet published to live.

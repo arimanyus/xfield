@@ -1,0 +1,45 @@
+{
+  "summary": "Tested the admin panel backend (auth, billboards, residents, paper, city limits, stats, share tracking) and frontend (/admin, all 5 tabs) plus the 3D city (2x2 house blocks, hero, east and docks billboards, clicking billboards). Backend: 39/39 new pytest tests pass, plus 23/23 existing test_town + test_floors_towers tests. Publishing the paper works: it returned accepted, a second call got 409, and issue No. 4 appeared within about 60s. Frontend: every admin flow works end to end. In 3D, house lots sit in 2x2 blocks with streets around each one; the civic core, downtown ring and Docks keep their big blocks. The huge hero billboard stands in the park between The Timeline and The Ledger, faces the camera and shows its caption band. Clicking the hero opened https://example.com in a new tab and clicking the east board opened its link. The east and docks boards appeared after being switched on and disappeared once switched off with the picture removed. Stacked floors still show (?at=arjun_reads lists 10 floors, ?at=theo_makes lists 9). One security issue: the wrong-password lockout can be bypassed by sending a fake X-Forwarded-For header. Everything changed during testing was restored.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/admin/login (check_admin_key -> client_ip)", "issue": "The brute-force lockout can be bypassed. client_ip() trusts the FIRST X-Forwarded-For value, which the caller controls. Reproduced: 5 wrong tries with XFF 203.0.113.77 -> 403 x5, then 429; the same request with XFF 203.0.113.78 -> 403 again (not locked). An attacker can rotate the header and keep guessing the admin password. The same spoofing lets anyone lock out the real admin's IP.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "POST /api/admin/billboards/{slot}/image", "issue": "The first upload to a slot that has no saved record turns it on ($setOnInsert enabled:true). The picture goes live in the city before the admin has set a caption or link. A slot that was saved once before stays off after an upload. This is inconsistent; either default to off or tell the admin."},
+      {"endpoint": "admin endpoints with a body (points/move/paper PUT/settings PUT)", "issue": "Unauthenticated calls with an invalid body get 422 instead of 401, because FastAPI checks the body before require_admin runs. With a valid body they correctly get 401. Minor, but it reveals the expected request shape to anonymous callers."},
+      {"endpoint": "POST /api/admin/residents/{h}/points", "issue": "Setting points does not move the resident. An uptown resident set to 0 points stays uptown, and a Docks resident set to 2000 stays on the Docks until the next reshuffle. This may be intended, but the UI does not say so."},
+      {"endpoint": "CORS", "issue": "CORS_ORIGINS='*' with allow_credentials=True: Starlette echoes back any origin on credentialed requests. The SameSite=Lax admin cookie limits the risk; still, set explicit origins."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "LimitsPanel", "issue": "GET /admin/settings fires twice when the tab mounts (likely the StrictMode double effect). If the admin types before the second response arrives, take() overwrites the typed value and Save sends the old number. Seen once: a typed '5' was saved as 200 and showed a success toast. Typing after the load settles works, and the 422 error toast shows. Guard take() so it does not overwrite fields the user has edited, or load only once.", "selector": "[data-testid='limits-capacity-input']", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "3D city, regular billboards", "issues": ["The caption band on regular ('big') billboards is almost unreadable at the default zoom (the 'TEST east board' text is tiny). Consider a bigger caption font for size=big.", "The docks crane-yard board stands at the edge of the last Docks block, close to the shacks. It looked fine, but its legs may touch the shacks next to it; worth a close-up check."]},
+      {"screen": "Admin Live stats", "issues": ["Residents with no avatar (e.g. @lena_writes, @loverboiWrites) show an empty light-blue circle in the Top/Tallest lists. Add an initial-letter fallback."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_admin_panel.py", "/app/test_reports/pytest/pytest_admin.xml", "/app/backend/tests/test_town.py", "/app/backend/tests/test_floors_towers.py"],
+  "action_items": [
+    "HIGH: fix client_ip() so X-Forwarded-For cannot be spoofed. Use the hop added by the trusted ingress (the rightmost XFF value or X-Real-IP / CF-Connecting-IP) at least for the admin lockout and the move-in rate limit.",
+    "Decide the auto-enable-on-first-upload behaviour for billboards: default to off, or tell the admin that the upload is now live.",
+    "LimitsPanel: stop the double GET from overwriting the admin's typed values.",
+    "Optional: run the admin check before body validation (Depends(require_admin) on the routes), use a bigger caption font on regular billboards, add an avatar fallback in the stats lists."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 2600+ lines. The admin section (about 380 lines) should move into its own router module (admin.py).",
+    "check_admin_key counts wrong attempts per IP only. Once XFF is fixed, also consider a global cap so a distributed brute force is limited.",
+    "billboard_image writes cached files to CARD_DIR and never removes old versions (bb-{slot}-{v}.jpg). Clean up on replace or clear.",
+    "PAPER_LOCK is in-process. 409 only holds with a single uvicorn worker (currently --workers 1)."
+  ],
+  "updated_files": ["/app/backend/tests/test_admin_panel.py"],
+  "success_rate": {"backend": "100% functional (39/39 + 23/23 regression); 1 HIGH security issue", "frontend": "100% of tested flows passed; 1 low-priority race"},
+  "test_credentials": "Admin password = ADMIN_KEY from /app/memory/test_credentials.md (works for both the /admin UI and the X-Admin-Key header).",
+  "seed_data_creation": "None. All changes were restored: june_plays (1028 pts, Docks) and omar_writes (1030 pts, uptown) after the move tests; june_draws and june_plays unhidden; limits back to 200/30; paper No. 4 headline restored after edits (a fresh No. 4 was published by the publish test); east and docks slots off, captions/links cleared, pictures removed; only 'hero' is live.",
+  "retest_needed": true,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Run: cd /app/backend && REACT_APP_BACKEND_URL=... python -m pytest tests/test_admin_panel.py -n 0 (pytest.ini sets -n/xdist; use -n 0 because the tests share state). Each run makes 1 wrong-password attempt (plus 1 from the UI test); the limit is 5 per IP per 15 min. The XFF lockout-bypass check used fake IPs 203.0.113.77/78. Billboard click coordinates at 1920x1080 on the default view: hero about (1317,196), east about (1317,696).",
+  "rca of the issue": "Lockout bypass: client_ip() returns request.headers['x-forwarded-for'].split(',')[0], the left-most value, which the client supplies. The ingress appends the real IP to the right. Fix: take the right-most entry, or a header set only by the trusted proxy."
+}
