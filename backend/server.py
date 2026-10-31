@@ -14,7 +14,7 @@ import uuid
 from collections import Counter, defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Literal, Optional
+from typing import List, Literal, Optional
 from urllib.parse import urlencode
 
 import httpx
@@ -24,6 +24,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from motor.motor_asyncio import AsyncIOMotorClient
 from PIL import Image, ImageOps
 from pydantic import BaseModel, Field
+from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 from starlette.middleware.cors import CORSMiddleware
 
@@ -2288,42 +2289,76 @@ async def cron_refresh(request: Request):
 CHAT_PAGE = 50
 CHAT_PER_MINUTE = 8
 CHAT_FIELDS = {"_id": 0, "k": 1, "h": 1, "avatar_url": 1, "dock": 1, "hidden": 1}
+REACTIONS = ("fire", "lol", "love", "eyes", "gem")
+MENTION = re.compile(r"@(\w{1,15})")
+OVERLAP = timedelta(seconds=5)
 
 
 class ChatBody(BaseModel):
     text: str = Field(min_length=1, max_length=280)
 
 
-def chat_out(m: dict, people: dict, seats: dict) -> dict:
+class ReactBody(BaseModel):
+    r: str
+
+
+class SeenBody(BaseModel):
+    ids: List[str] = Field(max_length=50)
+
+
+def chat_out(m: dict, people: dict, seats: dict, viewer: Optional[str]) -> dict:
     d = people.get(m["k"]) or {}
     where = "mansion" if m["k"] in seats else "docks" if d.get("dock") is not None else "uptown"
+    got = m.get("reactions") or {}
     return {"id": m["id"], "k": m["k"], "h": d.get("h", m["h"]), "a": d.get("avatar_url", m.get("a")), "text": m["text"], "at": m["at"],
-            "where": where, "rank": seats.get(m["k"])}
+            "where": where, "rank": seats.get(m["k"]),
+            "reactions": [{"r": r, "n": len(got[r]), "mine": viewer in got[r]} for r in REACTIONS if got.get(r)]}
 
 
-async def chat_rows(msgs: list) -> list:
+async def chat_rows(msgs: list, viewer: Optional[str] = None) -> list:
     """Messages with their writer's face and where they live now; anyone hidden from the city drops out of the chat."""
     people = {d["k"]: d async for d in db.residents.find({"k": {"$in": list({m["k"] for m in msgs})}}, CHAT_FIELDS)}
     seats = {h["k"]: h["rank"] for h in ((await current_row()) or {}).get("holders") or []}
-    return [chat_out(m, people, seats) for m in msgs if m["k"] in people and not people[m["k"]].get("hidden")]
+    return [chat_out(m, people, seats, viewer) for m in msgs if m["k"] in people and not people[m["k"]].get("hidden")]
+
+
+async def unseen_mentions(k: str) -> list:
+    docs = await db.mentions.find({"to": k, "seen": False}, {"_id": 0}).sort("at", -1).to_list(20)
+    return [{f: d[f] for f in ("id", "msg_id", "h", "a", "text", "at")} for d in docs[::-1]]
 
 
 @api.get("/chat")
 async def get_chat(request: Request, after: Optional[str] = None):
-    """The city chat, open to everyone: the last 50 messages, or only those since `after`, plus any removed since then."""
-    live = {"deleted": {"$ne": True}}
-    if after:
-        msgs = await db.chat.find({**live, "at": {"$gt": after}}, {"_id": 0}).sort("at", 1).to_list(100)
-        removed = [m["id"] async for m in db.chat.find({"deleted": True, "deleted_at": {"$gt": after}}, {"_id": 0, "id": 1}).limit(100)]
-    else:
-        msgs = (await db.chat.find(live, {"_id": 0}).sort("at", -1).to_list(CHAT_PAGE))[::-1]
-        removed = []
+    """The city chat, open to everyone: the last 50 messages, or what was posted, reacted to or removed since the
+    `cursor` of the last call. Signed-in residents also get the mentions they haven't seen yet."""
+    cursor = now_iso()
     user = await current_user(request)
+    viewer = user["k"] if user else None
+    if after:
+        try:
+            t = (datetime.fromisoformat(after) - OVERLAP).isoformat()
+        except ValueError:
+            raise HTTPException(400, "Bad cursor.")
+        msgs = await db.chat.find({"deleted": {"$ne": True}, "$or": [{"at": {"$gt": t}}, {"updated_at": {"$gt": t}}]},
+                                  {"_id": 0}).sort("at", 1).to_list(100)
+        removed = [m["id"] async for m in db.chat.find({"deleted": True, "deleted_at": {"$gt": t}}, {"_id": 0, "id": 1}).limit(100)]
+    else:
+        msgs = (await db.chat.find({"deleted": {"$ne": True}}, {"_id": 0}).sort("at", -1).to_list(CHAT_PAGE))[::-1]
+        removed = []
     me = None
     if user:
-        doc = await db.residents.find_one({"k": user["k"]}, {"_id": 0, "chat_muted": 1})
-        me = {"muted": bool((doc or {}).get("chat_muted"))}
-    return {"messages": await chat_rows(msgs), "removed": removed, "me": me}
+        doc = await db.residents.find_one({"k": viewer}, {"_id": 0, "chat_muted": 1})
+        me = {"muted": bool((doc or {}).get("chat_muted")), "mentions": await unseen_mentions(viewer)}
+    return {"messages": await chat_rows(msgs, viewer), "removed": removed, "me": me, "cursor": cursor}
+
+
+async def note_mentions(m: dict):
+    """Everyone @named in a message (up to five, never the writer) gets an alert waiting for them."""
+    named = list(dict.fromkeys(h.lower() for h in MENTION.findall(m["text"])))[:5]
+    to = [d["k"] async for d in db.residents.find({"k": {"$in": named, "$ne": m["k"]}, "hidden": False}, {"_id": 0, "k": 1})]
+    if to:
+        await db.mentions.insert_many([{"id": uuid.uuid4().hex, "to": k, "msg_id": m["id"], "from": m["k"], "h": m["h"], "a": m.get("a"),
+                                        "text": m["text"], "at": m["at"], "seen": False} for k in to])
 
 
 @api.post("/chat")
@@ -2340,7 +2375,34 @@ async def post_chat(body: ChatBody, request: Request):
         raise HTTPException(429, "Slow down a little, then try again.")
     m = {"id": uuid.uuid4().hex, "k": doc["k"], "h": doc["h"], "a": doc.get("avatar_url"), "text": text, "at": now_iso()}
     await db.chat.insert_one(dict(m))
-    return (await chat_rows([m]))[0]
+    await note_mentions(m)
+    return (await chat_rows([m], doc["k"]))[0]
+
+
+@api.post("/chat/{msg_id}/react")
+async def react_chat(msg_id: str, body: ReactBody, request: Request):
+    """Tap a reaction to add yours; tap it again to take it back."""
+    doc = await require_citizen(request)
+    if doc.get("chat_muted"):
+        raise HTTPException(403, "You're muted in the city chat.")
+    if body.r not in REACTIONS:
+        raise HTTPException(400, "That reaction isn't on the list.")
+    m = await db.chat.find_one({"id": msg_id, "deleted": {"$ne": True}}, {"_id": 0})
+    if not m:
+        raise HTTPException(404, "That message is gone.")
+    field, had = f"reactions.{body.r}", doc["k"] in (m.get("reactions") or {}).get(body.r, [])
+    m = await db.chat.find_one_and_update({"id": msg_id}, {"$pull" if had else "$addToSet": {field: doc["k"]}, "$set": {"updated_at": now_iso()}},
+                                          projection={"_id": 0}, return_document=ReturnDocument.AFTER)
+    return (await chat_rows([m], doc["k"]))[0]
+
+
+@api.post("/chat/mentions/seen")
+async def seen_mentions(body: SeenBody, request: Request):
+    user = await current_user(request)
+    if not user:
+        raise HTTPException(401, "Sign in with X first.")
+    res = await db.mentions.update_many({"to": user["k"], "id": {"$in": body.ids}}, {"$set": {"seen": True}})
+    return {"seen": res.modified_count}
 
 
 # ---------- owner-only ----------
@@ -2657,6 +2719,7 @@ async def admin_delete_chat(msg_id: str, request: Request):
     res = await db.chat.update_one({"id": msg_id}, {"$set": {"deleted": True, "deleted_at": now_iso()}})
     if not res.matched_count:
         raise HTTPException(404, "No such message.")
+    await db.mentions.delete_many({"msg_id": msg_id})
     return {"id": msg_id, "deleted": True}
 
 
@@ -2796,6 +2859,9 @@ async def startup():
     await db.chat.create_index("id", unique=True)
     await db.chat.create_index("at")
     await db.chat.create_index([("k", 1), ("at", -1)])
+    await db.chat.create_index("updated_at")
+    await db.mentions.create_index([("to", 1), ("seen", 1), ("at", -1)])
+    await db.mentions.create_index("msg_id")
     await db.cron_runs.create_index("run_id", unique=True)
     await db.cron_runs.create_index("ts", expireAfterSeconds=30 * 86400)
     await db.posts.create_index([("nb", 1), ("at", -1)])

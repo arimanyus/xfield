@@ -9,6 +9,7 @@ import { NextMove } from "@/city3d/NextMove";
 import { PeoplePicker } from "@/city3d/PeoplePicker";
 import { Tour } from "@/city3d/Tour";
 import { Chat } from "@/city3d/Chat";
+import { Toaster } from "@/components/ui/sonner";
 import { AwayCard, CARD, Face, HouseCard, Minimap, PlaceCard, TickerBar, VoteCard, isLight } from "@/city3d/Hud";
 
 const TITLE = "XField: your city on X, lit up by your friends";
@@ -292,6 +293,7 @@ export default function CityPage() {
         <Minimap city={city} me={city.mine} onPick={setFocus} />
       </div>
       {calm && <Chat user={auth.user} me={me} onSignIn={() => auth.login(window.location.pathname + window.location.search)} onVisit={visit} />}
+      <Toaster position="top-center" />
       <div className="absolute left-4 bottom-12 flex flex-col gap-2 items-start">
         {place && !pickedNow && <PlaceCard id={place} town={town} city={city} me={me} onVisit={visit} onClose={() => setPlace(null)} />}
         {pickedNow && (
