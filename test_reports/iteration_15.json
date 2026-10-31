@@ -1,0 +1,23 @@
+{
+  "iteration": 15,
+  "feature": "A Fuller City Phase 1: Millionaires' Row mansions, downtown fill, grittier Docks",
+  "backend": {
+    "tests": "/app/backend/tests/test_mansions.py",
+    "passed": 12,
+    "failed": 0,
+    "covered": ["town mansions + next_handover", "admin mansions view + hand-out (401 without key)", "cron auth/body/duplicate/skip-this-week",
+                "resident mansion payload", "mansion.jpg 1200x630 / 404", "/api/m bot OG + human 302 + non-holder redirect", "hide -> reseat",
+                "ticker event", "share regression"]
+  },
+  "frontend": {
+    "passed": ["house card mansion block (holder: preview + Share my mansion; visitor: line only)", "Row place card before/after handover",
+               "City Hall mansion rule", "ticker handover line", "3D: gold/silver mansions + #N THIS WEEK signs, HANDOVER MONDAY signs before",
+               "3D: yards between Docks and city, Docks haze/fence/gate, Financial District, public buildings, plazas, sites, outskirts landmarks",
+               "admin Mansions tab: empty state, next in line, confirm dialog cancel/confirm, toast, holders"],
+    "not_confirmed": ["smoke puffs and bulbs too small to see at test zoom"]
+  },
+  "fixes_after": ["/api/auth/me no longer returns session expires_at/test fields",
+                  "test_mansions.py now resets preview to the before-first-handover state on teardown",
+                  "test_admin_panel.py hero assertion updated: a switched-on hero with no picture stays off the city"],
+  "state_left": "preview in the before-first-handover state (no mansions docs/events), nobody hidden, fake lena_writes session deleted"
+}

@@ -70,3 +70,17 @@
 - Share-link tracking: /api/s, /api/t, /api/p log db.share_visits (bot = X preview).
 - Tested: iteration_14 (backend 39/39 + regressions, frontend all admin flows, 3D blocks + billboards). Fixes after it verified by curl/pytest/screenshot.
 - Not yet published to live.
+
+## 2026-10-31: A Fuller City Phase 1 (Millionaires' Row, downtown fill, grittier Docks)
+- City (city3d/layout.js + fill.js + rng.js, models in modern.js): Millionaires' Row on the 3 front downtown plots (#1/#2 estates, #3-#10 villas; gold/silver trim, "#N THIS WEEK" stand signs, holder's face); before the first handover the empty mansions show "HANDOVER MONDAY" signs (after: "FOR SALE" for empty seats). Financial District towers (2 back plots), Library/Museum + Cinema/Grand Hotel (2 west plots), plazas with food trucks/kiosks round the billboard plots, shops/cafe/pharmacy/gym/laundromat/playground/garden on empty lots, fenced building sites with @handle on lots of people still on the Docks, outskirts landmarks (Stadium, Amusement Park, University, Central Station + train, Airport).
+- Docks: mud, chain-link fence + DOCKS gate, burning barrels, bulb poles; a row of warehouse yards always sits between the Docks and the city. City3D.jsx renders smoke puffs, low grey haze and bare bulbs (Smoke/Haze/Bulbs, instanced).
+- Mansions backend (mansions.py rules, server.py): db.mansions one doc per week; GET /api/town has mansions + next_handover; resident payload `mansion` with share text/url/card; /api/residents/{h}/mansion.jpg (mansion_card.py) and /api/m/{h} share page (OG for bots, 302 + invite cookie for humans). Holders who leave/are hidden are reseated. Cron mansion-handover Mon 09:00 UTC -> /api/cron/mansions (skips if this week's row was already handed out, so a manual hand-out mid-week does not block Monday), then prints the Ledger with a Row story.
+- UI: house card mansion block (holder sees card preview + "Share my mansion"), Row place card (label "Millionaires' Row" or tap an empty mansion), hover "Mansion #N", City Hall rule, ticker line.
+- Admin: Mansions tab (holders with points then/now, next in line, next handover, "Hand out now" with confirm). User chose preview + hand-out button.
+- Preview left in the before-first-handover state. /api/auth/me now returns only k/h/name/avatar_url/nb.
+- Tested: iteration_15 (backend 12/12 tests/test_mansions.py, frontend flows + 3D checks). Not published to live yet.
+
+## Backlog (Fuller City)
+- P1 Phase 2: mansion history, countdown to the next handover, clickable public buildings/landmarks with info cards, day/night traffic in the outskirts, admin renames skyscrapers / sells signs.
+- P2 Phase 3: mansion customisation, player-funded public buildings, ferry between the Docks and Downtown.
+- P1 Progressive 3D loading (cold load is slow; ~40 s in headless Chrome).

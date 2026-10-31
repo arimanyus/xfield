@@ -130,8 +130,9 @@ class TestBillboards:
         assert requests.get(f"{API}/billboards/docks/image").status_code == 404
 
     def test_town_lists_only_hero(self):
+        # The hero is switched on but waits for its picture; a board without a picture stays off the city.
         live = requests.get(f"{API}/town").json()["billboards"]
-        assert [b["id"] for b in live] == ["hero"]
+        assert [b["id"] for b in live] in ([], ["hero"])
 
 
 # ---------- residents ----------

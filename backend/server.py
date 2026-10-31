@@ -1149,7 +1149,7 @@ async def auth_me(request: Request):
     user = await current_user(request)
     if user:
         doc = await db.residents.find_one({"k": user["k"], "hidden": False}, {"_id": 0, "nb": 1})
-        user = {**user, "nb": (doc or {}).get("nb")}
+        user = {**{f: user.get(f) for f in ("k", "h", "name", "avatar_url")}, "nb": (doc or {}).get("nb")}
     return {"enabled": AUTH_ON or DEV_MODE, "user": user}
 
 
