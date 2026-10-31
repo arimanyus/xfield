@@ -312,7 +312,7 @@ export default function CityPage() {
             <div>
               <div className="text-sm font-bold">@{h.owner.h}</div>
               <div className="text-[11px] text-ink/70">
-                {h.owner.s === "f" ? (h.owner.u ? "🏙 Uptown" : "⚓ Docks") : "🌑 dark"} · 🏢 {hs?.stack.length > 1
+                {h.mansion ? `💎 Mansion #${h.mansion}` : h.owner.s === "f" ? (h.owner.u ? "🏙 Uptown" : "⚓ Docks") : "🌑 dark"} · 🏢 {hs?.stack.length > 1
                   ? (hs.level ? `floor ${hs.level + 1} of @${hs.stack[0].h}'s` : `${hs.stack.length} live here`)
                   : `${h.owner.f} ${h.owner.f === 1 ? "floor" : "floors"}`}
                 {h.owner.s === "f" && ` · ${h.owner.e} pts`}

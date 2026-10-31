@@ -31,11 +31,13 @@ ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
 import arena  # noqa: E402
+import mansions  # noqa: E402
 import storage  # noqa: E402
 import stacks  # noqa: E402
 import town  # noqa: E402
 from census import build_census, snapshot_of  # noqa: E402
 from census_card import render_census  # noqa: E402
+from mansion_card import render_mansion  # noqa: E402
 from paper import write_paper  # noqa: E402
 from paper_card import render_paper  # noqa: E402
 from safety import contains_blocked  # noqa: E402
@@ -93,7 +95,7 @@ READ_TTL = timedelta(days=7)
 REFRESH_AFTER = timedelta(hours=20)
 REFRESH_GAP_S = 5
 TIE_FADE = 0.95
-PAPER_EVERY = timedelta(hours=20)
+PAPER_EVERY = timedelta(hours=16)
 AWAY_AFTER = timedelta(days=7)
 STALE_RESERVED = timedelta(days=14)
 ACTIVE_JOB = ("queued", "reading", "traffic", "building")
@@ -119,6 +121,7 @@ CENSUS_LOCK = asyncio.Lock()
 PAPER_LOCK = asyncio.Lock()
 REFRESH_LOCK = asyncio.Lock()
 ARENA_LOCK = asyncio.Lock()
+MANSION_LOCK = asyncio.Lock()
 AVATAR_CACHE: dict = {}
 
 
@@ -721,7 +724,10 @@ async def get_town(v: Optional[int] = None):
     finished = sum(1 for r in residents if r["s"] == "f")
     floors = sum(1 for r in residents if r.get("lv"))
     biggest = max(nbs, key=lambda n: n.get("size", 0), default=None)
+    row = await current_row()
     return {"version": version, "residents": residents, "neighbourhoods": nbs, "ticker": events, "billboards": await live_billboards(),
+            "mansions": {"week": row["week"], "until": row["until"], "holders": [{"k": h["k"], "rank": h["rank"]} for h in row["holders"]]}
+            if row else None, "next_handover": mansions.next_handover(now()).isoformat(),
             "town_hall": {"bx": town.TOWN_HALL[0], "by": town.TOWN_HALL[1]},
             "bounds": town.city_bounds(await city_blocks()), "newest": newest(docs),
             "paper": await db.papers.find_one({}, {"_id": 0, "issue": 1}, sort=[("issue", -1)]),
@@ -952,6 +958,13 @@ async def resident(handle: str, request: Request):
            "ladder": await ladder_of(doc, is_me),
            "share": {"text": share_text(card), "url": f"{base}/api/s/{doc['h']}?v={v}", "tags": st["tags"], "moment": card["moment"]},
            "card_url": f"{base}/api/residents/{doc['h']}/card.jpg?v={v}"}
+    seat = mansions.seat_of(row := await current_row(), doc["k"])
+    if seat:
+        m = mansion_payload(doc, seat, row)
+        mv = card_hash(m)
+        out["mansion"] = {"rank": seat["rank"], "week": row["week"], "until": row["until"],
+                          "share": {"text": mansion_text(m), "url": f"{base}/api/m/{doc['h']}?v={mv}",
+                                    "card_url": f"{base}/api/residents/{doc['h']}/mansion.jpg?v={mv}"}}
     if tower:
         tv = card_hash(tower)
         out["tower_share"] = {"text": tower_text(tower), "url": f"{base}/api/t/{tower['h']}?v={tv}",
@@ -1047,6 +1060,41 @@ async def tower_share_page(handle: str, request: Request):
     title = html.escape(f"@{t['h']}'s building is {t['size']} floors tall")
     desc = html.escape(f"{rank} {where} in XField. Move in on top.")
     return og_page(title, desc, f"{base}/api/residents/{t['h']}/tower.jpg?v={card_hash(t)}", target)
+
+
+@api.get("/residents/{handle}/mansion.jpg")
+async def resident_mansion(handle: str, request: Request):
+    doc = await load_resident(handle)
+    row = await current_row()
+    seat = mansions.seat_of(row, doc["k"])
+    if not seat:
+        raise HTTPException(404, "No mansion this week.")
+    data = await mansion_bytes(doc, seat, row, public_base(request).split("://", 1)[-1])
+    return Response(content=data, media_type="image/jpeg", headers={"Cache-Control": "public, max-age=86400"})
+
+
+@api.get("/m/{handle}")
+async def mansion_share_page(handle: str, request: Request):
+    """A shared mansion: X shows its holder on Millionaires' Row, and newcomers who follow the link move in next to them."""
+    base = public_base(request)
+    doc = await db.residents.find_one({"k": normalize_handle(handle).lower(), "hidden": False}, {"_id": 0})
+    if not doc:
+        return RedirectResponse(f"{base}/", status_code=302)
+    row = await current_row()
+    seat = mansions.seat_of(row, doc["k"])
+    if not seat:
+        return RedirectResponse(f"{base}/api/s/{doc['h']}", status_code=302)
+    target = f"{base}/?at={doc['h']}"
+    await track_share("mansion", doc["h"], request)
+    if not BOT_RE.search(request.headers.get("user-agent", "")):
+        resp = RedirectResponse(target, status_code=302)
+        resp.set_cookie(INVITE_COOKIE, doc["k"], max_age=7 * 86400, httponly=True, samesite="lax", path="/")
+        return resp
+    m = mansion_payload(doc, seat, row)
+    title = html.escape(f"@{doc['h']} holds mansion #{seat['rank']} on Millionaires' Row")
+    desc = html.escape(f"#{seat['rank']} this week \u00b7 {m['score']:,} points, in XField, a city on X where houses fight for votes. "
+                       "Move in next to them.")
+    return og_page(title, desc, f"{base}/api/residents/{doc['h']}/mansion.jpg?v={card_hash(m)}", target)
 
 
 @api.get("/residents/{handle}/card.jpg")
@@ -1771,6 +1819,7 @@ async def leave_city(request: Request, response: Response):
         await bump()
     for nb_id in created:
         asyncio.create_task(name_neighbourhood(nb_id))
+    await reseat_mansions()
     return await logout(request, response)
 
 
@@ -1788,6 +1837,95 @@ async def reshuffle():
         await sync_stacks()
     await db.events.insert_one({"type": "docked", "h": "", "n": len(down), "at": now_iso()})
     await bump()
+
+
+# ---------- Millionaires' Row ----------
+
+async def current_row() -> Optional[dict]:
+    """This week's mansion holders, best first, or None before the first handover."""
+    return await db.mansions.find_one({}, {"_id": 0}, sort=[("week", -1)])
+
+
+async def hand_out_mansions(force: bool = False) -> tuple:
+    """Every Monday the ten players with the most points move into Millionaires' Row for the week. Returns the row and
+    whether it was handed out just now."""
+    async with MANSION_LOCK:
+        last = await current_row()
+        if last and not force and mansions.handed_this_week(datetime.fromisoformat(last["handed_at"]), now()):
+            logger.info("mansion handover skipped: week %s was already handed out", last["week"])
+            return last, False
+        holders = mansions.hand_out(await arena_pool())
+        if not holders:
+            return last, False
+        row = {"week": (last or {}).get("week", 0) + 1, "handed_at": now_iso(),
+               "until": mansions.next_handover(now()).isoformat(), "holders": holders}
+        await db.mansions.insert_one(dict(row))
+        await db.events.insert_one({"type": "mansions", "h": holders[0]["h"], "n": len(holders), "week": row["week"], "at": now_iso()})
+        await bump()
+        logger.info("mansions handed out for week %s", row["week"])
+        return row, True
+
+
+async def reseat_mansions():
+    """A holder who is hidden or leaves gives up their mansion; the next player in line moves in."""
+    async with MANSION_LOCK:
+        row = await current_row()
+        if not row:
+            return
+        ks = [h["k"] for h in row["holders"]]
+        here = {d["k"] async for d in db.residents.find({"k": {"$in": ks}, "hidden": False, "status": "finished"}, {"_id": 0, "k": 1})}
+        gone = set(ks) - here
+        if not gone:
+            return
+        holders = mansions.reseat(row["holders"], await arena_pool(), gone)
+        await db.mansions.update_one({"week": row["week"]}, {"$set": {"holders": holders}})
+        await bump()
+
+
+async def monday_handover():
+    _, handed = await hand_out_mansions()
+    if handed:
+        await publish_paper(force=True)
+
+
+def mansion_payload(doc: dict, seat: dict, row: dict) -> dict:
+    return {"mv": 1, "k": doc["k"], "h": doc["h"], "name": doc.get("name"), "rank": seat["rank"], "score": arena.score(doc),
+            "until": row["until"], "week": row["week"]}
+
+
+def mansion_text(m: dict) -> str:
+    return (f"I'm #{m['rank']} in XField this week, so I live in a mansion on Millionaires' Row until Monday. "
+            "Move in next to me \u2192")
+
+
+async def mansion_bytes(doc: dict, seat: dict, row: dict, host: str) -> bytes:
+    payload = mansion_payload(doc, seat, row)
+    path = CARD_DIR / f"mansion-{doc['k']}-{card_hash({**payload, 'host': host})}.jpg"
+    if not path.exists():
+        avatar = await fetch_avatar(doc.get("avatar_url"))
+        path.write_bytes(await asyncio.to_thread(render_mansion, payload, {doc["k"]: avatar}))
+    return path.read_bytes()
+
+
+def row_story(row: dict, people: dict) -> Optional[dict]:
+    hs = [h for h in row["holders"] if h["k"] in people]
+    if not hs:
+        return None
+    second = f", @{hs[1]['h']} the estate next door" if len(hs) > 1 else ""
+    rest = f", and {len(hs) - 2} more of the top ten move into villas down the row" if len(hs) > 2 else ""
+    return {"title": "New on Millionaires' Row", "people": [people[h["k"]] for h in hs[:4]],
+            "body": f"The weekly handover is done: @{hs[0]['h']} takes the gold-trimmed estate at #1{second}{rest}. "
+                    "The keys are theirs until next Monday."}
+
+
+def with_row_story(edition: dict, row: dict, people: dict) -> dict:
+    """The paper after a handover always covers it, unless its writer already did."""
+    told = any("millionaire" in f"{s['title']} {s['body']}".lower() for s in edition["stories"])
+    story = None if told else row_story(row, people)
+    if not story:
+        return edition
+    quiet = not edition["stories"]
+    return {**edition, "headline": story["title"] if quiet else edition["headline"], "stories": [story, *edition["stories"]][:5]}
 
 
 # ---------- weekly census ----------
@@ -1915,6 +2053,8 @@ FACTS = {
     "top": lambda e: f"@{e['h']}'s house reached #1 on the ladder" if e["rank"] == 1 else f"@{e['h']}'s house broke into the top {arena.TOP}",
     "docked": lambda e: f"The weekly reshuffle sent {e['n']} uptown {'house' if e['n'] == 1 else 'houses'} back to the Docks",
     "demolished": lambda e: f"{e['n']} empty lots were cleared",
+    "mansions": lambda e: f"Weekly mansion handover: the top {e['n']} on the ladder moved into mansions on Millionaires' Row "
+                          f"for the week, @{e['h']} at #1",
 }
 FACTS["lights_on"] = FACTS["moved_in"]
 
@@ -2033,6 +2173,8 @@ async def publish_paper(force: bool = False):
         except Exception as e:
             logger.warning("paper writing failed: %s", e)
             edition = plain_paper(events, top, people, towers)
+        if any(e["type"] == "mansions" for e in events) and (row := await current_row()):
+            edition = with_row_story(edition, row, people)
         sections = paper_sections(events, top, people)
         votes = await db.votes.count_documents({"at": {"$gte": since}})
         docked = await db.residents.count_documents({"hidden": False, "status": "finished", "dock": {"$exists": True}})
@@ -2120,6 +2262,15 @@ async def cron_census(request: Request):
     if not await accept_cron(request, "census"):
         return {"duplicate": True}
     asyncio.create_task(publish_census())
+    return {"accepted": True}
+
+
+@api.post("/cron/mansions")
+async def cron_mansions(request: Request):
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    if not await accept_cron(request, "mansions"):
+        return {"duplicate": True}
+    asyncio.create_task(monday_handover())
     return {"accepted": True}
 
 
@@ -2406,6 +2557,30 @@ async def admin_move(handle: str, body: MoveBody, request: Request):
     return admin_row(await db.residents.find_one({"k": d["k"]}, ADMIN_FIELDS))
 
 
+async def row_admin() -> dict:
+    """This week's holders with their current points, the next three in line, and when the next handover is."""
+    row, pool = await current_row(), await arena_pool()
+    holders = (row or {}).get("holders") or []
+    docs = {d["k"]: d async for d in db.residents.find({"k": {"$in": [h["k"] for h in holders]}}, ADMIN_FIELDS)}
+    return {"week": row["week"] if row else None, "handed_at": row["handed_at"] if row else None, "until": row["until"] if row else None,
+            "holders": [{**admin_row(docs[h["k"]]), "rank": h["rank"], "was": h["score"]} for h in holders if h["k"] in docs],
+            "next": [admin_row(d) for d in mansions.in_line(holders, pool, 3 if row else mansions.SEATS)],
+            "next_at": mansions.next_handover(now()).isoformat()}
+
+
+@api.get("/admin/mansions", dependencies=[ADMIN])
+async def admin_mansions(request: Request):
+    return await row_admin()
+
+
+@api.post("/admin/mansions/hand-out", dependencies=[ADMIN])
+async def admin_hand_out(request: Request):
+    _, handed = await hand_out_mansions(force=True)
+    if not handed:
+        raise HTTPException(400, "Nobody is on the ladder yet.")
+    return await row_admin()
+
+
 class StoryBody(BaseModel):
     title: str = Field(min_length=1, max_length=140)
     body: str = Field(min_length=1, max_length=1500)
@@ -2495,6 +2670,7 @@ async def admin_hide(handle: str, body: HideRequest, request: Request):
         await bump()
     for nb_id in created:
         asyncio.create_task(name_neighbourhood(nb_id))
+    await reseat_mansions()
     return {"handle": handle, "hidden": body.hidden}
 
 
@@ -2526,6 +2702,7 @@ async def startup():
     await db.sessions.create_index("expires_at", expireAfterSeconds=0)
     await db.census.create_index("issue", unique=True)
     await db.papers.create_index("issue", unique=True)
+    await db.mansions.create_index("week", unique=True)
     await db.cron_runs.create_index("run_id", unique=True)
     await db.cron_runs.create_index("ts", expireAfterSeconds=30 * 86400)
     await db.posts.create_index([("nb", 1), ("at", -1)])

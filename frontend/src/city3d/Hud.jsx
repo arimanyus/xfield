@@ -117,6 +117,8 @@ function MyStanding({ l }) {
 }
 
 const tintOf = (side) => (side.docks ? dockTint(side.c) : side.c || "#A8A29E");
+export const utcTime = (iso) => `${new Date(iso).toLocaleString("en-GB", { weekday: "short", day: "numeric", month: "short", hour: "2-digit",
+  minute: "2-digit", timeZone: "UTC" })} UTC`;
 const until = (iso) => {
   const m = Math.max(0, Math.round((new Date(iso) - Date.now()) / 60000));
   return `${Math.floor(m / 60)}h ${m % 60}m`;
@@ -294,6 +296,22 @@ function BuildingInfo({ b, k, share, onVisit }) {
   );
 }
 
+// A mansion on Millionaires' Row: which one, until when, and for its holder the card X will show.
+function MansionInfo({ m, mine }) {
+  return (
+    <div className="mt-2 rounded-lg bg-amber-50 px-2.5 py-2 ring-1 ring-amber-200" data-testid="house-mansion">
+      <div className="text-xs font-bold" data-testid="house-mansion-line">💎 Mansion #{m.rank} on Millionaires' Row · keys until {utcTime(m.until)}</div>
+      {mine && (
+        <>
+          <img src={m.share.card_url} alt="How your mansion shows up on X" className="mt-2 w-full rounded-md border border-amber-200 bg-white"
+            data-testid="mansion-card-preview" />
+          <XLink href={onX(m.share.text, m.share.url)} className="mt-2 block" testId="share-mansion-button">𝕏 Share my mansion</XLink>
+        </>
+      )}
+    </div>
+  );
+}
+
 // A house: whose it is, whether its lights are on, and where it stands on the ladder.
 export function HouseCard({ house, nb, signedIn, onChanged, onLeft, onVisit, onClose }) {
   const o = house.owner, lit = o.s === "f";
@@ -311,7 +329,7 @@ export function HouseCard({ house, nb, signedIn, onChanged, onLeft, onVisit, onC
       <div className="flex items-start gap-2.5">
         <Face p={o} size={44} ring={lit ? WARM : "#475569"} dim={!lit} />
         <div className="min-w-0 flex-1 leading-tight">
-          <div className="font-display font-bold truncate">{fresh?.is_me ? "Your house" : `@${o.h}'s house`}</div>
+          <div className="font-display font-bold truncate">{fresh?.is_me ? `Your ${house.mansion ? "mansion" : "house"}` : `@${o.h}'s ${house.mansion ? "mansion" : "house"}`}</div>
           <div className="text-xs text-ink/70">
             {lit ? "💡 Lights on" : "🌑 Dark: not moved in yet"} · 🏢 {tall ? `floor ${house.level + 1} of ${house.stack.length}` : `${o.f} ${o.f === 1 ? "floor" : "floors"}`}
             {nb && <> · <b style={{ color: nb.color }}>{nameOf(nb)}</b></>}
@@ -320,6 +338,7 @@ export function HouseCard({ house, nb, signedIn, onChanged, onLeft, onVisit, onC
         <Close onClick={onClose} testId="house-card-close" />
       </div>
       {l && <div className="mt-2 text-xs"><Standing l={l} /></div>}
+      {fresh?.mansion && <MansionInfo m={fresh.mansion} mine={fresh.is_me} />}
       {fresh && <BuildingInfo b={fresh.building} k={o.k} onVisit={onVisit}
         share={fresh.is_me && fresh.building.floor === 1 && lit ? fresh.tower_share : null} />}
       {fresh?.is_me && l && <MyLadder l={l} onChanged={async () => { await load(); await onChanged(); }} onLeft={onLeft} />}
@@ -374,7 +393,7 @@ export function TickerBar({ events, people, onVisit }) {
 }
 
 const PLACES = { hall: "🏛 City Hall", timeline: "📰 The Timeline", post: "📮 Post Office", arrivals: "🛎 Arrivals", docks: "⚓ The Docks",
-  towers: "🏗 Tallest buildings" };
+  towers: "🏗 Tallest buildings", row: "💎 Millionaires' Row" };
 
 // Buildings that grew floors, tallest first; equals by their ground owner's handle, as the server ranks them.
 export const towersOf = (homes) => homes.filter((h) => h.level === 0 && h.stack.length > 1)
@@ -396,10 +415,45 @@ export function PlaceCard({ id, town, city, me, onVisit, onClose }) {
         {id === "arrivals" && <Arrivals people={town.newest} onVisit={onVisit} />}
         {id === "docks" && <Docks town={town} me={me} />}
         {id === "towers" && <Towers town={town} homes={city.homes} me={me} onVisit={onVisit} />}
+        {id === "row" && <Row town={town} me={me} onVisit={onVisit} />}
       </div>
     </div>
   );
 }
+
+// Millionaires' Row: this week's top ten in their mansions, or who is in line before the first handover.
+function Row({ town, me, onVisit }) {
+  const row = town.mansions, byK = Object.fromEntries(town.residents.map((r) => [r.k, r]));
+  const list = row ? row.holders.filter((h) => byK[h.k]).map((h) => ({ ...byK[h.k], rank: h.rank }))
+    : town.residents.filter((r) => r.s === "f" && !r.out).sort((a, b) => b.e - a.e || (a.k < b.k ? -1 : 1)).slice(0, 10).map((p, i) => ({ ...p, rank: i + 1 }));
+  const mine = row && me?.mansion;
+  return (
+    <>
+      <div className="text-sm text-ink/70" data-testid="row-intro">
+        {row ? `Week ${row.week}: the top 10 on the ladder live here until ${utcTime(row.until)}.`
+          : `The first handover is ${utcTime(town.next_handover)}. The top 10 on the ladder move in for the week.`}
+      </div>
+      <Heading>{row ? "This week's holders" : "In line right now"}</Heading>
+      <ol className="space-y-0.5" data-testid="row-list">
+        {list.map((p) => (
+          <li key={p.k}>
+            <button type="button" onClick={() => onVisit(p)} data-testid={`row-holder-${p.rank}`}
+              className={`flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left text-sm transition-colors ${me?.k === p.k ? "bg-amber-50 ring-1 ring-amber-300" : "hover:bg-slate-50"}`}>
+              <span className={`w-7 shrink-0 font-display font-bold tabular-nums ${p.rank === 1 ? "text-amber-500" : "text-ink/50"}`}>#{p.rank}</span>
+              <Face p={p} size={24} ring={p.rank === 1 ? "#D4A72C" : WARM} />
+              <b className="min-w-0 flex-1 truncate">@{p.h}</b>
+              <span className="text-[11px] text-ink/60 tabular-nums">{p.e} pts · {p.rank <= 2 ? "estate" : "villa"}</span>
+            </button>
+          </li>
+        ))}
+      </ol>
+      {!list.length && <div className="text-sm text-ink/60">Nobody is on the ladder yet.</div>}
+      {mine && <XLink href={onX(mine.share.text, mine.share.url)} className="mt-2 block" testId="row-share-button">𝕏 Share my mansion</XLink>}
+      <div className="mt-2 text-[11px] text-ink/50">Every Monday at 9:00 UTC the whole row is handed out again. Climb the ladder to move in.</div>
+    </>
+  );
+}
+
 
 const areaOf = (o) => (o.d != null ? "⚓ Docks" : o.s === "f" ? "🏙 Uptown" : "🌑 Dark lot");
 
@@ -462,6 +516,7 @@ function Hall({ town, onVisit }) {
         <li>🏢 Every friend who moves in adds a floor, and floors unlock taller designs.</li>
         <li>🏗 Once all {stats.capacity} ground spots are taken, newcomers move in on top: on the building of whoever brought them, or the shortest one on the Docks.</li>
         <li>🗞 The Ledger comes out every morning with the day's climbers.</li>
+        <li>💎 Every Monday at 9:00 UTC the top 10 on the ladder move into the mansions on Millionaires' Row for the week.</li>
       </ul>
       {top.length > 0 && <Heading>Top of the ladder</Heading>}
       <ul className="space-y-1.5 text-xs">{top.map((r) => <Said key={r.k} p={r} onVisit={onVisit}>· {r.e} pts{r.u ? " · uptown" : ""}</Said>)}</ul>

@@ -912,6 +912,241 @@ const DESIGNS = {
     [[-0.2, 0, -0.2], [0.2, 0, -0.2], [-0.2, 0, 0.2], [0.2, 0, 0.2], [-0.2, 1, -0.2], [0.2, 1, 0.2]].forEach(([x, up, z], i) =>
       b.solid(0.36, 0.17, 0.34, x, up * 0.17, z, colors[i]));
   },
+  // Millionaires' Row: grand estates for #1 and #2, villas for #3 to #10. The trim (gold for #1) is the tint.
+  estate: (b) => {
+    b.solid(2.0, 0.03, 1.8, 0, 0, 0, C.lawn);
+    for (const s of [-1, 1]) { b.hedge(2.0, 0.07, 0, s * 0.86, 0.03); b.hedge(0.07, 1.8, s * 0.96, 0, 0.03); }
+    b.solid(0.3, 0.012, 0.9, 0, 0.03, 0.42, C.marble);
+    b.wall(1.2, 2 * FH, 0.62, 0, 0.03, -0.38, C.cream);
+    for (const s of [-1, 1]) {
+      b.wall(0.36, 2 * FH, 0.5, s * 0.74, 0.03, -0.34, C.cream);
+      b.roof(0.4, 0.14, 0.54, s * 0.74, 0.03 + 2 * FH, -0.34, 0, true);
+      b.tree(s * 0.78, 0.03, 0.55, 0.1);
+    }
+    for (let i = 0; i < 6; i++) b.solid(0.04, 2 * FH, 0.04, -0.3 + i * 0.12, 0.03, -0.04, C.white);
+    b.accent(1.26, 0.04, 0.7, 0, 0.03 + 2 * FH, -0.36);
+    b.roof(0.7, 0.12, 0.14, 0, 0.07 + 2 * FH, -0.03, Math.PI / 2);
+    b.roof(1.2, 0.2, 0.62, 0, 0.07 + 2 * FH, -0.4, Math.PI / 2, true);
+    b.pool(0.5, 0.3, -0.52, 0.42, 0.03);
+    b.pool(0.5, 0.3, 0.52, 0.42, 0.03);
+    b.disc(0.14, 0.05, 0, 0.03, 0.62, C.stone);
+    b.disc(0.1, 0.012, 0, 0.08, 0.62, C.water);
+    b.accent(0.03, 0.03, 0.03, 0, 0.11, 0.62);
+    b.warm(0.5, 0.06, 0.01, 0, 0.03 + 0.6 * FH, -0.065);
+    b.sign(0.03 + 1.3 * FH, 0.62, -0.06);
+  },
+  villa: (b) => {
+    b.solid(1.5, 0.03, 1.4, 0, 0, 0, C.lawn);
+    for (const s of [-1, 1]) { b.hedge(1.5, 0.06, 0, s * 0.67, 0.03); b.hedge(0.06, 1.4, s * 0.72, 0, 0.03); }
+    b.wall(0.9, 2 * FH, 0.55, -0.1, 0.03, -0.25, C.white);
+    b.wall(0.4, FH, 0.45, 0.42, 0.03, -0.2, C.white);
+    b.glass(0.5, FH, 0.01, -0.1, 0.03, 0.03);
+    b.accent(0.96, 0.03, 0.6, -0.1, 0.03 + 2 * FH, -0.25);
+    b.solid(0.44, 0.02, 0.5, 0.42, 0.03 + FH, -0.2, C.white);
+    b.pool(0.55, 0.28, -0.15, 0.38, 0.03);
+    b.tree(0.5, 0.03, 0.4, 0.09);
+    b.flowers(0.3, 0.45, 0.15, 0.03);
+    b.warm(0.3, 0.05, 0.01, -0.1, 0.03 + 1.4 * FH, 0.03);
+    b.sign(0.03 + 1.2 * FH, 0.55, 0.03);
+  },
+  // The Financial District's office towers, the tallest in town.
+  office0: (b) => {
+    b.solid(1.1, 0.04, 1.1, 0, 0, 0, C.stone);
+    b.glass(0.9, 40 * FH, 0.9, 0, 0.04, 0);
+    for (const [x, z] of corners(0.45)) b.accent(0.06, 40 * FH, 0.06, x, 0.04, z);
+    b.solid(0.94, 0.06, 0.94, 0, 0.04 + 40 * FH, 0, C.white);
+    b.glass(0.5, 4 * FH, 0.5, 0, 0.1 + 40 * FH, 0);
+    b.solid(0.02, 0.5, 0.02, 0, 0.1 + 44 * FH, 0, C.dark);
+  },
+  office1: (b) => {
+    b.solid(1.2, 0.04, 1.2, 0, 0, 0, C.stone);
+    let y = 0.04;
+    for (const [w, n] of [[1.0, 18], [0.78, 14], [0.56, 10]]) {
+      b.glass(w, n * FH, w, 0, y, 0);
+      y += n * FH;
+      b.accent(w + 0.04, 0.05, w + 0.04, 0, y, 0);
+      y += 0.05;
+    }
+    b.solid(0.03, 0.6, 0.03, 0, y, 0, C.dark);
+  },
+  office2: (b) => {
+    b.solid(1.2, 0.04, 1.0, 0, 0, 0, C.stone);
+    for (const [x, n] of [[-0.26, 34], [0.26, 28]]) {
+      b.wall(0.46, n * FH, 0.8, x, 0.04, 0, C.white);
+      b.accent(0.5, 0.06, 0.84, x, 0.04 + n * FH, 0);
+    }
+    b.glass(0.1, 22 * FH, 0.5, 0, 0.04, 0);
+  },
+  // Public buildings downtown, each with its name up front.
+  library: (b) => {
+    b.solid(2.0, 0.05, 1.3, 0, 0, 0, C.stone);
+    b.wall(1.8, 3 * FH, 0.8, 0, 0.05, -0.2, C.sand);
+    for (let i = 0; i < 8; i++) b.solid(0.07, 3 * FH, 0.07, -0.77 + i * 0.22, 0.05, 0.28, C.white);
+    b.solid(1.9, 0.06, 1.0, 0, 0.05 + 3 * FH, -0.1, C.white);
+    b.roof(1.9, 0.2, 1.0, 0, 0.11 + 3 * FH, -0.1, Math.PI / 2);
+    b.sign(0.05 + 2.2 * FH, 0.9, 0.32);
+  },
+  museum: (b) => {
+    b.solid(2.0, 0.05, 1.4, 0, 0, 0, C.stone);
+    b.wall(1.7, 3 * FH, 1.0, 0, 0.05, -0.1, C.white);
+    for (let i = 0; i < 6; i++) b.solid(0.08, 3 * FH, 0.08, -0.5 + i * 0.2, 0.05, 0.46, C.marble);
+    b.solid(1.8, 0.06, 1.1, 0, 0.05 + 3 * FH, -0.05, C.marble);
+    b.disc(0.34, 0.1, 0, 0.11 + 3 * FH, -0.1, C.white);
+    b.dome(0.32, 0, 0.21 + 3 * FH, -0.1);
+    b.sign(0.05 + 2.2 * FH, 0.85, 0.5);
+  },
+  cinema: (b) => {
+    b.solid(2.0, 0.04, 1.3, 0, 0, 0, C.concrete);
+    b.wall(1.8, 4 * FH, 1.0, 0, 0.04, -0.1, C.dark);
+    b.accent(1.9, 0.12, 0.3, 0, 0.04 + 1.4 * FH, 0.5);
+    for (let i = 0; i < 12; i++) b.warm(0.03, 0.03, 0.03, -0.85 + i * 0.155, 0.04 + 1.4 * FH + 0.12, 0.64);
+    b.glass(1.2, FH, 0.01, 0, 0.04, 0.41);
+    b.sign(0.04 + 2.8 * FH, 0.9, 0.41);
+  },
+  hotel: (b) => {
+    b.solid(1.8, 0.04, 1.3, 0, 0, 0, C.stone);
+    b.glass(1.5, FH, 0.9, 0, 0.04, -0.1);
+    b.wall(1.4, 16 * FH, 0.8, 0, 0.04 + FH, -0.1, C.cream);
+    b.accent(1.6, 0.03, 0.4, 0, 0.04 + FH - 0.03, 0.45);
+    b.accent(1.46, 0.1, 0.86, 0, 0.04 + 17 * FH, -0.1);
+    b.solid(0.6, 0.18, 0.4, 0, 0.14 + 17 * FH, -0.1, C.white);
+    b.sign(0.04 + 13 * FH, 0.7, 0.31);
+  },
+  // Billboard plazas: a kiosk and a food truck.
+  kiosk: (b) => {
+    b.solid(0.3, 0.16, 0.24, 0, 0, 0, C.white);
+    b.awning(0.3, 0, 0.16, 0.13);
+    b.accent(0.32, 0.03, 0.26, 0, 0.2, 0);
+    b.solid(0.08, 0.03, 0.08, 0, 0.23, 0, C.lamp);
+  },
+  foodtruck: (b) => {
+    b.accent(0.44, 0.2, 0.2, 0, 0.04, 0);
+    b.solid(0.12, 0.12, 0.19, 0.24, 0.04, 0, C.white);
+    b.solid(0.22, 0.08, 0.01, -0.04, 0.12, 0.101, C.dark);
+    b.awning(0.24, -0.04, 0.2, 0.13);
+    for (const [x, z] of [[-0.14, 0.1], [0.18, 0.1], [-0.14, -0.1], [0.18, -0.1]]) b.disc(0.035, 0.03, x, 0.005, z, D.black);
+  },
+  // Neighbourhood buildings on empty lots; the sign says what each one is.
+  shop: (b) => {
+    b.solid(0.9, 0.02, 0.9, 0, 0, 0, C.concrete);
+    b.glass(0.66, FH, 0.5, 0, 0.02, -0.08);
+    b.wall(0.7, FH, 0.54, 0, 0.02 + FH, -0.08, C.white);
+    b.awning(0.66, 0, 0.02 + FH - 0.03, 0.2);
+    b.accent(0.72, 0.03, 0.56, 0, 0.02 + 2 * FH, -0.08);
+    b.flowers(0.24, 0.26, 0.32, 0.02);
+    b.solid(0.1, 0.06, 0.1, -0.28, 0.02, 0.32, C.concrete);
+    b.sign(0.02 + 1.5 * FH, 0.35, 0.19);
+  },
+  playground: (b) => {
+    b.solid(0.9, 0.02, 0.9, 0, 0, 0, "#E9C891");
+    b.solid(0.06, 0.2, 0.06, -0.2, 0.02, -0.2, C.white);
+    b.accent(0.12, 0.02, 0.12, -0.2, 0.22, -0.2);
+    b.plank(0.32, -0.06, 0.13, -0.2, -0.6, "#F97316");
+    for (const x of [0.12, 0.34]) b.solid(0.015, 0.22, 0.015, x, 0.02, 0.15, C.dark);
+    b.solid(0.24, 0.015, 0.015, 0.23, 0.24, 0.15, C.dark);
+    for (const x of [0.18, 0.28]) b.solid(0.05, 0.01, 0.03, x, 0.1, 0.15, "#3B82F6");
+    b.tree(-0.3, 0.02, 0.28, 0.1);
+    b.solid(0.2, 0.04, 0.2, 0.2, 0.02, -0.22, "#F4E4BC");
+  },
+  garden: (b) => {
+    b.solid(0.9, 0.02, 0.9, 0, 0, 0, C.lawn);
+    for (const [x, z] of [[-0.2, -0.2], [0.2, -0.2], [-0.2, 0.2], [0.2, 0.2]]) {
+      b.solid(0.3, 0.05, 0.3, x, 0.02, z, C.wood);
+      for (let i = 0; i < 3; i++) b.solid(0.06, 0.06, 0.06, x - 0.08 + i * 0.08, 0.07, z, i % 2 ? C.leaf : C.tulip);
+    }
+    b.solid(0.1, 0.12, 0.08, 0.38, 0.02, -0.38, C.wood);
+  },
+  // A lot waiting for its owner to make it uptown: fenced, a slab poured, scaffolding up.
+  site: (b) => {
+    b.solid(0.86, 0.015, 0.86, 0, 0, 0, "#A08B6C");
+    b.solid(0.56, 0.04, 0.46, 0, 0.015, -0.06, C.concrete);
+    for (const [x, z] of corners(0.24)) b.solid(0.02, 0.36, 0.02, x, 0.055, z - 0.06, "#F59E0B");
+    for (const y of [0.18, 0.36]) b.solid(0.5, 0.015, 0.015, 0, 0.055 + y, 0.18, "#F59E0B");
+    for (const s of [-1, 1]) {
+      b.solid(0.86, 0.1, 0.01, 0, 0.015, s * 0.42, "#FDE68A");
+      b.solid(0.01, 0.1, 0.86, s * 0.42, 0.015, 0, "#FDE68A");
+    }
+    b.solid(0.12, 0.08, 0.12, 0.28, 0.015, 0.25, C.sand);
+    b.sign(0.13, 0.44, 0.43);
+  },
+  // The Docks gate: a chain-link fence panel and the gate posts.
+  chainlink: (b) => {
+    for (const x of [-0.5, 0.5]) b.solid(0.025, 0.34, 0.025, x, 0, 0, D.tin);
+    b.solid(1.0, 0.012, 0.012, 0, 0.33, 0, D.tin);
+    b.solid(1.0, 0.012, 0.012, 0, 0.06, 0, D.tin);
+    for (let i = 0; i < 10; i++) b.plank(0.38, -0.45 + i * 0.1, 0.19, 0, i % 2 ? 1.1 : -1.1, D.cinder);
+    for (let i = 0; i < 6; i++) b.solid(0.008, 0.06, 0.008, -0.45 + i * 0.18, 0.34, 0, D.black);
+  },
+  gate: (b) => {
+    for (const x of [-0.8, 0.8]) { b.solid(0.08, 0.6, 0.08, x, 0, 0, D.rust2); b.solid(0.04, 0.04, 0.04, x, 0.6, 0, D.flame); }
+    b.solid(1.64, 0.06, 0.06, 0, 0.6, 0, D.rust);
+    b.solid(0.6, 0.3, 0.02, -0.4, 0.02, 0.1, D.tin, -0.5);
+    b.sign(0.5, 0.82, 0.06);
+  },
+  firebarrel: (b) => {
+    b.disc(0.06, 0.15, 0, 0, 0, D.rust2);
+    b.disc(0.062, 0.012, 0, 0.05, 0, D.rust);
+    b.solid(0.05, 0.05, 0.05, 0, 0.15, 0, D.fire, 0.4);
+    b.solid(0.03, 0.06, 0.03, 0.01, 0.17, 0, D.flame, 1.1);
+  },
+  bulbpole: (b) => {
+    b.solid(0.025, 0.5, 0.025, 0, 0, 0, D.boards);
+    b.solid(0.16, 0.012, 0.012, 0.07, 0.48, 0, D.boards);
+    b.solid(0.008, 0.06, 0.008, 0.14, 0.42, 0, D.black);
+  },
+  // Outskirts landmarks, scaled up where they're placed.
+  warehouse: (b) => {
+    b.solid(1.6, 0.02, 1.0, 0, 0, 0, D.cinder);
+    b.solid(1.4, 0.36, 0.8, 0, 0.02, 0, D.sheet);
+    b.ridge(1.44, 0.14, 0.84, 0, 0.38, 0, D.tin, Math.PI / 2);
+    for (const x of [-0.4, 0.1]) b.solid(0.34, 0.26, 0.01, x, 0.02, 0.405, D.rust);
+    b.solid(0.3, 0.17, 0.34, 0.6, 0.02, 0.65, "#41566A");
+  },
+  ferris: (b) => {
+    for (const s of [-1, 1]) {
+      b.plank(1.0, s * 0.22, 0.48, 0.12, s * 1.15, C.white, Math.PI / 2);
+      b.plank(1.0, s * 0.22, 0.48, -0.12, s * 1.15, C.white, Math.PI / 2);
+    }
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2;
+      b.plank(0.42, Math.cos(a) * 0.21, 0.92 + Math.sin(a) * 0.21, 0, a, C.white);
+      b.solid(0.07, 0.07, 0.07, Math.cos(a) * 0.43, 0.88 + Math.sin(a) * 0.43, 0, ["#EF4444", "#FACC15", "#3B82F6", "#22C55E"][i % 4]);
+    }
+    b.disc(0.05, 0.1, 0, 0.87, -0.05, C.gold);
+    b.solid(1.1, 0.03, 0.5, 0, 0, 0, C.concrete);
+  },
+  carousel: (b) => {
+    b.disc(0.3, 0.05, 0, 0, 0, C.white);
+    for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2; b.solid(0.012, 0.22, 0.012, Math.cos(a) * 0.24, 0.05, Math.sin(a) * 0.24, C.gold); }
+    b.accent(0.62, 0.05, 0.62, 0, 0.27, 0);
+    b.roof(0.62, 0.16, 0.62, 0, 0.32, 0, 0, true);
+  },
+  terminal: (b) => {
+    b.solid(1.8, 0.02, 0.9, 0, 0, 0, C.concrete);
+    b.glass(1.6, 2 * FH, 0.6, 0, 0.02, 0);
+    b.accent(1.7, 0.05, 0.7, 0, 0.02 + 2 * FH, 0);
+    b.disc(0.08, 9 * FH, 0.95, 0.02, -0.2, C.white);
+    b.glass(0.3, 0.14, 0.3, 0.95, 0.02 + 9 * FH, -0.2);
+    b.accent(0.34, 0.03, 0.34, 0.95, 0.16 + 9 * FH, -0.2);
+  },
+  plane: (b) => {
+    b.solid(0.7, 0.08, 0.1, 0, 0.06, 0, C.white);
+    b.solid(0.16, 0.02, 0.7, -0.02, 0.08, 0, C.white);
+    b.solid(0.1, 0.02, 0.28, -0.32, 0.1, 0, C.white);
+    b.accent(0.08, 0.14, 0.02, -0.32, 0.1, 0);
+  },
+  track: (b) => {
+    b.solid(1.0, 0.012, 0.28, 0, 0, 0, D.cinder);
+    for (let i = 0; i < 5; i++) b.solid(0.06, 0.012, 0.26, -0.4 + i * 0.2, 0.012, 0, D.boards);
+    for (const z of [-0.08, 0.08]) b.solid(1.0, 0.016, 0.016, 0, 0.024, z, C.dark);
+  },
+  train: (b) => {
+    for (const x of [-0.55, 0, 0.55]) {
+      b.accent(0.5, 0.14, 0.18, x, 0.04, 0);
+      b.glass(0.42, 0.05, 0.185, x, 0.11, 0);
+    }
+    b.solid(0.1, 0.12, 0.16, 0.85, 0.04, 0, C.dark);
+  },
   // Trees.
   oak: (b) => b.tree(0, 0, 0, 0.2),
   pine: (b) => b.pine(0, 0, 0, 0.19),

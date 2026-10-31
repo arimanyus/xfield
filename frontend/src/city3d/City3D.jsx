@@ -496,6 +496,74 @@ function CityHall({ hall, onHover, onPick }) {
   );
 }
 
+// Smoke from Docks chimneys and burning barrels: each puff rises, swells and shrinks away, then starts again.
+function Smoke({ at }) {
+  const ref = useRef();
+  const puffs = useMemo(() => at.flatMap(([x, y, z], i) => [0, 1, 2].map((j) => ({ x, y, z, phase: (i * 0.37 + j / 3) % 1 }))), [at]);
+  useFrame(({ clock }) => {
+    if (!ref.current) return;
+    const m = new THREE.Matrix4(), t = clock.elapsedTime * 0.3;
+    puffs.forEach((p, i) => {
+      const u = (t + p.phase) % 1, s = 0.03 + Math.sin(u * Math.PI) * 0.1;
+      ref.current.setMatrixAt(i, m.makeScale(s, s, s).setPosition(p.x + u * 0.14, p.y + u * 0.95, p.z - u * 0.06));
+    });
+    ref.current.instanceMatrix.needsUpdate = true;
+  });
+  if (!puffs.length) return null;
+  return (
+    <instancedMesh ref={ref} args={[null, null, puffs.length]} frustumCulled={false} raycast={() => null}>
+      <icosahedronGeometry args={[1, 1]} />
+      <meshLambertMaterial color="#6B6B6B" transparent opacity={0.5} depthWrite={false} />
+    </instancedMesh>
+  );
+}
+
+// A low grey fog over the Docks and the yards beside them.
+function Haze({ boxes }) {
+  const ref = useRef();
+  useEffect(() => {
+    if (!ref.current) return;
+    const m = new THREE.Matrix4();
+    boxes.forEach((b, i) => ref.current.setMatrixAt(i, m.makeScale(b.w, b.y, b.d).setPosition(b.x, b.y / 2, b.z)));
+    ref.current.instanceMatrix.needsUpdate = true;
+    ref.current.computeBoundingSphere();
+  }, [boxes]);
+  if (!boxes.length) return null;
+  return (
+    <instancedMesh ref={ref} args={[null, null, boxes.length]} raycast={() => null} renderOrder={2}>
+      <boxGeometry args={[1, 1, 1]} />
+      <meshBasicMaterial color="#8A8F94" transparent opacity={0.22} depthWrite={false} />
+    </instancedMesh>
+  );
+}
+
+// Bare bulbs strung on the Docks poles, each with a faint warm halo.
+function Bulbs({ at }) {
+  const bulb = useRef(), halo = useRef();
+  useEffect(() => {
+    const m = new THREE.Matrix4();
+    for (const ref of [bulb, halo]) {
+      if (!ref.current) continue;
+      at.forEach(([x, y, z], i) => ref.current.setMatrixAt(i, m.makeTranslation(x, y, z)));
+      ref.current.instanceMatrix.needsUpdate = true;
+      ref.current.computeBoundingSphere();
+    }
+  }, [at]);
+  if (!at.length) return null;
+  return (
+    <>
+      <instancedMesh ref={bulb} args={[null, null, at.length]} raycast={() => null}>
+        <sphereGeometry args={[0.03, 8, 6]} />
+        <meshBasicMaterial color="#FFE7A3" toneMapped={false} />
+      </instancedMesh>
+      <instancedMesh ref={halo} args={[null, null, at.length]} raycast={() => null}>
+        <sphereGeometry args={[0.11, 10, 8]} />
+        <meshBasicMaterial color="#FDBA4A" transparent opacity={0.22} blending={THREE.AdditiveBlending} depthWrite={false} />
+      </instancedMesh>
+    </>
+  );
+}
+
 const _identity = new THREE.Quaternion();
 const _unit = new THREE.Vector3(1, 1, 1);
 const LENS = { r: "#EF4444", y: "#FACC15", g: "#22C55E" };
@@ -978,7 +1046,10 @@ export function City3D({ city, labels, labelNodes, focus, flashes, onHover, onPi
         {city.hall && <CityHall hall={city.hall} onHover={onHover} onPick={onPick} />}
         {city.venue && <Venue at={city.venue} people={newest.slice(0, 3)} onPick={onFace}
           onOpen={() => onPick({ x: city.venue.x, z: city.venue.z, mark: { kind: "place", id: "arrivals" } })} />}
-        {city.signs.map((s) => <StandSign key={s.text[0]} text={s.text} at={[s.x, 0, s.z]} height={0.26} lift={0.3} />)}
+        {city.signs.map((s) => <StandSign key={s.text[0]} text={s.text} at={[s.x, 0, s.z]} height={s.height ?? 0.26} lift={s.lift ?? 0.3} />)}
+        <Smoke at={city.smoke} />
+        <Haze boxes={city.haze} />
+        <Bulbs at={city.bulbs} />
         <Billboards boards={city.boards} />
         <Suspense fallback={null}>
           <Pads pads={city.pads} />

@@ -8,8 +8,10 @@ import { BillboardsPanel } from "@/components/admin/BillboardsPanel";
 import { ResidentsPanel } from "@/components/admin/ResidentsPanel";
 import { PaperPanel } from "@/components/admin/PaperPanel";
 import { LimitsPanel } from "@/components/admin/LimitsPanel";
+import { MansionsPanel } from "@/components/admin/MansionsPanel";
 
-const TABS = [["stats", "Live stats"], ["billboards", "Billboards"], ["residents", "Residents"], ["paper", "The Ledger"], ["limits", "City limits"]];
+const TABS = [["stats", "Live stats"], ["billboards", "Billboards"], ["residents", "Residents"], ["mansions", "Mansions"], ["paper", "The Ledger"],
+  ["limits", "City limits"]];
 
 export default function AdminPage() {
   const [state, setState] = useState("checking");
@@ -46,6 +48,7 @@ export default function AdminPage() {
             <TabsContent value="stats"><StatsPanel /></TabsContent>
             <TabsContent value="billboards"><BillboardsPanel /></TabsContent>
             <TabsContent value="residents"><ResidentsPanel /></TabsContent>
+            <TabsContent value="mansions"><MansionsPanel /></TabsContent>
             <TabsContent value="paper"><PaperPanel /></TabsContent>
             <TabsContent value="limits"><LimitsPanel /></TabsContent>
           </Tabs>

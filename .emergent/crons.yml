@@ -13,3 +13,10 @@ crons:
     method: POST
     # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
     enabled: true
+  - name: mansion-handover
+    description: "Hands Millionaires' Row mansions to the top 10 on the ladder every Monday at 9am UTC, then prints the Ledger"
+    cron: "0 9 * * 1"
+    endpoint: "{{BASE_URL}}/api/cron/mansions"
+    method: POST
+    # Cron endpoints must ack 2xx immediately; enqueue/background the actual work.
+    enabled: true

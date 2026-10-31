@@ -7,6 +7,8 @@
 // Once every ground spot is taken, homes stack as floors on top of a building: patched together on the Docks, glass
 // and steel uptown.
 import { modernModel } from "@/city3d/modern";
+import { hash, rand, pick, chance } from "@/city3d/rng";
+import { ROW, SHOPS, addOffices, addOutskirts, addPlaza, addPublic, addRow, addYard, dockGrit, infill, isPublic, site } from "@/city3d/fill";
 
 const BLOCK = 2;
 const BIG = 2;
@@ -33,17 +35,6 @@ export const blockOf = (v) => Math.floor(v / BLOCK);
 const tileBlock = (t) => Math.floor(t / (BLOCK + 1));
 const firstTile = (b) => b * (BLOCK + 1);
 
-const hash = (s) => {
-  let h = 2166136261;
-  for (let i = 0; i < s.length; i++) h = Math.imul(h ^ s.charCodeAt(i), 16777619);
-  h = Math.imul(h ^ (h >>> 16), 0x85ebca6b);
-  h = Math.imul(h ^ (h >>> 13), 0xc2b2ae35);
-  return (h ^ (h >>> 16)) >>> 0;
-};
-const rand = (key) => (hash(key) % 10000) / 10000;
-const pick = (arr, key) => arr[hash(key) % arr.length];
-const chance = (key, p) => rand(key) < p;
-
 const TREES = ["modern/oak", "modern/pine"];
 export const LANDMARK_MODEL = {
   tech_campus: "modern/lab",
@@ -67,10 +58,10 @@ const STONE = "#A8A29E";
 const QUAY = "#77736A";
 const STAINS = ["#4E4A43", "#3F3B35", "#5F6B70", "#6A5B45", "#35302B"];
 const PUDDLE = "#3E4A50";
-const PLOT = "#B9A98C";
 
 // Everyone starts on the Docks: a strip of blocks on the north shore, filled outward from the middle, 16 houses a
-// block, with a crane yard at each end. A house moves to its own lot near its friends once it wins its way uptown.
+// block, with a crane yard at each end. A row of industrial yards always keeps it apart from the city. A house moves to
+// its own lot near its friends once it wins its way uptown.
 const DOCK_LOTS = SIDE * SIDE;
 const dockBlock = (i) => (i % 2 ? -(i + 1) / 2 : i / 2);
 export const dockTint = (color) => mix(color || STONE, "#5B6470", 0.72);
@@ -116,6 +107,8 @@ const PLACES = {
             sign: ["POST OFFICE", "#B91C1C", "#FFFFFF"] },
 };
 const downtown = (b, c) => Math.max(Math.abs(b), Math.abs(c)) === DOWNTOWN;
+// The Financial District's two plots at the back of downtown.
+const FINANCE = { "-1,-2": 0, "1,-2": 1 };
 // Billboard spots the admin fills: downtown parkland by big block, and the Docks crane yard.
 export const BILLBOARD_SPOTS = { hero: "0,-2", west: "-2,0", east: "2,0", corner: "2,2", ledger: "2,-1", docks: "yard" };
 const CORE_KEYS = [];
@@ -189,12 +182,17 @@ export function buildCity(town) {
   CORE_KEYS.forEach(addBig);
   for (const h of town.residents) used.add(`${blockOf(h.x)},${blockOf(h.y)}`);
   const docked = ground.filter((r) => r.d != null);
-  const cD = bigOf(Math.min(...[...used].map((k) => Number(k.split(",")[1])))) - 1;
+  const cD = bigOf(Math.min(...[...used].map((k) => Number(k.split(",")[1])))) - 2;
   const slots = town.residents.filter((r) => r.d != null).map((r) => r.d);
   const nDock = Math.max(1, Math.ceil((Math.max(-1, ...slots) + 1) / DOCK_LOTS));
   const docks = new Map();
-  for (let i = 0; i < nDock + 2; i++) docks.set(`${dockBlock(i)},${cD}`, i < nDock ? i : "yard");
-  for (const k of docks.keys()) addBig(k);
+  const yards = new Set();
+  for (let i = 0; i < nDock + 2; i++) {
+    docks.set(`${dockBlock(i)},${cD}`, i < nDock ? i : "yard");
+    yards.add(`${dockBlock(i)},${cD + 1}`);
+  }
+  const cityBlocks = [...used].map((k) => k.split(",").map(Number));
+  for (const k of [...docks.keys(), ...yards]) addBig(k);
   const atDock = new Map(docked.map((r) => [r.d, r]));
   const blocks = [...used].map((k) => k.split(",").map(Number));
   const [b0, b1] = [Math.min(...blocks.map((b) => b[0])), Math.max(...blocks.map((b) => b[0]))];
@@ -227,18 +225,28 @@ export function buildCity(town) {
   const filled = new Map();
   for (const h of homes.values()) filled.set(`${blockOf(h.x)},${blockOf(h.y)}`, (filled.get(`${blockOf(h.x)},${blockOf(h.y)}`) || 0) + 1);
   let hall = null, venue = null;
+  const byK = new Map(town.residents.map((r) => [r.k, r]));
+  const holders = new Map((town.mansions?.holders || []).filter((h) => byK.get(h.k)?.s === "f").map((h) => [h.rank, byK.get(h.k)]));
+  const held = new Set([...holders.values()].map((r) => r.k));
+  const smoke = [], haze = [], bulbs = [];
+  const ctx = { buildings, pads, signs, labels, homeList, tree, smoke, haze, bulbs, holders, before: !town.mansions, span: BIG_W,
+                colorOf: (r) => nbById[r.nb]?.color };
   const tintOf = (r, onDocks) => (r.s === "r" ? null : onDocks ? dockTint(nbById[r.nb]?.color) : nbById[r.nb]?.color || STONE);
   // A building: its ground home, then a floor for everyone stacked on it, crooked on the Docks, then a roof cap.
+  // Someone who moved into a mansion leaves their home shut: a shop opens on their lot uptown, their shack goes dark.
   const addHome = (home, rest, tx, tz, onDocks) => {
-    const dark = home.s === "r", tint = tintOf(home, onDocks), rot = faceRoad(tx, tz), model = modelOf(home.m, onDocks);
-    const stretch = home.m[0] === "t" ? Math.max(1, home.f / TOWER_FLOORS) : 1, deck = deckOf(model, stretch);
+    const away = held.has(home.k), shop = away && !onDocks ? pick(SHOPS, `${tx},${tz}shop`) : null;
+    const dark = home.s === "r" || away, tint = shop ? shop.tint : tintOf(home, onDocks), rot = faceRoad(tx, tz);
+    const model = shop ? "shop" : modelOf(home.m, onDocks);
+    const stretch = !shop && home.m[0] === "t" ? Math.max(1, home.f / TOWER_FLOORS) : 1, deck = deckOf(model, stretch);
     const s = fillOf(model), fh = FLOOR_H * s;
-    const stack = [home, ...rest], item = { x: tx, z: tz, rot, owner: home, stories: home.f };
-    homeList.push({ ...item, y: 0, top: deck + 0.02, color: dark ? "#334155" : tint, stack, level: 0 });
-    buildings.push({ ...item, model: `modern/${model}`, scale: s, tint, dark, face: dark ? undefined : home.a, stretch });
+    const stack = [home, ...rest], item = { x: tx, z: tz, rot, owner: shop ? undefined : home, stories: home.f };
+    if (!away) homeList.push({ ...item, y: 0, top: deck + 0.02, color: dark ? "#334155" : tint, stack, level: 0 });
+    buildings.push({ ...item, model: `modern/${model}`, scale: s, tint, dark: dark && !shop, face: dark ? undefined : home.a, sign: shop?.sign, stretch });
+    if (onDocks && !dark && chance(`${home.k}smoke`, 0.3)) smoke.push([tx + 0.12, deck + 0.05, tz - 0.1]);
     rest.forEach((r, i) => {
-      const y = deck + i * fh, k = `${r.k}:floor`, off = r.s === "r", shake = onDocks ? s : 0;
-      homeList.push({ x: tx, z: tz, y, top: y + fh + 0.02, rot, owner: r, stories: 1, color: off ? "#334155" : tintOf(r, onDocks), stack, level: i + 1 });
+      const y = deck + i * fh, k = `${r.k}:floor`, off = r.s === "r" || held.has(r.k), shake = onDocks ? s : 0;
+      if (!held.has(r.k)) homeList.push({ x: tx, z: tz, y, top: y + fh + 0.02, rot, owner: r, stories: 1, color: off ? "#334155" : tintOf(r, onDocks), stack, level: i + 1 });
       buildings.push({ x: tx + (rand(k) - 0.5) * 0.08 * shake, z: tz + (rand(`${k}z`) - 0.5) * 0.08 * shake, y, scale: s,
                        rot: rot + (rand(`${k}r`) - 0.5) * 0.3 * (onDocks ? 1 : 0), owner: r, model: `modern/${pick(onDocks ? DOCK_FLOORS : UP_FLOORS, r.k)}`,
                        tint: tintOf(r, onDocks), dark: off, face: off ? undefined : r.a });
@@ -248,7 +256,7 @@ export function buildCity(town) {
 
   for (const [b, c] of blocks) {
     const B = bigOf(b), C = bigOf(c), bigKey = `${B},${C}`;
-    const isBig = Math.max(Math.abs(B), Math.abs(C)) <= DOWNTOWN || docks.has(bigKey);
+    const isBig = Math.max(Math.abs(B), Math.abs(C)) <= DOWNTOWN || docks.has(bigKey) || yards.has(bigKey);
     if (isBig && (b !== B * BIG || c !== C * BIG)) continue;
     const key = isBig ? bigKey : `${b},${c}`, t0 = firstTile(b), u0 = firstTile(c), span = isBig ? BIG_W : BLOCK;
     const mid = [t0 + (span - 1) / 2, u0 + (span - 1) / 2], E = span - 1, corners = [[0, 0], [E, 0], [0, E], [E, E]];
@@ -279,16 +287,27 @@ export function buildCity(town) {
       labels.push({ kind: "place", id: place.id, pos: [mid[0], place.top, mid[1]], text: place.label });
       continue;
     }
-    if (downtown(B, C)) {
-      pads.push({ x: mid[0], z: mid[1], w: BIG_W, d: BIG_W, color: PARK });
-      const board = addBoard(key, mid[0], mid[1]);
-      for (let i = 0; i < 8; i++) {
-        const x = t0 - 0.3 + rand(`${key}:${i}`) * (E + 0.6), z = u0 - 0.3 + rand(`${key}:${i}z`) * (E + 0.6);
-        if (!board || Math.hypot(x - mid[0], z - mid[1]) > 1.9) tree(x, z, `${key}:${i}`);
-      }
+    if (ROW[key]) {
+      addRow(ctx, key, mid);
       continue;
     }
-    if (docks.has(key)) {
+    if (FINANCE[key] !== undefined) {
+      addOffices(ctx, key, mid, FINANCE[key]);
+      continue;
+    }
+    if (isPublic(key)) {
+      addPublic(ctx, key, mid);
+      continue;
+    }
+    if (downtown(B, C)) {
+      addPlaza(ctx, key, mid, addBoard(key, mid[0], mid[1]));
+      continue;
+    }
+    if (isBig && yards.has(key)) {
+      addYard(ctx, key, mid, t0, u0, E);
+      continue;
+    }
+    if (isBig && docks.has(key)) {
       const i = docks.get(key), prop = (model, x, z, k, scale) => buildings.push({ model, x, z, rot: rand(k + "r") * 6.3, scale });
       pads.push({ x: mid[0], z: mid[1], w: BIG_W, d: BIG_W, color: QUAY });
       for (let s = 0; s < 22; s++) {
@@ -319,6 +338,7 @@ export function buildCity(town) {
         continue;
       }
       if (i === 0) labels.push({ kind: "place", id: "docks", pos: [mid[0], 2.2, mid[1]], text: "⚓ The Docks" });
+      dockGrit(ctx, key, mid, t0, u0, E, i === 0);
       boat(t0 + 0.8 + rand(key + "b") * (E - 0.6), u0 - 2.7, Math.PI / 2, key + "b");
       for (let j = 0; j < DOCK_LOTS; j++) {
         const slot = i * DOCK_LOTS + j, tx = t0 + bigLot(Math.floor(j / SIDE)), tz = u0 + bigLot(j % SIDE), k = `${key}:${j}`;
@@ -340,10 +360,14 @@ export function buildCity(town) {
       for (let gx = 1; gx < BLOCK; gx++) {
         for (let gz = 1; gz < BLOCK; gz++) {
           const k = `${key}f${gx}${gz}`;
-          if (rand(k) < 0.55) buildings.push({ model: pick(["modern/lamp", "modern/palm", "modern/flowerbed", "modern/bench", "modern/lamp", "modern/statue",
-                                                             "modern/planter", "modern/palm"], k + "m"), x: t0 + gx - 0.5, z: u0 + gz - 0.5,
-                                              rot: (hash(k) % 4) * (Math.PI / 2) });
+          const model = pick(["modern/lamp", "modern/palm", "modern/flowerbed", "modern/bench", "modern/fountain", "modern/statue",
+                              "modern/planter", "modern/palm"], k + "m");
+          buildings.push({ model, x: t0 + gx - 0.5, z: u0 + gz - 0.5, rot: (hash(k) % 4) * (Math.PI / 2), scale: model === "modern/fountain" ? 0.42 : undefined });
         }
+      }
+      for (const [dx, dz] of [[-0.5, -0.5], [BLOCK - 0.5, -0.5], [-0.5, BLOCK - 0.5], [BLOCK - 0.5, BLOCK - 0.5]]) {
+        const k = `${key}c${dx}${dz}`;
+        if (chance(k, 0.6)) tree(t0 + dx, u0 + dz, k);
       }
     }
     if (nb) pads.push({ x: mid[0], z: mid[1], w: BLOCK, d: BLOCK, color: mix(nb.color, "#FFFFFF", 0.8 - 0.45 * Math.min(1, (filled.get(key) || 0) / (BLOCK * BLOCK))) });
@@ -360,11 +384,11 @@ export function buildCity(town) {
         const home = homes.get(lot), fl = floorsAt.get(`l:${lot}`) || [];
         const base = home && home.d == null ? home : fl[0];
         if (!home && !base) {
-          if (chance(lot + "g", nb ? 0.35 : 0.5)) tree(tx + (rand(lot) - 0.5) * 0.4, tz + (rand(lot + "z") - 0.5) * 0.4, lot);
+          infill(ctx, lot, tx, tz, faceRoad(tx, tz));
           continue;
         }
         if (base) addHome(base, base === home ? fl : fl.slice(1), tx, tz, false);
-        else pads.push({ x: tx, z: tz, w: 0.8, d: 0.8, y: 0.01, color: PLOT });
+        else site(ctx, home, tx, tz, faceRoad(tx, tz));
       }
     }
   }
@@ -373,6 +397,7 @@ export function buildCity(town) {
   const groupOf = (b, c) => {
     const B = bigOf(b), C = bigOf(c), big = `${B},${C}`;
     if (docks.has(big)) return `dock ${big}`;
+    if (yards.has(big)) return `yard ${big}`;
     if (Math.max(Math.abs(B), Math.abs(C)) > DOWNTOWN) return null;
     return downtown(B, C) && B !== 0 && C !== 0 ? `corner ${Math.sign(B)},${Math.sign(C)}` : `big ${big}`;
   };
@@ -428,17 +453,21 @@ export function buildCity(town) {
   for (let tz = grid[2]; tz <= grid[3]; tz++) if (isRoad(tz)) runs("x", tz, grid[0], grid[1]);
   for (let tx = grid[0]; tx <= grid[1]; tx++) if (isRoad(tx)) runs("z", tx, grid[2], grid[3]);
 
+  const xs = cityBlocks.map(([b]) => b), zs = cityBlocks.map(([, c]) => c);
+  const box = [firstTile(Math.min(...xs)) - 1, firstTile(Math.max(...xs) + 1) - 1, firstTile(Math.min(...zs)) - 1, firstTile(Math.max(...zs) + 1) - 1];
+  addOutskirts(ctx, box);
+  const farm = (x, z) => x < box[0] - 3 && z > (box[2] + box[3]) / 2;
   for (let x = island[0]; x <= island[1]; x++) {
     for (let z = island[2]; z <= island[3]; z++) {
       const jx = x + (rand(`${x}j${z}`) - 0.5) * 0.8, jz = z + (rand(`${z}k${x}`) - 0.5) * 0.8;
       const h = heightAt(jx, jz, shape);
       if (h === 0 || h < WATER + 0.12 || h > 1.6) continue;
-      if (h > 0.7 && chance(`${x}w${z}`, 0.006)) buildings.push({ model: "modern/turbine", x: jx, z: jz, y: h - 0.05, rot: rand(`${x}r${z}`) * 6.3, scale: 0.7 });
+      if (h > (farm(jx, jz) ? 0.3 : 0.7) && chance(`${x}w${z}`, farm(jx, jz) ? 0.09 : 0.006)) buildings.push({ model: "modern/turbine", x: jx, z: jz, y: h - 0.05, rot: rand(`${x}r${z}`) * 6.3, scale: 0.7 });
       else if (chance(`${x}f${z}`, vnoise(x * 0.18 + 40, z * 0.18) > 0.55 ? 0.6 : 0.07)) tree(jx, jz, `${x}t${z}`, h - 0.02);
     }
   }
 
-  return { roads, buildings, pads, signals, labels, lanes, signs, hall, venue, boards, homes: homeList, grid, island, built, water,
+  return { roads, buildings, pads, signals, labels, lanes, signs, hall, venue, boards, homes: homeList, grid, island, built, water, smoke, haze, bulbs,
            center: [(grid[0] + grid[1]) / 2, (grid[2] + grid[3]) / 2] };
 }
 

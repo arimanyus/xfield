@@ -26,6 +26,7 @@ const LINES = {
   demolished: (e) => (e.n > 1 ? `${e.n} empty lots were cleared · ${e.n} spots opened up` : `@${e.h}'s empty lot was cleared · a spot opened up`),
   census: (e) => `City Ledger No. ${e.issue} is out`,
   paper: (e) => `🗞 Today's Ledger: ${e.headline}`,
+  mansions: (e) => `💎 Weekly handover: @${e.h} and the rest of the top ${e.n} moved into Millionaires' Row`,
 };
 
 export const tickerLine = (e) => (LINES[e.type] || ((x) => `@${x.h} moved in${x.n ? ` · ${x.n} neighbours reserved` : ""}`))(e);
