@@ -1,0 +1,32 @@
+{
+  "summary": "Tested the new billboard slots (stadium/airport/station), the city chat (public GET, POST rules, after/removed polling, the 8-per-minute flood guard, mute, hidden residents left out) and admin chat moderation, all through the backend and the UI. I also checked the 3D city (the Arrivals board at the airport, the new billboards, the plaza where the old downtown Arrivals block was), the city chat UI on desktop and mobile while signed out, signed in and muted, the admin Billboards and Chat tabs, and the regression suites. Every new feature works. No functional bugs were found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "City chat button", "issues": ["Someone opening the city for the first time (no xf_chat_seen in localStorage) gets every loaded message counted as unread, so it shows '9+' once there is any history. If that's not intended, set seen = newest on first load."]},
+      {"screen": "City desktop default view", "issues": ["The Stadium big-screen billboard sits right behind/above the minimap in the default camera view, so it is partly hidden until you pan."]},
+      {"screen": "Arrivals place card", "issues": ["The card lists 6 recent arrivals while the 3D board shows 3 faces. Probably intended, but check it."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_chat_billboards.py", "/app/backend/tests/test_admin_panel.py", "/app/backend/tests/test_mansions.py", "/app/test_reports/pytest/pytest_chat.xml"],
+  "action_items": [
+    "Optional: on a first visit, start the unread counter from the newest message instead of counting all 50.",
+    "Optional: move the stadium billboard (or the default camera) so the minimap doesn't cover it."
+  ],
+  "critical_code_review_comments": [
+    "Chat.jsx shows relative time from the client clock, so a skewed device clock gives wrong 'Xm' values. Minor.",
+    "The GET /api/chat?after= poll keeps sending back the same removed ids on every poll until a newer message arrives. This is harmless because the client handles it idempotently.",
+    "The flood guard counts deleted messages too. That's acceptable."
+  ],
+  "updated_files": ["/app/backend/tests/test_chat_billboards.py (new)", "/app/backend/tests/test_admin_panel.py (updated stale billboard assertions: 9 slots, live set may include the new test slots)"],
+  "success_rate": {"backend": "100% (11/11 new tests, plus 51 regression tests in test_admin_panel and test_mansions, after updating 2 stale billboard assertions)", "frontend": "100% of tested flows"},
+  "seed_data_creation": "Temporary: a fake session for jonas_trades and test chat messages. Both were cleaned up: db.chat is empty, nobody is muted, the jonas session was deleted, test_snap_token_loverboi_2026 was kept, mansions are still empty, and the billboards were left as the main agent set them (Test stadium/airport/station, enabled).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Use test_chat_billboards.py for the chat and billboard regression. It snapshots and restores the stadium/airport/station billboard docs and creates and removes its own jonas session. Python urllib needs a User-Agent header or the ingress returns 403. In headless Chrome the 3D city blocks Playwright's normal click actions, so click with page.evaluate(el.click()) after waiting about 45 s. The 'Mansion #N' chat badge was not tested, because mansions must stay empty."
+}

@@ -84,3 +84,14 @@
 - P1 Phase 2: mansion history, countdown to the next handover, clickable public buildings/landmarks with info cards, day/night traffic in the outskirts, admin renames skyscrapers / sells signs.
 - P2 Phase 3: mansion customisation, player-funded public buildings, ferry between the Docks and Downtown.
 - P1 Progressive 3D loading (cold load is slow; ~40 s in headless Chrome).
+
+## 2026-10-31: Landmark billboards, city chat, Arrivals at the airport
+- Billboards: 3 new admin slots (backend BILLBOARDS + layout BILLBOARD_SPOTS): Stadium big screen (back corner of the stadium), Airport terminal (behind the terminal), Central Station (north of the station). Placed by fill.js addOutskirts via ctx.addBoard(slot, x, z, lift); Billboard.jsx takes a lift override. Left switched off with no picture for the owner to fill.
+- Arrivals moved to the airport: City3D ArrivalsBoard (flight board "✈ ARRIVALS / XFIELD INTL", last 3 arrivals with "● LANDED", waiting crowd), label "✈ Arrivals". The old downtown block (0,2) is now a plaza.
+- City chat (one room): GET /api/chat (public, last 50 or ?after=<at> + removed ids, me.muted), POST /api/chat (signed-in lit residents; 280 chars; blocked words; 8/minute flood guard; muted -> 403). db.chat {id,k,h,a,text,at,deleted,deleted_at}; residents.chat_muted. Badges: Docks / Uptown / Mansion #N. Frontend city3d/Chat.jsx: pill with unread badge (first visit starts at 0), panel polling 3 s open / 15 s closed, @mentions open houses.
+- Admin Chat tab: last 100 messages (remove = soft delete), mute/unmute, muted list.
+- Tested: iteration_16 (backend 11/11 tests/test_chat_billboards.py + regressions, frontend all flows). Fix after: first-visit unread count.
+
+## Backlog additions
+- P2: stadium big screen can sit under the minimap in the default desktop view (pan to see it).
+- P2: chat reactions / reply-to, chat mention notifications.

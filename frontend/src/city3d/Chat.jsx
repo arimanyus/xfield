@@ -128,14 +128,14 @@ function ChatWindow({ messages, me, state, onSend, onSignIn, onVisit, onClose })
 export function Chat({ user, me, onSignIn, onVisit }) {
   const [open, setOpen] = useState(false);
   const { messages, muted, send } = useChat(open);
-  const [seen, setSeen] = useState(() => localStorage.getItem(SEEN) || "");
+  const [seen, setSeen] = useState(() => localStorage.getItem(SEEN));
   const newest = messages[messages.length - 1]?.at || "";
   useEffect(() => {
-    if (!open || newest <= seen) return;
+    if (!newest || (seen !== null && (!open || newest <= seen))) return;
     localStorage.setItem(SEEN, newest);
     setSeen(newest);
   }, [open, newest, seen]);
-  const unread = messages.filter((m) => m.at > seen && m.k !== user?.k).length;
+  const unread = seen === null ? 0 : messages.filter((m) => m.at > seen && m.k !== user?.k).length;
   const state = !user ? "out" : muted ? "muted" : me?.status !== "finished" ? "dark" : "in";
   if (open) {
     return <ChatWindow messages={messages} me={user} state={state} onSend={send} onSignIn={onSignIn} onClose={() => setOpen(false)}
