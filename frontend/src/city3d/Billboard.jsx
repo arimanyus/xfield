@@ -54,7 +54,8 @@ function useScreen(url, caption, aspect, big) {
 
 // One billboard on steel legs with a catwalk and lamps, turned to face the camera. Clicking it opens its link.
 function Billboard({ board }) {
-  const { w, h, lift } = SIZES[board.size] || SIZES.big;
+  const { w, h, lift: base } = SIZES[board.size] || SIZES.big;
+  const lift = board.lift ?? base;
   const map = useScreen(board.image_url, board.caption, w / h, board.size === "huge");
   const legX = w * 0.3, top = lift + h, post = board.size === "huge" ? 0.16 : 0.1;
   const hover = (on) => { if (board.link) document.body.style.cursor = on ? "pointer" : ""; };

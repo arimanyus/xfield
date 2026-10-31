@@ -336,33 +336,35 @@ function Flag({ color, y }) {
   );
 }
 
-// Arrivals, a concert garden: a stage under a truss, a big screen showing the last three people to move in, and
-// coloured spots sweeping a dancing crowd. Tapping a face opens that person's house; tapping the garden opens Arrivals.
+// Arrivals at the airport: a flight board on two posts showing the last three people to move in, with people waiting
+// under it. Tapping a face opens that person's house; tapping the board opens Arrivals.
 const FONT = `"Space Grotesk", system-ui, sans-serif`;
 const CROWD = ["#2563EB", "#16A34A", "#EAB308", "#DC2626", "#7C3AED", "#0D9488", "#DB2777", "#EA580C"];
-const SPOTS = [[-1, "#F472B6"], [0, "#22D3EE"], [1, "#FDE047"]];
 
 const clip = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 
-function drawScreen(canvas, people, imgs) {
+function drawArrivals(canvas, people, imgs) {
   const ctx = canvas.getContext("2d"), W = canvas.width, H = canvas.height;
-  const g = ctx.createLinearGradient(0, 0, W, H);
-  g.addColorStop(0, "#1E1B4B");
-  g.addColorStop(1, "#831843");
-  ctx.fillStyle = g;
+  ctx.fillStyle = "#0B1220";
   ctx.fillRect(0, 0, W, H);
-  ctx.textAlign = "center";
+  ctx.fillStyle = "#FACC15";
+  ctx.fillRect(0, 0, W, 84);
   ctx.textBaseline = "middle";
-  ctx.fillStyle = "#FDE68A";
-  ctx.font = `800 48px ${FONT}`;
-  ctx.fillText("★ ARRIVALS ★", W / 2, 48);
+  ctx.fillStyle = "#0B1220";
+  ctx.textAlign = "left";
+  ctx.font = `800 52px ${FONT}`;
+  ctx.fillText("✈ ARRIVALS", 30, 44);
+  ctx.textAlign = "right";
+  ctx.font = `700 30px ${FONT}`;
+  ctx.fillText("XFIELD INTL", W - 30, 44);
+  ctx.textAlign = "center";
   if (!people.length) {
     ctx.fillStyle = "#FFFFFF";
     ctx.font = `700 36px ${FONT}`;
-    ctx.fillText("New neighbours show up here", W / 2, H / 2 + 20);
+    ctx.fillText("New neighbours land here", W / 2, H / 2 + 40);
   }
   people.forEach((p, i) => {
-    const cx = (W / people.length) * (i + 0.5), cy = 168, r = 70;
+    const cx = (W / people.length) * (i + 0.5), cy = 192, r = 68;
     ctx.save();
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
@@ -371,22 +373,22 @@ function drawScreen(canvas, people, imgs) {
     ctx.clip();
     if (imgs[i]) ctx.drawImage(imgs[i], cx - r, cy - r, 2 * r, 2 * r);
     ctx.restore();
-    ctx.lineWidth = 9;
-    ctx.strokeStyle = "#FDE68A";
+    ctx.lineWidth = 8;
+    ctx.strokeStyle = "#FACC15";
     ctx.beginPath();
     ctx.arc(cx, cy, r, 0, Math.PI * 2);
     ctx.stroke();
     ctx.fillStyle = "#FFFFFF";
     ctx.font = `700 32px ${FONT}`;
-    ctx.fillText(`@${clip(p.h, 13)}`, cx, 280);
-    ctx.fillStyle = "#E0E7FF";
-    ctx.font = `600 22px ${FONT}`;
-    if (p.line) ctx.fillText(`“${clip(p.line, 24)}”`, cx, 324);
+    ctx.fillText(`@${clip(p.h, 13)}`, cx, 306);
+    ctx.fillStyle = "#4ADE80";
+    ctx.font = `700 24px ${FONT}`;
+    ctx.fillText("● LANDED", cx, 348);
   });
 }
 
-function Venue({ at, people, onPick, onOpen }) {
-  const crowd = useRef(), spots = useRef([]);
+function ArrivalsBoard({ at, people, onPick, onOpen }) {
+  const crowd = useRef();
   const screen = useMemo(() => {
     const canvas = document.createElement("canvas");
     canvas.width = 1024;
@@ -396,21 +398,20 @@ function Venue({ at, people, onPick, onOpen }) {
     map.anisotropy = 8;
     return { canvas, map };
   }, []);
-  const key = people.map((p) => `${p.k}:${p.line}`).join("|");
+  const key = people.map((p) => p.k).join("|");
   useEffect(() => {
     let live = true;
     const draw = (imgs) => {
-      drawScreen(screen.canvas, people, imgs);
+      drawArrivals(screen.canvas, people, imgs);
       screen.map.needsUpdate = true;
     };
     draw([]);
     Promise.all(people.map((p) => loadImage(p.a))).then((imgs) => live && draw(imgs));
     return () => { live = false; };
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
-  const fans = useMemo(() => Array.from({ length: 48 }, (_, i) => {
-    const z = -0.3 + Math.random() * 1.8;
-    return { x: (Math.random() - 0.5) * Math.min(2.4, 2 * (2.6 - Math.abs(z))), z, phase: Math.random() * 6.3, color: CROWD[i % CROWD.length] };
-  }), []);
+  const fans = useMemo(() => Array.from({ length: 18 }, (_, i) => ({
+    x: (Math.random() - 0.5) * 2.1, z: 0.3 + Math.random() * 0.8, phase: Math.random() * 6.3, color: CROWD[i % CROWD.length],
+  })), []);
   useEffect(() => {
     const c = new THREE.Color();
     fans.forEach((f, i) => crowd.current.setColorAt(i, c.set(f.color)));
@@ -418,46 +419,25 @@ function Venue({ at, people, onPick, onOpen }) {
   }, [fans]);
   useFrame(({ clock }) => {
     const t = clock.elapsedTime, m = new THREE.Matrix4();
-    fans.forEach((f, i) => crowd.current.setMatrixAt(i, m.makeTranslation(f.x, 0.13 + Math.abs(Math.sin(t * 4 + f.phase)) * 0.05, f.z)));
+    fans.forEach((f, i) => crowd.current.setMatrixAt(i, m.makeTranslation(f.x + Math.sin(t * 1.3 + f.phase) * 0.015, 0.11, f.z)));
     crowd.current.instanceMatrix.needsUpdate = true;
-    spots.current.forEach((s, i) => { if (s) s.rotation.z = Math.sin(t * 0.9 + i * 2.1) * 0.45; });
   });
   const pick = (e) => {
     e.stopPropagation();
     const hit = people[Math.floor(e.uv.x * people.length)];
     if (hit && e.delta < 6) onPick(hit.k);
   };
-  const metal = <meshLambertMaterial color="#94A3B8" />;
   return (
     <group position={[at.x, 0, at.z]} rotation-y={Math.PI / 4} onClick={(e) => { if (e.delta < 6) { e.stopPropagation(); onOpen(); } }}>
-      <mesh position={[0, 0.03, 0.55]} receiveShadow><boxGeometry args={[2.5, 0.02, 2.1]} /><meshLambertMaterial color="#E7E2D6" /></mesh>
-      <mesh position={[0, 0.12, -1.0]} castShadow receiveShadow><boxGeometry args={[2.7, 0.24, 0.9]} /><meshLambertMaterial color="#1E293B" /></mesh>
-      <mesh position={[0, 0.2, -0.54]}><boxGeometry args={[2.7, 0.04, 0.02]} /><meshBasicMaterial color="#F472B6" toneMapped={false} /></mesh>
-      <mesh position={[0, 1.2, -1.42]} castShadow><boxGeometry args={[2.62, 1.12, 0.08]} /><meshLambertMaterial color="#0F172A" /></mesh>
-      <mesh position={[0, 1.2, -1.375]} onClick={pick}>
-        <planeGeometry args={[2.5, 1.016]} />
+      {[-1.18, 1.18].map((x) => (
+        <mesh key={x} position={[x, 0.95, -0.1]} castShadow><boxGeometry args={[0.08, 1.9, 0.08]} /><meshLambertMaterial color="#334155" /></mesh>
+      ))}
+      <mesh position={[0, 1.42, -0.1]} castShadow><boxGeometry args={[2.52, 1.1, 0.1]} /><meshLambertMaterial color="#1E293B" /></mesh>
+      <mesh position={[0, 1.42, -0.045]} onClick={pick}>
+        <planeGeometry args={[2.4, 0.975]} />
         <meshBasicMaterial map={screen.map} toneMapped={false} />
       </mesh>
-      {[[-1.36, -1.42], [1.36, -1.42], [-1.36, -0.55], [1.36, -0.55]].map(([x, z]) => (
-        <mesh key={`${x}${z}`} position={[x, 1.1, z]} castShadow>{metal}<boxGeometry args={[0.07, 2.2, 0.07]} /></mesh>
-      ))}
-      {[-1.42, -0.55].map((z) => <mesh key={z} position={[0, 2.2, z]} castShadow>{metal}<boxGeometry args={[2.8, 0.07, 0.07]} /></mesh>)}
-      {[-1.36, 1.36].map((x) => <mesh key={x} position={[x, 2.2, -0.98]}>{metal}<boxGeometry args={[0.07, 0.07, 0.87]} /></mesh>)}
-      {[-1.12, 1.12].map((x) => (
-        <group key={x} position={[x, 0.24, -0.82]}>
-          <mesh position={[0, 0.16, 0]} castShadow><boxGeometry args={[0.28, 0.32, 0.24]} /><meshLambertMaterial color="#111827" /></mesh>
-          <mesh position={[0, 0.44, 0]} castShadow><boxGeometry args={[0.22, 0.24, 0.2]} /><meshLambertMaterial color="#111827" /></mesh>
-        </group>
-      ))}
-      {SPOTS.map(([x, color], i) => (
-        <group key={x} position={[x * 0.9, 2.14, -0.55]} ref={(g) => { spots.current[i] = g; }}>
-          <mesh position={[0, -0.98, 0.33]} rotation-x={-0.32}>
-            <coneGeometry args={[0.38, 1.96, 20, 1, true]} />
-            <meshBasicMaterial color={color} transparent opacity={0.16} blending={THREE.AdditiveBlending} depthWrite={false} side={THREE.DoubleSide} />
-          </mesh>
-          <mesh><cylinderGeometry args={[0.07, 0.09, 0.14, 10]} /><meshLambertMaterial color="#334155" /></mesh>
-        </group>
-      ))}
+      <mesh position={[0, 0.03, 0.7]} receiveShadow><boxGeometry args={[2.6, 0.02, 1.2]} /><meshLambertMaterial color="#E7E2D6" /></mesh>
       <instancedMesh ref={crowd} args={[null, null, fans.length]} castShadow>
         <capsuleGeometry args={[0.045, 0.1, 3, 8]} />
         <meshLambertMaterial />
@@ -1044,7 +1024,7 @@ export function City3D({ city, labels, labelNodes, focus, flashes, onHover, onPi
         {flashes.map((f) => (f.rise ? <Rise key={f.id} f={f} /> : <Flash key={f.id} f={f} />))}
         <Signals signals={city.signals} />
         {city.hall && <CityHall hall={city.hall} onHover={onHover} onPick={onPick} />}
-        {city.venue && <Venue at={city.venue} people={newest.slice(0, 3)} onPick={onFace}
+        {city.venue && <ArrivalsBoard at={city.venue} people={newest.slice(0, 3)} onPick={onFace}
           onOpen={() => onPick({ x: city.venue.x, z: city.venue.z, mark: { kind: "place", id: "arrivals" } })} />}
         {city.signs.map((s) => <StandSign key={s.text[0]} text={s.text} at={[s.x, 0, s.z]} height={s.height ?? 0.26} lift={s.lift ?? 0.3} />)}
         <Smoke at={city.smoke} />

@@ -95,8 +95,6 @@ export const CORE = {
 // Downtown: a ring of parkland around the core. Each corner and its two neighbours form one superblock with no
 // streets inside; the four middles stand alone.
 export const DOWNTOWN = 2;
-// The downtown block in front of the bank is Arrivals, an open-air concert garden whose screen shows who just moved in.
-const VENUE = "0,2";
 // Three downtown corners hold the city's towers, one per job. top is where the tower's label floats.
 const PLACES = {
   "-2,-2": { id: "timeline", label: "📰 The Timeline", model: "modern/timeline", tint: "#0EA5E9", top: 5.3,
@@ -109,8 +107,9 @@ const PLACES = {
 const downtown = (b, c) => Math.max(Math.abs(b), Math.abs(c)) === DOWNTOWN;
 // The Financial District's two plots at the back of downtown.
 const FINANCE = { "-1,-2": 0, "1,-2": 1 };
-// Billboard spots the admin fills: downtown parkland by big block, and the Docks crane yard.
-export const BILLBOARD_SPOTS = { hero: "0,-2", west: "-2,0", east: "2,0", corner: "2,2", ledger: "2,-1", docks: "yard" };
+// Billboard spots the admin fills: downtown parkland by big block, the Docks crane yard, and the outskirts landmarks.
+export const BILLBOARD_SPOTS = { hero: "0,-2", west: "-2,0", east: "2,0", corner: "2,2", ledger: "2,-1", docks: "yard", stadium: "stadium",
+  airport: "airport", station: "station" };
 const CORE_KEYS = [];
 for (let b = -DOWNTOWN; b <= DOWNTOWN; b++) for (let c = -DOWNTOWN; c <= DOWNTOWN; c++) CORE_KEYS.push(`${b},${c}`);
 
@@ -211,9 +210,9 @@ export function buildCity(town) {
 
   const buildings = [], pads = [], labels = [], homeList = [], signs = [], boards = [];
   const spotBoards = new Map((town.billboards || []).map((bb) => [BILLBOARD_SPOTS[bb.id], bb]));
-  const addBoard = (key, x, z) => {
+  const addBoard = (key, x, z, lift) => {
     const bb = spotBoards.get(key);
-    if (bb) boards.push({ ...bb, x, z });
+    if (bb) boards.push({ ...bb, x, z, lift });
     return !!bb;
   };
   const faceRoad = (tx, tz) => (isRoad(tz + 1) ? 0 : isRoad(tz - 1) ? Math.PI : isRoad(tx + 1) ? Math.PI / 2 : -Math.PI / 2);
@@ -224,12 +223,12 @@ export function buildCity(town) {
   const facesOf = (n) => lit.filter((r) => r.nb === n.id).sort((a, b) => (b.h === n.host) - (a.h === n.host) || b.f - a.f).slice(0, 5);
   const filled = new Map();
   for (const h of homes.values()) filled.set(`${blockOf(h.x)},${blockOf(h.y)}`, (filled.get(`${blockOf(h.x)},${blockOf(h.y)}`) || 0) + 1);
-  let hall = null, venue = null;
+  let hall = null;
   const byK = new Map(town.residents.map((r) => [r.k, r]));
   const holders = new Map((town.mansions?.holders || []).filter((h) => byK.get(h.k)?.s === "f").map((h) => [h.rank, byK.get(h.k)]));
   const held = new Set([...holders.values()].map((r) => r.k));
   const smoke = [], haze = [], bulbs = [];
-  const ctx = { buildings, pads, signs, labels, homeList, tree, smoke, haze, bulbs, holders, before: !town.mansions, span: BIG_W,
+  const ctx = { buildings, pads, signs, labels, homeList, tree, smoke, haze, bulbs, holders, addBoard, before: !town.mansions, span: BIG_W,
                 colorOf: (r) => nbById[r.nb]?.color };
   const tintOf = (r, onDocks) => (r.s === "r" ? null : onDocks ? dockTint(nbById[r.nb]?.color) : nbById[r.nb]?.color || STONE);
   // A building: its ground home, then a floor for everyone stacked on it, crooked on the Docks, then a roof cap.
@@ -270,13 +269,6 @@ export function buildCity(town) {
     const core = CORE[key];
     if (core) {
       placeCore(core, B, C, mid, { buildings, pads, signs }, tree);
-      continue;
-    }
-    if (key === VENUE) {
-      venue = { x: mid[0], z: mid[1] };
-      pads.push({ x: mid[0], z: mid[1], w: BIG_W, d: BIG_W, color: PARK });
-      for (const [dx, dz] of [[2.1, -2.1], [-2.1, 2.1], [0.4, -2.2], [-2.2, 0.4], [2.2, 0.9], [0.9, 2.2]]) tree(mid[0] + dx, mid[1] + dz, `venue${dx}${dz}`);
-      labels.push({ kind: "place", id: "arrivals", pos: [mid[0], 2.7, mid[1]], text: "🛎 Arrivals" });
       continue;
     }
     const place = PLACES[key];
@@ -467,7 +459,7 @@ export function buildCity(town) {
     }
   }
 
-  return { roads, buildings, pads, signals, labels, lanes, signs, hall, venue, boards, homes: homeList, grid, island, built, water, smoke, haze, bulbs,
+  return { roads, buildings, pads, signals, labels, lanes, signs, hall, venue: ctx.arrivals, boards, homes: homeList, grid, island, built, water, smoke, haze, bulbs,
            center: [(grid[0] + grid[1]) / 2, (grid[2] + grid[3]) / 2] };
 }
 

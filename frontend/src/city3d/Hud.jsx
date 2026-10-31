@@ -392,7 +392,7 @@ export function TickerBar({ events, people, onVisit }) {
   );
 }
 
-const PLACES = { hall: "🏛 City Hall", timeline: "📰 The Timeline", post: "📮 Post Office", arrivals: "🛎 Arrivals", docks: "⚓ The Docks",
+const PLACES = { hall: "🏛 City Hall", timeline: "📰 The Timeline", post: "📮 Post Office", arrivals: "✈ Arrivals", docks: "⚓ The Docks",
   towers: "🏗 Tallest buildings", row: "💎 Millionaires' Row" };
 
 // Buildings that grew floors, tallest first; equals by their ground owner's handle, as the server ranks them.

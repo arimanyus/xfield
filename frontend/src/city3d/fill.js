@@ -153,7 +153,8 @@ export function dockGrit(ctx, key, mid, t0, u0, E, first) {
 }
 
 // Landmarks just outside the city's edge, moving outward as it grows: the stadium and the fair to the east, the
-// university and the station to the west, the airport to the south.
+// university and the station to the west, the airport, where newcomers land at Arrivals, to the south. The stadium,
+// the station and the airport each carry a billboard the admin fills.
 const OUT = (name) => ({ kind: "civic", id: name.toLowerCase().replace(/\W+/g, "-"), name });
 
 export function addOutskirts(ctx, [x0, x1, z0, z1]) {
@@ -161,6 +162,7 @@ export function addOutskirts(ctx, [x0, x1, z0, z1]) {
   const sx = x1 + 5, sz = mz - 3;
   P.push({ x: sx, z: sz, w: 6.2, d: 6.2, color: CONCRETE });
   B.push({ model: "modern/stadium", x: sx, z: sz, rot: 0, size: 5, tint: "#2563EB", sign: ["XFIELD STADIUM", "#1E3A8A", "#FFFFFF"], mark: OUT("Stadium") });
+  ctx.addBoard("stadium", sx - 1.45, sz - 1.45, 1.1);
   const fx = x1 + 5, fz = mz + 5;
   P.push({ x: fx, z: fz, w: 6, d: 6, color: "#EAD9B5" });
   B.push({ model: "modern/ferris", x: fx - 0.9, z: fz - 0.8, rot: Math.PI / 4, size: 2.8, mark: OUT("Amusement Park") });
@@ -176,18 +178,22 @@ export function addOutskirts(ctx, [x0, x1, z0, z1]) {
   B.push({ model: "modern/college", x: ux + 1.6, z: uz + 2.1, rot: Math.PI / 2, size: 1.7, tint: "#7C2D12" });
   for (const [dx, dz] of [[-2.6, -2.6], [2.6, -2.6], [-2.6, 0.4], [2.6, 0.2], [0, 2.8]]) ctx.tree(ux + dx, uz + dz, `uni${dx}${dz}`);
   const tx = x0 - 5, tz = mz - 4, line = x0 - 8.5;
-  P.push({ x: tx - 0.9, z: tz, w: 5.2, d: 4, color: CONCRETE });
+  P.push({ x: tx - 0.9, z: tz - 0.3, w: 5.2, d: 4.6, color: CONCRETE });
   B.push({ model: "modern/station", x: tx + 0.4, z: tz, rot: Math.PI / 2, size: 2.8, tint: "#B45309",
            sign: ["CENTRAL STATION", "#7C2D12", "#FFFFFF"], mark: OUT("Train Station") });
+  ctx.addBoard("station", tx - 1.4, tz - 2.05, 0.9);
   P.push({ x: line + 0.75, z: tz, w: 0.5, d: 3.6, y: 0.03, color: "#D6D3D1" });
   for (let z = z0 - 2; z <= z1 + 4; z++) B.push({ model: "modern/track", x: line, z, rot: Math.PI / 2, scale: 1 });
   B.push({ model: "modern/train", x: line, z: tz - 0.4, rot: Math.PI / 2, scale: 1.2, tint: "#DC2626" });
   const az = z1 + 6.5;
   P.push({ x: mx, z: az, w: 18, d: 1.7, color: "#4B5563" });
   for (let i = -8; i <= 8; i += 2) P.push({ x: mx + i, z: az, w: 0.9, d: 0.08, y: 0.026, color: "#F8FAFC" });
-  P.push({ x: mx + 4.5, z: az - 2.4, w: 7, d: 2.6, color: CONCRETE });
-  B.push({ model: "modern/terminal", x: mx + 4.5, z: az - 2.6, rot: 0, size: 4, tint: "#0284C7", sign: ["XFIELD AIRPORT", "#0C4A6E", "#FFFFFF"],
+  P.push({ x: mx + 3.5, z: az - 2.5, w: 11, d: 2.8, color: CONCRETE });
+  B.push({ model: "modern/terminal", x: mx + 5.5, z: az - 2.6, rot: 0, size: 4, tint: "#0284C7", sign: ["XFIELD AIRPORT", "#0C4A6E", "#FFFFFF"],
            mark: OUT("Airport") });
+  ctx.addBoard("airport", mx + 5.1, az - 4.5, 1);
   B.push({ model: "modern/plane", x: mx - 3, z: az, rot: 0, size: 1.6 });
-  B.push({ model: "modern/plane", x: mx + 1.5, z: az - 2.2, rot: Math.PI / 2, size: 1.4 });
+  B.push({ model: "modern/plane", x: mx - 0.8, z: az - 2.3, rot: Math.PI / 2, size: 1.4 });
+  ctx.arrivals = { x: mx + 1.75, z: az - 2.75 };
+  ctx.labels.push({ kind: "place", id: "arrivals", pos: [mx + 1.75, 2.35, az - 2.75], text: "✈ Arrivals" });
 }
