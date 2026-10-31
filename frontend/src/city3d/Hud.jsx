@@ -34,7 +34,7 @@ const XLink = ({ href, onClick, className = "", testId, children }) => (
   <a href={href} target="_blank" rel="noreferrer" onClick={onClick} data-testid={testId}
     className={`rounded-lg bg-ink px-2.5 py-1.5 text-center text-xs font-bold text-white whitespace-nowrap hover:bg-slate-700 ${className}`}>{children}</a>
 );
-const Close = ({ onClick }) => <button type="button" onClick={onClick} className="self-start text-ink/40 hover:text-ink text-lg leading-none">×</button>;
+const Close = ({ onClick, testId }) => <button type="button" onClick={onClick} data-testid={testId} className="self-start text-ink/40 hover:text-ink text-lg leading-none">×</button>;
 const Heading = ({ children }) => <div className="mt-2 mb-1 text-[10px] font-bold uppercase tracking-widest text-ink/50">{children}</div>;
 const nameOf = (d) => d?.name || "New district";
 const names = (ps) => ps.map((p) => `@${p.h}`).join(ps.length > 2 ? ", " : " and ");
@@ -277,7 +277,7 @@ function BuildingInfo({ b, k, share, onVisit }) {
         <span data-testid="house-building-line">🏢 {line}</span>
         {b.rank && <span className="shrink-0 text-ink/60 tabular-nums" data-testid="house-building-rank">#{b.rank} tallest</span>}
       </div>
-      <ol className="mt-1.5 flex max-h-40 flex-col gap-0.5 overflow-y-auto" data-testid="house-building-people">
+      <ol className="mt-1.5 flex max-h-56 flex-col gap-0.5 overflow-y-auto" data-testid="house-building-people">
         {b.people.map((p) => (
           <li key={p.k}>
             <button type="button" onClick={() => onVisit(p)} data-testid={`house-building-floor-${p.floor}`}
@@ -317,7 +317,7 @@ export function HouseCard({ house, nb, signedIn, onChanged, onLeft, onVisit, onC
             {nb && <> · <b style={{ color: nb.color }}>{nameOf(nb)}</b></>}
           </div>
         </div>
-        <Close onClick={onClose} />
+        <Close onClick={onClose} testId="house-card-close" />
       </div>
       {l && <div className="mt-2 text-xs"><Standing l={l} /></div>}
       {fresh && <BuildingInfo b={fresh.building} k={o.k} onVisit={onVisit}
@@ -337,7 +337,7 @@ export function AwayCard({ news, onVisit, onClose }) {
     <div className={`${CARD} pop w-[min(92vw,340px)] p-3 pointer-events-auto`}>
       <div className="flex items-center justify-between">
         <div className="font-display font-bold">While you were away</div>
-        <Close onClick={onClose} />
+        <Close onClick={onClose} testId="away-card-close" />
       </div>
       <ul className="mt-1.5 space-y-1 text-xs">
         {news.slice(0, 6).map((n) => (
@@ -387,9 +387,9 @@ export function PlaceCard({ id, town, city, me, onVisit, onClose }) {
     <div className={`${CARD} pop w-[min(92vw,360px)] p-3 pointer-events-auto`} data-testid={`place-card-${id}`}>
       <div className="flex items-center justify-between">
         <div className="font-display font-bold text-lg">{PLACES[id]}</div>
-        <Close onClick={onClose} />
+        <Close onClick={onClose} testId="place-card-close" />
       </div>
-      <div className="max-h-[55vh] overflow-y-auto">
+      <div className="max-h-[45vh] overflow-y-auto">
         {id === "hall" && <Hall town={town} onVisit={onVisit} />}
         {id === "timeline" && <Timeline events={town.ticker} />}
         {id === "post" && <PostOffice me={me} />}
@@ -424,7 +424,7 @@ function Towers({ town, homes, me, onVisit }) {
                 <span className="w-5 shrink-0 font-bold tabular-nums text-ink/50">{i + 1}.</span>
                 <Face p={h.owner} size={26} ring={h.owner.s === "f" ? WARM : "#CBD5E1"} dim={h.owner.s !== "f"} />
                 <span className="min-w-0 flex-1 leading-tight">
-                  <b className="block truncate">@{h.owner.h}'s building</b>
+                  <b className="block truncate">@{h.owner.h}</b>
                   <span className="text-[11px] text-ink/60">{areaOf(h.owner)} · {lit} lit{mine ? " · you live here" : ""}</span>
                 </span>
                 <span className="flex -space-x-1.5">

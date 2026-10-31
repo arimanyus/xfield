@@ -189,6 +189,11 @@ export default function CityPage() {
   const visit = (p) => homeOf[p.k] && pick(homeOf[p.k]);
   const closePaper = () => {
     if (issue) localStorage.setItem("xf_paper", String(issue));
+    const url = new URL(window.location.href);
+    if (url.searchParams.has("place")) {
+      url.searchParams.delete("place");
+      window.history.replaceState(null, "", url.pathname + url.search);
+    }
     setPlace(null);
   };
   const markDone = (step) => api("/me/done", { method: "POST", body: { step } }).then(loadMe).catch(() => {});

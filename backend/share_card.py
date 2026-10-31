@@ -200,9 +200,9 @@ def _rank(d, data, x0, y, w):
     d.text((x0 + 22, y + (84 - (bb[3] - bb[1])) / 2 - bb[1]), big, font=font, fill=INK)
     tx = x0 + 22 + (bb[2] - bb[0]) + 22
     where = "uptown" if data["moment"] == "uptown" else "on the Docks"
-    top = f"of {data['of']} {where}" if data.get("rank") else f"Not ranked yet, {where}"
+    top = f"of {data['of']} on the ladder" if data.get("rank") else f"Not ranked yet, {where}"
     d.text((tx, y + 13), top, font=_fitw(d, top, BODY, x0 + w - tx - 16, 24), fill=INK)
-    pts = f"{data['score']:,} points"
+    pts = f"{data['score']:,} points \u00b7 {where}" if data.get("rank") else f"{data['score']:,} points"
     d.text((tx, y + 45), pts, font=_fitw(d, pts, BODY, x0 + w - tx - 16, 24, False), fill=_shade(INK, 2.2))
     return y + 84 + 12
 
@@ -237,7 +237,7 @@ def _invites(img, d, data, avatars, x0, y, w):
             plus = _font(BODY, 30, True)
             bb = d.textbbox((0, 0), "+", font=plus)
             d.text((sx + (size - (bb[2] - bb[0])) / 2 - bb[0], y + (size - (bb[3] - bb[1])) / 2 - bb[1]), "+", font=plus, fill=NEUTRAL)
-            text, color = "open lot", _shade(INK, 3.0)
+            text, color = ("open floor" if data.get("full") else "open lot"), _shade(INK, 3.0)
         tw = slot - 8
         f = _fitw(d, text, BODY, tw, 17, low=13)
         text = _clip(d, text, f, tw)

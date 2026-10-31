@@ -39,3 +39,20 @@
 - CARD_VERSION=3 in card payload busts old cached cards; share url is /api/s/{h}?v=<hash> so X re-crawls when the card changes; share/og text now include rank on first share.
 - Frontend snapshot key has SNAP_VERSION so every player's browser re-shoots the close-up on next visit. Players who haven't revisited get the drawn fallback scene with the same panel.
 - Tested: iteration_12 (backend 9/9, frontend 100%), tests in backend/tests/test_share_card_v3.py.
+
+## 2026-10-31: Building up when the city is full (Stacks Phase 1 verified + Phase 2 built)
+- Phase 1 (rules in backend/stacks.py, rendering in city3d/layout.js addHome + modern.js fd0-3/fdcap/fu0-1/fucap) verified on a full preview city: crooked container/plywood floors with a tarp cap on the Docks, glass floors with a roof garden uptown, faces on every floor.
+- Preview data (user chose to KEEP it): 251 sample residents (`sample: true`) fill all 200 ground spots + 52 floors. Seeder backend/tests/seed_full_city.py (one-shot), faces saved to frontend/public/sample-faces by backend/tests/sample_faces.py (DiceBear rate-limits browsers).
+- House card: building block (floor list top first, "Floor N of @x's building" / "N people live on this building", "#N tallest", 𝕏 Share my building for lit owners). Next move card: "N people live on my building · #N tallest" + 𝕏 Share. Hover tooltip shows floor/building.
+- Tallest buildings leaderboard: tap the "N floors built" chip (place card id "towers", also /?place=towers). Hall rules mention building up.
+- Tower share card: GET /api/residents/{h}/tower.jpg (backend/tower_card.py) + share page GET /api/t/{h} (OG for bots; humans land on /?at=owner and get the xf_invite cookie so they move in on top). /api/residents/{h}.tower_share only for the ground owner.
+- Ledger: paper stores towers (top 5 with grew since the last paper) + heights; facts and the AI prompt cover towers; plain fallback has tower stories; Newspaper "Tallest Buildings" box + "Floors built"; paper card adds "Floors built". Floor arrivals' moved_in events carry on_h/lv (ticker: "moved in on floor N of @x's building").
+- Share card v4: "of N on the ladder · uptown" wording, invites show "open floor" once the ground is full.
+- Tested: iteration_13 (backend 14/14 tests/test_floors_towers.py + floors_sim + floors_events_sim, frontend all flows). Fixes after: tower_share owner-only, URL ?place cleared on paper close, close-button testids, shorter leaderboard rows.
+
+## Backlog
+- P1 Phase 3 stacks: residents name their building together, inside-building view, penthouse (top floor) perk.
+- P1 Progressive 3D loading (one Suspense boundary holds the whole city until every model loads; ~10s on a cold load).
+- P2 Cache load_buildings per town version (scans all residents per /residents and card request).
+- P2 Drawn fallback share card shows a lone house for floor residents (real players get the 3D snapshot).
+- Earlier P1/P2 items above still open (data-testids across v3 UI, mobile sign-in card overlap, 2D route clean-up).

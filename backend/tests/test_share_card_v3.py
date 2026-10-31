@@ -49,8 +49,8 @@ def test_share_url_hash(res):
 
 
 def test_share_text_rank(res):
-    assert res["share"]["moment"] == "join"
-    assert "I'm #1 of 1 on the Docks" in res["share"]["text"], res["share"]["text"]
+    assert res["share"]["moment"] in ("join", "vote")
+    assert re.search(r"#\d+ of \d+ on the Docks", res["share"]["text"]), res["share"]["text"]
 
 
 # Share page OG for bots / redirect for humans
@@ -63,7 +63,7 @@ def test_share_page_bot(res):
     assert 'og:image:width" content="1200"' in t and 'og:image:height" content="630"' in t
     assert 'twitter:card" content="summary_large_image"' in t
     desc = re.search(r'og:description" content="([^"]*)"', t).group(1)
-    assert "#1 of" in desc, desc
+    assert re.search(r"#\d+ of \d+", desc), desc
 
 
 def test_share_page_human(res):

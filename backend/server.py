@@ -85,7 +85,7 @@ PAPER_DIR.mkdir(parents=True, exist_ok=True)
 CIRCLE_SIZE = 8
 INVITES = 3
 SNAP_W, SNAP_H = 1200, 630
-CARD_VERSION = 3
+CARD_VERSION = 4
 SNAP_GAP = timedelta(seconds=20)
 MIN_PLAYERS = 3
 READ_TTL = timedelta(days=7)
@@ -779,7 +779,7 @@ async def card_payload(doc: dict, st: dict) -> dict:
     return {"rv": CARD_VERSION, "k": doc["k"], "h": doc["h"], "name": doc.get("name"), "moment": moment,
             "uptown": bool(doc.get("uptown")), "color": nb.get("color"),
             "invites": [{"k": p["k"], "h": p["h"], "s": p["s"]} for p in invites],
-            "floor": bld["floor"], "size": bld["size"], "base_h": bld["base"]["h"],
+            "floor": bld["floor"], "size": bld["size"], "base_h": bld["base"]["h"], "full": await count_taken() >= TOWN_CAPACITY,
             "nb_name": nb.get("name"), "tags": st["tags"], "by_h": doc.get("by_h"), "by_k": by["k"] if by else None, "score": mine, "start": arena.START,
             "line": arena.UPTOWN_AT, "rank": 1 + sum(arena.score(d) > mine for d in pool) if playing else None, "of": len(pool),
             "neighbours": [{"k": n["k"], "status": "reserved" if n["s"] == "r" else "finished"} for n in st["neighbours"]],
@@ -914,6 +914,7 @@ async def resident(handle: str, request: Request):
     bld = building_of(doc, blds)
     tower = tower_payload(doc, blds) if bld["size"] > 1 else None
     bld["rank"], bld["of"] = (tower["rank"], tower["of"]) if tower else stacks.rank_of(stacks.key_of(doc), blds)
+    tower = tower if bld["floor"] == 1 else None
     out = {"building": bld, "k": doc["k"], "h": doc["h"], "name": doc.get("name"), "avatar_url": doc.get("avatar_url"),
            "status": "finished" if doc["status"] == "finished" else "reserved", "x": doc["x"], "y": doc["y"],
            "tier": st["tier"], "tier_name": town.TIERS[st["tier"]], "inbound": st["inbound"], "by_h": doc.get("by_h"),

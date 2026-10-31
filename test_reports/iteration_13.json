@@ -1,0 +1,40 @@
+{
+  "summary": "Tested 'Building up when the city is full' Phase 1+2. Backend: new pytest suite test_floors_towers.py (14/14 pass, read-only against preview DB): town stats 200/200 + 52 floors, floor residents' d/x,y match their ground, building payload (arjun #1 10fl docks, jonas #2 9, theo #3 9, loverboi #4 4, sana floor 2 of theo, single home size 1 rank null, no tower_share), tower_share text/url/card_url, tower.jpg 1200x630 for owners and floor residents, /api/t bot OG (title '@theo_makes's building is 9 floors tall', og:image tower.jpg) and human 302 to /?at=theo_makes + xf_invite=theo_makes cookie, sana share text 'I live on floor 2 of @theo_makes's building uptown...', card.jpg, paper issue 3 towers top-5 exact order with k,h,a,size,area,grew + heights + numbers.floors=52, paper card JPEG. floors_sim.py (DB_NAME=floors_sim, cap 3) prints ALL GOOD. New throwaway sim floors_events_sim.py (DB_NAME=floors_sim_ev, cap 2) verifies moved_in events: ground arrival has no on_h/lv; link arrivals on Bob get on_h=Bob lv=1 then lv=2; random arrival goes to shortest docks building (Alice) with on_h=Alice; FACTS line 'moved in on floor 2 of @Alice's building'; ALL GOOD. Frontend (Playwright, 1920x1080): lots-stat '200/200 ground spots', floors-stat button '52 floors built' opens place-card-towers with 20 rows, row1 @arjun_reads 10 fl; row click opens house-card with house-building-line '10 people live on this building', '#1 tallest', floors F10..F1 top-first, 2 '· dark'; clicking floor 3 opens @ines_makes card 'floor 3 of 10 / Floor 3 of @arjun_reads's building'. /?at=sana_sings: 'floor 2 of 9', 'Floor 2 of @theo_makes's building', '#3 tallest'. 3D: arjun docks tower renders crooked container/plywood floors with blue tarp cap, faces on floors, no floating/clipping seen; theo uptown tower renders glass floors with roof-garden cap and faces. Hover tooltip over arjun's stack shows 'floor N of @arjun_reads's' per floor (only when no house is picked). Signed in as loverboiWrites: next-move-building '🏢 4 people live on my building · #4 tallest', next-move-share-building href x.com/intent/post with tower text + /api/t/loverboiWrites; leaderboard row 4 highlighted 'you live here'; house card shows '𝕏 Share my building' with correct href. Ledger issue 3 shows Tallest Buildings paper-tower-1..5 and 'Floors built 52'; clicking a tower name closes the paper and opens @jonas_trades's house card. Ticker: no on_h events exist in the preview DB (expected, old sample events) — the Ticker format was code-reviewed only and the backend fact line verified in sim. No page errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/residents/{floor_resident}", "issue": "tower_share is also returned to floor residents (e.g. sana_sings) with owner-POV text 'My building ... is 9 floors tall ... @iris_posts @omar_thinks @priya_makes live above me' which is wrong from sana's view. The UI correctly hides it (Hud and NextMove gate on building.floor === 1), but API consumers get misleading text. Either omit for floor>1 or write a floor-resident variant."},
+      {"endpoint": "GET /api/residents/{h}/card.jpg (floor resident)", "issue": "sana's card shows 'MY 3 INVITES · open lot' even though the ground is full and invites now become floors on the building; also '#65 of 201 uptown' reads as if 201 are uptown (201 is the whole ladder). Wording only."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "Ledger tower click", "issue": "After clicking a paper tower row, the paper closes and the house opens but the URL stays '?place=ledger', so a reload reopens the paper instead of the house.", "affected_selectors": ["[data-testid='paper-tower-N'] button"]}
+    ],
+    "design_issues": [
+      {"screen": "Tallest buildings card", "issues": ["Row titles truncate ('@arjun_reads's buildi...') at 1920px because face stack + size column take space; consider dropping \"'s building\" or the face stack on narrow widths."]},
+      {"screen": "House card building list", "issues": ["For 10-floor buildings the floor list scrolls inside the card and F2/F1 (ground owner) are hidden below the fold without a visible scroll hint."]},
+      {"screen": "Cold load", "issues": ["On a cold load of /?at=sana_sings, after ~11s only terrain/cars were visible (no roads/buildings yet) because everything waits on one Suspense boundary; consider progressive loading."]},
+      {"screen": "House card", "issues": ["Close '×' button has no data-testid."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_floors_towers.py", "/app/backend/tests/floors_events_sim.py", "/app/backend/tests/floors_sim.py", "/app/test_reports/pytest/floors_towers.xml"],
+  "action_items": [
+    "Optional: drop tower_share (or rewrite text) for residents whose building.floor > 1",
+    "Optional: update share card invites wording when ground is full ('floor on my building' instead of 'open lot') and the '#N of M uptown' phrasing",
+    "Optional: clear ?place=ledger from URL when a paper row opens a house",
+    "Optional: add data-testid to Close buttons; improve truncation in Tallest buildings rows"
+  ],
+  "critical_code_review_comments": [
+    "server.py is 2261 lines - should be split (paper, cards, town placement, auth) into modules.",
+    "resident() calls load_buildings() (full residents scan) on every GET /residents/{h}, and tower_share_page/tower_bytes do it again; with growth this is O(N) per request - consider caching buildings per town version.",
+    "/api/t/{handle} sets xf_invite to the owner's k only when the ground owner is lit; if ground is dark (reserved) the link silently gives no stacking target - fine, but undocumented."
+  ],
+  "updated_files": ["/app/backend/tests/test_floors_towers.py", "/app/backend/tests/floors_events_sim.py"],
+  "success_rate": {"backend": "100% (14/14 pytest + 2 sims ALL GOOD)", "frontend": "100% of requested flows (ticker on_h line verified by code + backend sim only)"},
+  "seed_data_creation": "None in the real DB. Sims used throwaway DBs floors_sim / floors_sim_ev, both dropped at end.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Preview DB has 251 sample residents (keep). Run: pytest /app/backend/tests/test_floors_towers.py; DB_NAME=floors_sim TOWN_CAPACITY=3 python tests/floors_sim.py; DB_NAME=floors_events_sim... use DB_NAME=floors_sim_ev TOWN_CAPACITY=2 python tests/floors_events_sim.py. Playwright tip: the WebGL page keeps Playwright's actionability waits busy - use dispatch_event('click') and page.evaluate polling instead of wait_for_selector after clicks. Hover tooltip only renders when no house card is picked (close it first). Paper tower rows: click the inner button of [data-testid=paper-tower-N]."
+}
