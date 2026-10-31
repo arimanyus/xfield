@@ -19,9 +19,9 @@ from urllib.parse import urlencode
 import httpx
 from dotenv import load_dotenv
 from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Request, Response, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 from motor.motor_asyncio import AsyncIOMotorClient
-from PIL import Image
+from PIL import Image, ImageOps
 from pydantic import BaseModel, Field
 from pymongo.errors import DuplicateKeyError
 from starlette.middleware.cors import CORSMiddleware
@@ -506,6 +506,14 @@ async def relocate(doc: dict, area: str):
                                                     "$unset": {"lv": "", "on": "", "dock": ""}})
 
 
+async def go_docks(d: dict):
+    """Back to the Docks: a floor uptown moves onto the shortest Docks building, a house keeps its lot for later."""
+    if stacks.stacked(d) and d.get("on") == "lot":
+        await relocate(d, "docks")
+    else:
+        await db.residents.update_one({"k": d["k"]}, {"$set": {"uptown": False}})
+
+
 async def go_uptown(k: str):
     """A house that wins its way off the Docks. From a floor, its old floor goes and the ones above drop down."""
     doc = await db.residents.find_one({"k": k}, {"_id": 0})
@@ -695,7 +703,7 @@ async def get_town(v: Optional[int] = None):
     finished = sum(1 for r in residents if r["s"] == "f")
     floors = sum(1 for r in residents if r.get("lv"))
     biggest = max(nbs, key=lambda n: n.get("size", 0), default=None)
-    return {"version": version, "residents": residents, "neighbourhoods": nbs, "ticker": events,
+    return {"version": version, "residents": residents, "neighbourhoods": nbs, "ticker": events, "billboards": await live_billboards(),
             "town_hall": {"bx": town.TOWN_HALL[0], "by": town.TOWN_HALL[1]},
             "bounds": town.city_bounds(await city_blocks()), "newest": newest(docs),
             "paper": await db.papers.find_one({}, {"_id": 0, "issue": 1}, sort=[("issue", -1)]),
@@ -1010,6 +1018,7 @@ async def tower_share_page(handle: str, request: Request):
         return RedirectResponse(f"{base}/", status_code=302)
     t = tower_payload(doc, await load_buildings())
     target = f"{base}/?at={t['h']}"
+    await track_share("tower", t["h"], request)
     if not BOT_RE.search(request.headers.get("user-agent", "")):
         resp = RedirectResponse(target, status_code=302)
         if t["floors"][0]["s"] == "f":
@@ -1037,6 +1046,7 @@ async def share_page(handle: str, request: Request):
     if not doc:
         return RedirectResponse(f"{base}/", status_code=302)
     target = f"{base}/?at={doc['h']}"
+    await track_share("house", doc["h"], request)
     if not BOT_RE.search(request.headers.get("user-agent", "")):
         resp = RedirectResponse(target, status_code=302)
         if doc["status"] == "finished":
@@ -1755,10 +1765,7 @@ async def reshuffle():
         return
     async with TOWN_LOCK:
         for d in down:
-            if stacks.stacked(d) and d.get("on") == "lot":
-                await relocate(d, "docks")
-            else:
-                await db.residents.update_one({"k": d["k"]}, {"$set": {"uptown": False}})
+            await go_docks(d)
         await sync_docks()
         await sync_stacks()
     await db.events.insert_one({"type": "docked", "h": "", "n": len(down), "at": now_iso()})
@@ -2059,6 +2066,7 @@ async def paper_share_page(issue: str, request: Request):
         p = await load_issue(db.papers, issue, {"_id": 0})
     except HTTPException:
         return RedirectResponse(target, status_code=302)
+    await track_share("paper", str(p["issue"]), request)
     if not BOT_RE.search(request.headers.get("user-agent", "")):
         return RedirectResponse(target, status_code=302)
     title = html.escape(f"The XField Ledger No. {p['issue']}")
@@ -2108,20 +2116,366 @@ async def cron_refresh(request: Request):
 
 # ---------- owner-only ----------
 
-async def require_admin(request: Request):
+ADMIN_COOKIE = "xf_admin"
+ADMIN_HOURS = 12
+
+
+async def check_admin_key(request: Request, key: str):
+    """The admin password is ADMIN_KEY; five wrong tries from one address lock it out for 15 minutes."""
     ip = client_ip(request)
+    if not key:
+        raise HTTPException(401, "Admin sign-in required.")
     if await db.admin_attempts.count_documents({"ip": ip, "ts": {"$gte": now() - timedelta(minutes=15)}}) >= 5:
-        raise HTTPException(429, "Too many wrong keys. Try again in 15 minutes.")
-    key = request.headers.get("x-admin-key", "")
-    if not key or not secrets.compare_digest(key.encode(), ADMIN_KEY.encode()):
+        raise HTTPException(429, "Too many wrong passwords. Try again in 15 minutes.")
+    if not secrets.compare_digest(key.encode(), ADMIN_KEY.encode()):
         await db.admin_attempts.insert_one({"ip": ip, "ts": now()})
-        raise HTTPException(403, "Owner key required.")
+        raise HTTPException(403, "Wrong admin password.")
+
+
+async def require_admin(request: Request):
+    token = request.cookies.get(ADMIN_COOKIE)
+    if token and await db.admin_sessions.find_one({"token_hash": _hash(token), "expires_at": {"$gt": now()}}):
+        return
+    await check_admin_key(request, request.headers.get("x-admin-key", ""))
+
+
+class AdminLogin(BaseModel):
+    password: str = Field(max_length=200)
+
+
+@api.post("/admin/login")
+async def admin_login(body: AdminLogin, request: Request):
+    await check_admin_key(request, body.password)
+    token = secrets.token_urlsafe(32)
+    await db.admin_sessions.insert_one({"token_hash": _hash(token), "expires_at": now() + timedelta(hours=ADMIN_HOURS)})
+    resp = JSONResponse({"ok": True})
+    resp.set_cookie(ADMIN_COOKIE, token, max_age=ADMIN_HOURS * 3600, httponly=True, secure=True, samesite="lax", path="/api")
+    return resp
+
+
+@api.post("/admin/logout")
+async def admin_logout(request: Request):
+    token = request.cookies.get(ADMIN_COOKIE)
+    if token:
+        await db.admin_sessions.delete_one({"token_hash": _hash(token)})
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(ADMIN_COOKIE, path="/api")
+    return resp
+
+
+@api.get("/admin/me")
+async def admin_me(request: Request):
+    await require_admin(request)
+    return {"ok": True}
 
 
 @api.post("/admin/check")
 async def admin_check(request: Request):
     await require_admin(request)
     return {"ok": True}
+
+
+# City limits: the admin's numbers win over the .env defaults, and every worker picks them up within 30 seconds.
+ENV_LIMITS = {"town_capacity": TOWN_CAPACITY, "moveins_per_hour": MOVEINS_PER_HOUR}
+
+
+async def load_settings():
+    global TOWN_CAPACITY, MOVEINS_PER_HOUR
+    s = {**ENV_LIMITS, **(await db.meta.find_one({"_id": "settings"}, {"_id": 0}) or {})}
+    TOWN_CAPACITY, MOVEINS_PER_HOUR = int(s["town_capacity"]), int(s["moveins_per_hour"])
+
+
+async def settings_loop():
+    while True:
+        await asyncio.sleep(30)
+        try:
+            await load_settings()
+        except Exception:
+            logger.exception("reloading city limits failed")
+
+
+class LimitsBody(BaseModel):
+    town_capacity: int = Field(ge=10, le=100000)
+    moveins_per_hour: int = Field(ge=1, le=100000)
+
+
+async def limits_out() -> dict:
+    return {"town_capacity": TOWN_CAPACITY, "moveins_per_hour": MOVEINS_PER_HOUR, "taken": await count_taken(),
+            "floors": await db.residents.count_documents({"hidden": False, "lv": {"$gte": 1}})}
+
+
+@api.get("/admin/settings")
+async def admin_settings(request: Request):
+    await require_admin(request)
+    return await limits_out()
+
+
+@api.put("/admin/settings")
+async def admin_save_settings(body: LimitsBody, request: Request):
+    await require_admin(request)
+    await db.meta.update_one({"_id": "settings"}, {"$set": body.model_dump()}, upsert=True)
+    await load_settings()
+    await bump()
+    return await limits_out()
+
+
+# ---------- billboards ----------
+
+# Fixed spots in the 3D city (placed by frontend city3d/layout.js BILLBOARD_SPOTS): id -> (name, size).
+BILLBOARDS = {"hero": ("Downtown, huge", "huge"), "west": ("West park", "big"), "east": ("East park", "big"),
+              "corner": ("Front corner", "big"), "ledger": ("By the Ledger", "big"), "docks": ("Docks crane yard", "big")}
+BILLBOARD_MAX_BYTES = 12 * 1024 * 1024
+
+
+def billboard_out(slot: str, d: dict) -> dict:
+    name, size = BILLBOARDS[slot]
+    return {"id": slot, "name": name, "size": size, "caption": d.get("caption", ""), "link": d.get("link", ""),
+            "enabled": d.get("enabled", False), "updated_at": d.get("updated_at"),
+            "image_url": f"/api/billboards/{slot}/image?v={d['v']}" if d.get("image") else None}
+
+
+async def all_billboards() -> list:
+    docs = {d["slot"]: d async for d in db.billboards.find({}, {"_id": 0})}
+    return [billboard_out(slot, docs.get(slot, {})) for slot in BILLBOARDS]
+
+
+async def live_billboards() -> list:
+    return [{k: b[k] for k in ("id", "size", "caption", "link", "image_url")} for b in await all_billboards()
+            if b["enabled"] and b["image_url"]]
+
+
+def billboard_slot(slot: str) -> str:
+    if slot not in BILLBOARDS:
+        raise HTTPException(404, "No billboard there.")
+    return slot
+
+
+class BillboardBody(BaseModel):
+    caption: str = Field("", max_length=80)
+    link: str = Field("", max_length=500)
+    enabled: bool = True
+
+
+@api.get("/billboards/{slot}/image")
+async def billboard_image(slot: str):
+    d = await db.billboards.find_one({"slot": billboard_slot(slot)}, {"_id": 0})
+    if not d or not d.get("image"):
+        raise HTTPException(404, "No picture on this billboard.")
+    path = CARD_DIR / f"bb-{slot}-{d['v']}.jpg"
+    if not path.exists():
+        path.write_bytes(await storage.get(d["image"]))
+    return Response(content=path.read_bytes(), media_type="image/jpeg", headers={"Cache-Control": "public, max-age=604800"})
+
+
+@api.get("/admin/billboards")
+async def admin_billboards(request: Request):
+    await require_admin(request)
+    return {"billboards": await all_billboards()}
+
+
+@api.put("/admin/billboards/{slot}")
+async def admin_save_billboard(slot: str, body: BillboardBody, request: Request):
+    await require_admin(request)
+    link = body.link.strip()
+    if link and not re.match(r"^https?://[^\s]+$", link):
+        raise HTTPException(400, "The link must start with http:// or https://")
+    await db.billboards.update_one({"slot": billboard_slot(slot)}, {"$set": {
+        "caption": body.caption.strip(), "link": link, "enabled": body.enabled, "updated_at": now_iso()}}, upsert=True)
+    await bump()
+    return billboard_out(slot, await db.billboards.find_one({"slot": slot}, {"_id": 0}))
+
+
+@api.post("/admin/billboards/{slot}/image")
+async def admin_billboard_image(slot: str, request: Request, file: UploadFile = File(...)):
+    await require_admin(request)
+    billboard_slot(slot)
+    raw = await file.read(BILLBOARD_MAX_BYTES + 1)
+    if len(raw) > BILLBOARD_MAX_BYTES:
+        raise HTTPException(413, "That picture is too big (12 MB max).")
+    try:
+        img = ImageOps.exif_transpose(Image.open(io.BytesIO(raw))).convert("RGB")
+    except Exception:
+        raise HTTPException(400, "That file isn't a picture we can read.")
+    img.thumbnail((2048, 2048))
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=86)
+    data = buf.getvalue()
+    v = hashlib.sha1(data).hexdigest()[:10]
+    path = await storage.put(f"billboards/{slot}-{v}.jpg", data)
+    (CARD_DIR / f"bb-{slot}-{v}.jpg").write_bytes(data)
+    await db.billboards.update_one({"slot": slot}, {"$set": {"image": path, "v": v, "updated_at": now_iso()},
+                                                     "$setOnInsert": {"caption": "", "link": "", "enabled": True}}, upsert=True)
+    await bump()
+    return billboard_out(slot, await db.billboards.find_one({"slot": slot}, {"_id": 0}))
+
+
+@api.delete("/admin/billboards/{slot}/image")
+async def admin_clear_billboard(slot: str, request: Request):
+    await require_admin(request)
+    await db.billboards.update_one({"slot": billboard_slot(slot)}, {"$unset": {"image": "", "v": ""}, "$set": {"updated_at": now_iso()}})
+    await bump()
+    return billboard_out(slot, await db.billboards.find_one({"slot": slot}, {"_id": 0}) or {})
+
+
+# ---------- residents, the paper and live stats ----------
+
+ADMIN_FIELDS = {"_id": 0, "k": 1, "h": 1, "name": 1, "avatar_url": 1, "status": 1, "hidden": 1, "elo": 1, "uptown": 1,
+                "dock": 1, "lv": 1, "on": 1, "finished_at": 1}
+
+
+def admin_row(d: dict) -> dict:
+    lit = d["status"] == "finished"
+    if d.get("hidden"):
+        where = "Hidden"
+    elif not lit:
+        where = "Dark, not moved in"
+    elif stacks.stacked(d):
+        where = f"Floor {d['lv'] + 1}, {'Docks' if d.get('on') == 'dock' else 'uptown' if d.get('uptown') else 'city'}"
+    else:
+        where = "Uptown" if d.get("uptown") else "Docks"
+    return {"k": d["k"], "h": d["h"], "name": d.get("name"), "a": d.get("avatar_url"), "lit": lit, "hidden": bool(d.get("hidden")),
+            "points": arena.score(d), "uptown": bool(d.get("uptown")), "where": where, "joined": d.get("finished_at")}
+
+
+async def admin_resident(handle: str) -> dict:
+    d = await db.residents.find_one({"k": normalize_handle(handle).lower()}, {"_id": 0})
+    if not d:
+        raise HTTPException(404, "Nobody lives there.")
+    return d
+
+
+@api.get("/admin/residents")
+async def admin_residents(request: Request, q: str = "", hidden: bool = False):
+    await require_admin(request)
+    filt = {"hidden": True} if hidden else {}
+    q = q.strip().lstrip("@").lower()[:15]
+    if q:
+        filt["k"] = {"$regex": "^" + re.escape(q)}
+    docs = await db.residents.find(filt, ADMIN_FIELDS).sort([("status", 1), ("elo", -1), ("k", 1)]).to_list(50)
+    return {"residents": [admin_row(d) for d in docs]}
+
+
+class PointsBody(BaseModel):
+    points: int = Field(ge=0, le=5000)
+
+
+@api.post("/admin/residents/{handle}/points")
+async def admin_points(handle: str, body: PointsBody, request: Request):
+    await require_admin(request)
+    d = await admin_resident(handle)
+    if d["status"] != "finished":
+        raise HTTPException(400, "Only people who moved in have points.")
+    await db.residents.update_one({"k": d["k"]}, {"$set": {"elo": body.points}})
+    await bump()
+    return admin_row(await db.residents.find_one({"k": d["k"]}, ADMIN_FIELDS))
+
+
+class MoveBody(BaseModel):
+    to: Literal["uptown", "docks"]
+
+
+@api.post("/admin/residents/{handle}/move")
+async def admin_move(handle: str, body: MoveBody, request: Request):
+    """Uptown lifts their points to the uptown line if they're below it; the Docks drops them just under it."""
+    await require_admin(request)
+    d = await admin_resident(handle)
+    if d["status"] != "finished" or d.get("hidden"):
+        raise HTTPException(400, "Only visible people who moved in can move.")
+    if bool(d.get("uptown")) == (body.to == "uptown"):
+        raise HTTPException(400, f"Already {'uptown' if body.to == 'uptown' else 'on the Docks'}.")
+    async with TOWN_LOCK:
+        if body.to == "uptown":
+            await db.residents.update_one({"k": d["k"]}, {"$set": {"elo": max(arena.score(d), arena.UPTOWN_AT)}})
+            await go_uptown(d["k"])
+        else:
+            await db.residents.update_one({"k": d["k"]}, {"$set": {"elo": min(arena.score(d), arena.UPTOWN_AT - 1)}})
+            await go_docks(d)
+            await sync_docks()
+            await sync_stacks()
+        await bump()
+    return admin_row(await db.residents.find_one({"k": d["k"]}, ADMIN_FIELDS))
+
+
+class StoryBody(BaseModel):
+    title: str = Field(min_length=1, max_length=140)
+    body: str = Field(min_length=1, max_length=1500)
+
+
+class PaperBody(BaseModel):
+    headline: str = Field(min_length=1, max_length=140)
+    stories: list[StoryBody] = Field(min_length=1, max_length=6)
+
+
+def admin_paper_out(p: Optional[dict]) -> dict:
+    if not p:
+        return {"paper": None, "publishing": PAPER_LOCK.locked()}
+    return {"paper": {"issue": p["issue"], "label": p.get("label"), "published_at": p["published_at"], "headline": p["headline"],
+                      "stories": [{"title": s["title"], "body": s["body"]} for s in p.get("stories") or []]},
+            "publishing": PAPER_LOCK.locked()}
+
+
+@api.get("/admin/paper")
+async def admin_paper(request: Request):
+    await require_admin(request)
+    return admin_paper_out(await db.papers.find_one({}, {"_id": 0}, sort=[("issue", -1)]))
+
+
+@api.put("/admin/paper")
+async def admin_save_paper(body: PaperBody, request: Request):
+    await require_admin(request)
+    p = await db.papers.find_one({}, {"_id": 0}, sort=[("issue", -1)])
+    if not p:
+        raise HTTPException(404, "No paper yet. Publish one first.")
+    old = p.get("stories") or []
+    stories = [{"title": s.title.strip(), "body": s.body.strip(), "people": old[i].get("people", []) if i < len(old) else []}
+               for i, s in enumerate(body.stories)]
+    await db.papers.update_one({"issue": p["issue"]}, {"$set": {"headline": body.headline.strip(), "stories": stories, "edited_at": now_iso()}})
+    await bump()
+    return admin_paper_out(await db.papers.find_one({"issue": p["issue"]}, {"_id": 0}))
+
+
+@api.post("/admin/paper/publish")
+async def admin_publish_paper(request: Request):
+    await require_admin(request)
+    if PAPER_LOCK.locked():
+        raise HTTPException(409, "A paper is already being written.")
+    asyncio.create_task(publish_paper(force=True))
+    return {"accepted": True}
+
+
+async def track_share(kind: str, h: str, request: Request):
+    """Who opened a shared link, and how often X fetched its preview."""
+    bot = bool(BOT_RE.search(request.headers.get("user-agent", "")))
+    await db.share_visits.insert_one({"kind": kind, "h": h, "bot": bot, "at": now_iso()})
+
+
+@api.get("/admin/stats")
+async def admin_stats(request: Request):
+    await require_admin(request)
+    day, week = (now() - timedelta(days=1)).isoformat(), (now() - timedelta(days=7)).isoformat()
+    R, live = db.residents, {"hidden": False}
+    lit = {**live, "status": "finished"}
+
+    async def shares(bot: bool) -> dict:
+        return {"day": await db.share_visits.count_documents({"bot": bot, "at": {"$gte": day}}),
+                "week": await db.share_visits.count_documents({"bot": bot, "at": {"$gte": week}}),
+                "total": await db.share_visits.count_documents({"bot": bot})}
+    recent = await R.find({**lit, "finished_at": {"$exists": True}}, ADMIN_FIELDS).sort("finished_at", -1).to_list(8)
+    top = await R.find(lit, ADMIN_FIELDS).sort([("elo", -1), ("k", 1)]).to_list(5)
+    paper = await db.papers.find_one({}, {"_id": 0, "issue": 1, "published_at": 1, "headline": 1}, sort=[("issue", -1)])
+    return {
+        "people": {"lit": await R.count_documents(lit), "dark": await R.count_documents({**live, "status": {"$ne": "finished"}}),
+                   "hidden": await R.count_documents({"hidden": True}), "uptown": await R.count_documents({**lit, "uptown": True}),
+                   "floors": await R.count_documents({**live, "lv": {"$gte": 1}})},
+        "ground": {"taken": await count_taken(), "capacity": TOWN_CAPACITY},
+        "signups": {"day": await R.count_documents({**lit, "finished_at": {"$gte": day}}),
+                    "week": await R.count_documents({**lit, "finished_at": {"$gte": week}})},
+        "votes": {"today": await db.votes.count_documents({"day": today()}), "day": await db.votes.count_documents({"at": {"$gte": day}}),
+                  "total": await db.votes.estimated_document_count()},
+        "shares": {"opens": await shares(False), "previews": await shares(True)},
+        "tallest": tower_rows(await load_buildings(), {})[0],
+        "top": [admin_row(d) for d in top], "recent": [admin_row(d) for d in recent], "paper": paper,
+    }
 
 
 @api.post("/admin/residents/{handle}/hide")
@@ -2156,6 +2510,12 @@ async def startup():
     await db.profiles_lite.create_index("k", unique=True)
     await db.movein_events.create_index("ts", expireAfterSeconds=3600)
     await db.admin_attempts.create_index("ts", expireAfterSeconds=900)
+    await db.admin_sessions.create_index("token_hash", unique=True)
+    await db.admin_sessions.create_index("expires_at", expireAfterSeconds=0)
+    await db.billboards.create_index("slot", unique=True)
+    await db.share_visits.create_index("at")
+    await load_settings()
+    asyncio.create_task(settings_loop())
     await db.oauth_states.create_index("ts", expireAfterSeconds=600)
     await db.sessions.create_index("token_hash", unique=True)
     await db.sessions.create_index("expires_at", expireAfterSeconds=0)

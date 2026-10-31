@@ -5,6 +5,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MapControls } from "three/examples/jsm/controls/MapControls.js";
 import { WATER, heightAt, lightPhase, mix, tileOf } from "@/city3d/layout";
 import { modernModel } from "@/city3d/modern";
+import { Billboards } from "@/city3d/Billboard";
 
 const url = (model) => `/models/${model}.glb`;
 const CARS = ["sedan", "taxi", "suv", "van", "delivery", "truck"].map((c) => `cars/${c}`);
@@ -978,6 +979,7 @@ export function City3D({ city, labels, labelNodes, focus, flashes, onHover, onPi
         {city.venue && <Venue at={city.venue} people={newest.slice(0, 3)} onPick={onFace}
           onOpen={() => onPick({ x: city.venue.x, z: city.venue.z, mark: { kind: "place", id: "arrivals" } })} />}
         {city.signs.map((s) => <StandSign key={s.text[0]} text={s.text} at={[s.x, 0, s.z]} height={0.26} lift={0.3} />)}
+        <Billboards boards={city.boards} />
         <Suspense fallback={null}>
           <Pads pads={city.pads} />
           {Object.entries(groups).map(([key, items]) => (

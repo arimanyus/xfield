@@ -37,9 +37,9 @@ def test_districts_get_blocks_of_their_own():
 
 def test_blocks_stay_put_once_assigned():
     homes = {(12, 12): "a", (13, 12): "a"}
-    districts = [{"id": "a", "bx": 14, "by": 14, "blocks": [[3, 3]]}]
+    districts = [{"id": "a", "bx": 13, "by": 13, "blocks": [[6, 6]]}]
     moves, blocks, landmarks = town.plan_blocks(homes, districts)
-    assert moves == {} and blocks == {"a": [(3, 3)]} and landmarks == {"a": (14, 14)}
+    assert moves == {} and blocks == {"a": [(6, 6)]} and landmarks == {"a": (13, 13)}
 
 
 def test_districts_leave_the_civic_core():
@@ -50,15 +50,15 @@ def test_districts_leave_the_civic_core():
 
 
 def test_districts_grow_into_blocks_next_door():
-    homes = {(20 + i % 4, 20 + i // 4): "a" for i in range(12)} | {(24, 20): None}
-    _, blocks, _ = town.plan_blocks(homes, [{"id": "a", "bx": 20, "by": 20, "blocks": [[5, 5]]}])
-    assert blocks["a"][0] == (5, 5) and len(blocks["a"]) == 2
+    homes = {(20 + i % 2, 20 + i // 2): "a" for i in range(4)} | {(24, 20): None}
+    _, blocks, _ = town.plan_blocks(homes, [{"id": "a", "bx": 20, "by": 20, "blocks": [[10, 10]]}])
+    assert blocks["a"][0] == (10, 10) and len(blocks["a"]) == 2
     assert math.dist(blocks["a"][0], blocks["a"][1]) == 1
 
 
 def test_the_city_has_a_margin_of_open_land():
-    assert town.city_bounds({(0, 0)}) == (-8, -8, 11, 11)
-    assert town.city_bounds({(-1, 0), (2, 0)})[::2] == (-12, 19)
+    assert town.city_bounds({(0, 0)}) == (-8, -8, 9, 9)
+    assert town.city_bounds({(-1, 0), (2, 0)})[::2] == (-10, 13)
 
 
 def test_a_district_is_one_host_and_their_mutuals():

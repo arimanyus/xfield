@@ -11,11 +11,12 @@ MOVE_MIN_LOTS = 2
 TIERS = ("cottage", "rowhouse", "mid-rise", "tower")
 FACTION_COLORS = ("#2563EB", "#16A34A", "#EAB308", "#DC2626", "#7C3AED", "#0D9488", "#DB2777", "#EA580C")
 ELECTION_MIN = 3
-BLOCK = 4
+BLOCK = 2
 CIVIC = (0, 0)
-CIVIC_BLOCKS = {(x, y) for x in range(-2, 3) for y in range(-2, 3)}
-HOMES_PER_BLOCK = 8
-CITY_MARGIN = 2
+# The civic core keeps its 20x20 lots: 5x5 big blocks, each 2x2 house blocks with no streets inside.
+CIVIC_BLOCKS = {(x, y) for x in range(-4, 6) for y in range(-4, 6)}
+HOMES_PER_BLOCK = 4
+CITY_MARGIN = 4
 
 
 def inbound_counts(docs: list) -> Counter:
@@ -113,7 +114,7 @@ def plan_blocks(homes: dict, districts: list) -> tuple:
     for d in districts:
         if d["id"] not in landmarks:
             b = blocks[d["id"]][0]
-            mid = (b[0] * BLOCK + 1.5, b[1] * BLOCK + 1.5)
+            mid = (b[0] * BLOCK + (BLOCK - 1) / 2, b[1] * BLOCK + (BLOCK - 1) / 2)
             free = [p for p in block_lots(b) if p not in taken]
             landmarks[d["id"]] = min(free, key=lambda p: (math.dist(p, mid), p)) if free else (d["bx"], d["by"])
             taken.add(landmarks[d["id"]])

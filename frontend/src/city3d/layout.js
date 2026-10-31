@@ -1,4 +1,5 @@
-// Turns town data into a 3D city. Lots sit in 4x4 blocks between roads. The middle 3x3 blocks are the civic core:
+// Turns town data into a 3D city. House lots sit in 2x2 blocks between roads. The civic core and the Docks use big
+// blocks, 2x2 house blocks with no streets inside. The middle 3x3 big blocks are the civic core:
 // city hall on a square, with the city's essentials around it, ringed by downtown towers. Districts own whole
 // blocks further out, every house stays dark until its owner moves in and grows a floor for each friend who has,
 // and roads only run where something is built.
@@ -7,7 +8,13 @@
 // and steel uptown.
 import { modernModel } from "@/city3d/modern";
 
-const BLOCK = 4;
+const BLOCK = 2;
+const BIG = 2;
+const BIG_W = BIG * (BLOCK + 1) - 1;
+const SIDE = BIG * BLOCK;
+const bigOf = (b) => Math.floor(b / BIG);
+// Tile offset of the i-th lot across a big block, stepping over the street its house blocks would have had.
+const bigLot = (i) => i + Math.floor(i / BLOCK);
 const FLOOR_H = 0.2;
 const DOCK_FLOORS = ["fd0", "fd1", "fd2", "fd3"];
 const UP_FLOORS = ["fu0", "fu1"];
@@ -64,14 +71,14 @@ const PLOT = "#B9A98C";
 
 // Everyone starts on the Docks: a strip of blocks on the north shore, filled outward from the middle, 16 houses a
 // block, with a crane yard at each end. A house moves to its own lot near its friends once it wins its way uptown.
-const DOCK_LOTS = BLOCK * BLOCK;
+const DOCK_LOTS = SIDE * SIDE;
 const dockBlock = (i) => (i % 2 ? -(i + 1) / 2 : i / 2);
 export const dockTint = (color) => mix(color || STONE, "#5B6470", 0.72);
 // A house on the Docks is the shack matching its home design.
 export const modelOf = (m, docks) => (docks ? `s${m[1]}` : m);
 
-// The ring around city hall. Parts are [model, dx, dz, scale, tint] in the block's own frame, where +z faces the
-// square. The first part carries the sign: [text, bg, fg].
+// The ring around city hall, keyed by big block. Parts are [model, dx, dz, scale, tint] in the block's own frame,
+// where +z faces the square. The first part carries the sign: [text, bg, fg].
 const CAR = 0.14;
 export const CORE = {
   "0,-1": { id: "park", name: "Central Park", color: "#16A34A", pad: PARK, sign: ["CENTRAL PARK", "#166534", "#DCFCE7"], parts: [] },
@@ -109,7 +116,8 @@ const PLACES = {
             sign: ["POST OFFICE", "#B91C1C", "#FFFFFF"] },
 };
 const downtown = (b, c) => Math.max(Math.abs(b), Math.abs(c)) === DOWNTOWN;
-const superblock = (b, c) => (!downtown(b, c) ? null : b === 0 || c === 0 ? `${b},${c}` : `${Math.sign(b)},${Math.sign(c)}`);
+// Billboard spots the admin fills: downtown parkland by big block, and the Docks crane yard.
+export const BILLBOARD_SPOTS = { hero: "0,-2", west: "-2,0", east: "2,0", corner: "2,2", ledger: "2,-1", docks: "yard" };
 const CORE_KEYS = [];
 for (let b = -DOWNTOWN; b <= DOWNTOWN; b++) for (let c = -DOWNTOWN; c <= DOWNTOWN; c++) CORE_KEYS.push(`${b},${c}`);
 
@@ -173,21 +181,28 @@ export function buildCity(town) {
   for (const list of floorsAt.values()) list.sort((a, b) => a.lv - b.lv);
   const owner = new Map();
   for (const n of nbs) for (const [bx, by] of n.blocks || []) owner.set(`${bx},${by}`, n);
-  const used = new Set([...CORE_KEYS, ...owner.keys()]);
+  const used = new Set(owner.keys());
+  const addBig = (key) => {
+    const [B, C] = key.split(",").map(Number);
+    for (let i = 0; i < BIG; i++) for (let j = 0; j < BIG; j++) used.add(`${B * BIG + i},${C * BIG + j}`);
+  };
+  CORE_KEYS.forEach(addBig);
   for (const h of town.residents) used.add(`${blockOf(h.x)},${blockOf(h.y)}`);
   const docked = ground.filter((r) => r.d != null);
-  const cD = Math.min(...[...used].map((k) => Number(k.split(",")[1]))) - 1;
+  const cD = bigOf(Math.min(...[...used].map((k) => Number(k.split(",")[1])))) - 1;
   const slots = town.residents.filter((r) => r.d != null).map((r) => r.d);
   const nDock = Math.max(1, Math.ceil((Math.max(-1, ...slots) + 1) / DOCK_LOTS));
   const docks = new Map();
   for (let i = 0; i < nDock + 2; i++) docks.set(`${dockBlock(i)},${cD}`, i < nDock ? i : "yard");
-  for (const k of docks.keys()) used.add(k);
+  for (const k of docks.keys()) addBig(k);
   const atDock = new Map(docked.map((r) => [r.d, r]));
   const blocks = [...used].map((k) => k.split(",").map(Number));
   const [b0, b1] = [Math.min(...blocks.map((b) => b[0])), Math.max(...blocks.map((b) => b[0]))];
   const c1 = Math.max(...blocks.map((b) => b[1]));
-  const grid = [firstTile(b0) - 1, firstTile(b1 + 1) - 1, firstTile(cD) - 1, firstTile(c1 + 1) - 1];
-  const land = [tileOf(bounds[0]), tileOf(bounds[2]), firstTile(cD) - 1, tileOf(bounds[3])];
+  const grid = [firstTile(b0) - 1, firstTile(b1 + 1) - 1, firstTile(cD * BIG) - 1, firstTile(c1 + 1) - 1];
+  const dockBs = [...docks.keys()].map((k) => Number(k.split(",")[0]));
+  const land = [Math.min(tileOf(bounds[0]), firstTile(Math.min(...dockBs) * BIG) - 1),
+                Math.max(tileOf(bounds[2]), firstTile((Math.max(...dockBs) + 1) * BIG) - 1), firstTile(cD * BIG) - 1, tileOf(bounds[3])];
   const island = [land[0] - COAST, land[1] + COAST, land[2] - 1.5, land[3] + COAST];
   const built = [[land[0] - 0.5, land[1] + 0.5, land[2] - 0.5, land[3] + 0.5]];
   const water = {
@@ -196,7 +211,13 @@ export function buildCity(town) {
   };
   const shape = { built, island, water };
 
-  const buildings = [], pads = [], labels = [], homeList = [], signs = [];
+  const buildings = [], pads = [], labels = [], homeList = [], signs = [], boards = [];
+  const spotBoards = new Map((town.billboards || []).map((bb) => [BILLBOARD_SPOTS[bb.id], bb]));
+  const addBoard = (key, x, z) => {
+    const bb = spotBoards.get(key);
+    if (bb) boards.push({ ...bb, x, z });
+    return !!bb;
+  };
   const faceRoad = (tx, tz) => (isRoad(tz + 1) ? 0 : isRoad(tz - 1) ? Math.PI : isRoad(tx + 1) ? Math.PI / 2 : -Math.PI / 2);
   const tree = (x, z, key, y = 0) => buildings.push({ model: pick(TREES, key), x, z, y, rot: 0, scale: 0.8 + rand(key + "s") * 0.5 });
   const marks = new Map(nbs.map((n) => [`${n.bx},${n.by}`, n]));
@@ -226,53 +247,61 @@ export function buildCity(town) {
   };
 
   for (const [b, c] of blocks) {
-    const key = `${b},${c}`, t0 = firstTile(b), u0 = firstTile(c), mid = [t0 + 1.5, u0 + 1.5];
+    const B = bigOf(b), C = bigOf(c), bigKey = `${B},${C}`;
+    const isBig = Math.max(Math.abs(B), Math.abs(C)) <= DOWNTOWN || docks.has(bigKey);
+    if (isBig && (b !== B * BIG || c !== C * BIG)) continue;
+    const key = isBig ? bigKey : `${b},${c}`, t0 = firstTile(b), u0 = firstTile(c), span = isBig ? BIG_W : BLOCK;
+    const mid = [t0 + (span - 1) / 2, u0 + (span - 1) / 2], E = span - 1, corners = [[0, 0], [E, 0], [0, E], [E, E]];
     if (key === "0,0") {
-      pads.push({ x: mid[0], z: mid[1], w: 4, d: 4, color: SQUARE });
+      pads.push({ x: mid[0], z: mid[1], w: BIG_W, d: BIG_W, color: SQUARE });
       hall = { x: mid[0], z: mid[1], mark: { kind: "city_hall" } };
-      for (const [dx, dz] of [[0, 0], [3, 0], [0, 3], [3, 3]]) tree(t0 + dx, u0 + dz, `hall${dx}${dz}`);
+      for (const [dx, dz] of corners) tree(t0 + dx, u0 + dz, `hall${dx}${dz}`);
       labels.push({ kind: "place", id: "hall", pos: [mid[0], 3.6, mid[1]], text: "🏛 City Hall" });
       continue;
     }
     const core = CORE[key];
     if (core) {
-      placeCore(core, b, c, mid, { buildings, pads, signs }, tree);
+      placeCore(core, B, C, mid, { buildings, pads, signs }, tree);
       continue;
     }
     if (key === VENUE) {
       venue = { x: mid[0], z: mid[1] };
-      pads.push({ x: mid[0], z: mid[1], w: 4, d: 4, color: PARK });
-      for (const [dx, dz] of [[1.75, -1.75], [-1.75, 1.75], [0.4, -1.8], [-1.8, 0.4], [1.8, 0.9], [0.9, 1.8]]) tree(mid[0] + dx, mid[1] + dz, `venue${dx}${dz}`);
+      pads.push({ x: mid[0], z: mid[1], w: BIG_W, d: BIG_W, color: PARK });
+      for (const [dx, dz] of [[2.1, -2.1], [-2.1, 2.1], [0.4, -2.2], [-2.2, 0.4], [2.2, 0.9], [0.9, 2.2]]) tree(mid[0] + dx, mid[1] + dz, `venue${dx}${dz}`);
       labels.push({ kind: "place", id: "arrivals", pos: [mid[0], 2.7, mid[1]], text: "🛎 Arrivals" });
       continue;
     }
     const place = PLACES[key];
     if (place) {
-      pads.push({ x: mid[0], z: mid[1], w: 4, d: 4, color: PLAZA });
+      pads.push({ x: mid[0], z: mid[1], w: BIG_W, d: BIG_W, color: PLAZA });
       buildings.push({ model: place.model, x: mid[0], z: mid[1], rot: 0, tint: place.tint, sign: place.sign, mark: { kind: "place", id: place.id } });
-      for (const [dx, dz] of [[0, 0], [3, 0], [0, 3], [3, 3]]) tree(t0 + dx, u0 + dz, `${key}${dx}${dz}`);
+      for (const [dx, dz] of corners) tree(t0 + dx, u0 + dz, `${key}${dx}${dz}`);
       labels.push({ kind: "place", id: place.id, pos: [mid[0], place.top, mid[1]], text: place.label });
       continue;
     }
-    if (downtown(b, c)) {
-      pads.push({ x: mid[0], z: mid[1], w: 4, d: 4, color: PARK });
-      for (let i = 0; i < 6; i++) tree(t0 - 0.3 + rand(`${key}:${i}`) * 3.6, u0 - 0.3 + rand(`${key}:${i}z`) * 3.6, `${key}:${i}`);
+    if (downtown(B, C)) {
+      pads.push({ x: mid[0], z: mid[1], w: BIG_W, d: BIG_W, color: PARK });
+      const board = addBoard(key, mid[0], mid[1]);
+      for (let i = 0; i < 8; i++) {
+        const x = t0 - 0.3 + rand(`${key}:${i}`) * (E + 0.6), z = u0 - 0.3 + rand(`${key}:${i}z`) * (E + 0.6);
+        if (!board || Math.hypot(x - mid[0], z - mid[1]) > 1.9) tree(x, z, `${key}:${i}`);
+      }
       continue;
     }
     if (docks.has(key)) {
       const i = docks.get(key), prop = (model, x, z, k, scale) => buildings.push({ model, x, z, rot: rand(k + "r") * 6.3, scale });
-      pads.push({ x: mid[0], z: mid[1], w: 4, d: 4, color: QUAY });
-      for (let s = 0; s < 16; s++) {
+      pads.push({ x: mid[0], z: mid[1], w: BIG_W, d: BIG_W, color: QUAY });
+      for (let s = 0; s < 22; s++) {
         const k = `${key}stain${s}`, w = 0.3 + rand(k + "w") * 0.9;
-        pads.push({ x: t0 - 0.4 + rand(k) * 3.8, z: u0 - 0.4 + rand(k + "z") * 3.8, w, d: w * (0.5 + rand(k + "d")), y: 0.014, color: pick(STAINS, k) });
+        pads.push({ x: t0 - 0.4 + rand(k) * (E + 0.8), z: u0 - 0.4 + rand(k + "z") * (E + 0.8), w, d: w * (0.5 + rand(k + "d")), y: 0.014, color: pick(STAINS, k) });
       }
-      for (let s = 0; s < 5; s++) {
+      for (let s = 0; s < 6; s++) {
         const k = `${key}puddle${s}`, w = 0.25 + rand(k + "w") * 0.4;
-        pads.push({ x: t0 - 0.3 + rand(k) * 3.6, z: u0 - 0.3 + rand(k + "z") * 3.6, w, d: w * (0.6 + rand(k + "d") * 0.6), y: 0.016, color: PUDDLE });
+        pads.push({ x: t0 - 0.3 + rand(k) * (E + 0.6), z: u0 - 0.3 + rand(k + "z") * (E + 0.6), w, d: w * (0.6 + rand(k + "d") * 0.6), y: 0.016, color: PUDDLE });
       }
-      for (let f = 0; f < BLOCK; f++) {
+      for (let f = 0; f < SIDE; f++) {
         const k = `${key}fence${f}`;
-        if (rand(k) < 0.65) buildings.push({ model: "modern/fence", x: t0 + f, z: u0 - 0.58, rot: (rand(k + "r") - 0.5) * 0.25 });
+        if (rand(k) < 0.65) buildings.push({ model: "modern/fence", x: t0 + bigLot(f), z: u0 - 0.58, rot: (rand(k + "r") - 0.5) * 0.25 });
       }
       const boat = (x, z, rot, k) => {
         const [dx, dz] = [Math.sin(rot) * 0.6, Math.cos(rot) * 0.6];
@@ -280,27 +309,28 @@ export function buildCity(town) {
           buildings.push({ model: "modern/trawler", x, z, y: WATER - 0.03, rot: rot + (rand(k) - 0.5) * 0.2 });
       };
       if (i === "yard") {
-        for (const dx of [0.3, 2.7]) buildings.push({ model: "modern/crane", x: t0 + dx, z: u0 + 0.4, rot: 0, tint: "#B45309" });
-        for (const [dx, dz] of [[0, 2], [1, 3], [2, 2], [3, 3]]) buildings.push({ model: "modern/containers", x: t0 + dx, z: u0 + dz, rot: 0 });
-        prop("modern/wreck", t0 + 1.5, u0 + 1.6, key, 1);
-        prop("modern/pallets", t0 + 0.4, u0 + 3.2, key + "p", 1);
-        buildings.push({ model: "modern/pier", x: t0 + 1.5, z: u0 - 2.6, rot: 0 });
-        boat(t0 + 2.1, u0 - 2.9, 0, key);
+        for (const dx of [0.3, E - 0.3]) buildings.push({ model: "modern/crane", x: t0 + dx, z: u0 + 0.4, rot: 0, tint: "#B45309" });
+        for (const [dx, dz] of [[0, 2], [1, 3], [2, 2], [3, 3]]) buildings.push({ model: "modern/containers", x: t0 + bigLot(dx), z: u0 + bigLot(dz), rot: 0 });
+        const first = !boards.some((bb) => bb.id === "docks");
+        if (!(first && addBoard("yard", mid[0], mid[1] - 0.2))) prop("modern/wreck", mid[0], mid[1] + 0.1, key, 1);
+        prop("modern/pallets", t0 + 0.4, u0 + E + 0.2, key + "p", 1);
+        buildings.push({ model: "modern/pier", x: mid[0], z: u0 - 2.6, rot: 0 });
+        boat(mid[0] + 0.6, u0 - 2.9, 0, key);
         continue;
       }
       if (i === 0) labels.push({ kind: "place", id: "docks", pos: [mid[0], 2.2, mid[1]], text: "⚓ The Docks" });
-      boat(t0 + 0.8 + rand(key + "b") * 2.4, u0 - 2.7, Math.PI / 2, key + "b");
+      boat(t0 + 0.8 + rand(key + "b") * (E - 0.6), u0 - 2.7, Math.PI / 2, key + "b");
       for (let j = 0; j < DOCK_LOTS; j++) {
-        const slot = i * DOCK_LOTS + j, tx = t0 + Math.floor(j / BLOCK), tz = u0 + (j % BLOCK), k = `${key}:${j}`;
+        const slot = i * DOCK_LOTS + j, tx = t0 + bigLot(Math.floor(j / SIDE)), tz = u0 + bigLot(j % SIDE), k = `${key}:${j}`;
         const fl = floorsAt.get(`d:${slot}`) || [], own = atDock.get(slot), home = own || fl[0];
         if (home) addHome(home, own ? fl : fl.slice(1), tx, tz, true);
         else if (rand(k) < 0.8) prop(pick(["modern/wreck", "modern/pallets", "modern/dumpster", "modern/junk", "modern/bags", "modern/tent", "modern/tires",
                                            "modern/barrel", "modern/laundry"], k + "m"), tx, tz, k, 1.2);
       }
-      for (let gx = 1; gx < BLOCK; gx++) {
-        for (let gz = 1; gz < BLOCK; gz++) {
-          const k = `${key}g${gx}${gz}`;
-          if (rand(k) < 0.65) prop(pick(["modern/bags", "modern/junk", "modern/barrel", "modern/tires", "modern/bags"], k + "m"), t0 + gx - 0.5, u0 + gz - 0.5, k, 0.8);
+      for (let gx = 1; gx < SIDE; gx++) {
+        for (let gz = 1; gz < SIDE; gz++) {
+          const k = `${key}g${gx}${gz}`, gap = (g) => (bigLot(g - 1) + bigLot(g)) / 2;
+          if (rand(k) < 0.65) prop(pick(["modern/bags", "modern/junk", "modern/barrel", "modern/tires", "modern/bags"], k + "m"), t0 + gap(gx), u0 + gap(gz), k, 0.8);
         }
       }
       continue;
@@ -316,7 +346,7 @@ export function buildCity(town) {
         }
       }
     }
-    if (nb) pads.push({ x: mid[0], z: mid[1], w: 4, d: 4, color: mix(nb.color, "#FFFFFF", 0.8 - 0.45 * Math.min(1, (filled.get(key) || 0) / 10)) });
+    if (nb) pads.push({ x: mid[0], z: mid[1], w: BLOCK, d: BLOCK, color: mix(nb.color, "#FFFFFF", 0.8 - 0.45 * Math.min(1, (filled.get(key) || 0) / (BLOCK * BLOCK))) });
     for (let i = 0; i < BLOCK; i++) {
       for (let j = 0; j < BLOCK; j++) {
         const x = b * BLOCK + i, y = c * BLOCK + j, tx = t0 + i, tz = u0 + j, lot = `${x},${y}`;
@@ -339,22 +369,29 @@ export function buildCity(town) {
     }
   }
 
+  // Streets never run inside a big block, nor between the downtown corners and their two neighbours.
+  const groupOf = (b, c) => {
+    const B = bigOf(b), C = bigOf(c), big = `${B},${C}`;
+    if (docks.has(big)) return `dock ${big}`;
+    if (Math.max(Math.abs(B), Math.abs(C)) > DOWNTOWN) return null;
+    return downtown(B, C) && B !== 0 && C !== 0 ? `corner ${Math.sign(B)},${Math.sign(C)}` : `big ${big}`;
+  };
+  const near = (t) => (isRoad(t) ? [tileBlock(t - 1), tileBlock(t + 1)] : [tileBlock(t)]);
+  const around = (tx, tz) => near(tx).flatMap((b) => near(tz).map((c) => [b, c]));
   const inside = (tx, tz) => {
-    const bs = isRoad(tx) ? [tileBlock(tx - 1), tileBlock(tx + 1)] : [tileBlock(tx)];
-    const cs = isRoad(tz) ? [tileBlock(tz - 1), tileBlock(tz + 1)] : [tileBlock(tz)];
-    const groups = new Set(bs.flatMap((b) => cs.map((c) => superblock(b, c))));
+    const groups = new Set(around(tx, tz).map(([b, c]) => groupOf(b, c)));
     return groups.size === 1 && !groups.has(null);
   };
+  // A street left out between two big blocks of one downtown corner turns to parkland; inside a big block its pad covers it.
+  const between = (tx, tz) => new Set(around(tx, tz).map(([b, c]) => `${bigOf(b)},${bigOf(c)}`)).size > 1;
   const roadAt = (tx, tz) => {
     if ((!isRoad(tx) && !isRoad(tz)) || inside(tx, tz)) return false;
-    const bs = isRoad(tx) ? [tileBlock(tx - 1), tileBlock(tx + 1)] : [tileBlock(tx)];
-    const cs = isRoad(tz) ? [tileBlock(tz - 1), tileBlock(tz + 1)] : [tileBlock(tz)];
-    return bs.some((b) => cs.some((c) => used.has(`${b},${c}`)));
+    return around(tx, tz).some(([b, c]) => used.has(`${b},${c}`));
   };
   const roads = [], signals = [], crossings = new Set();
   for (let tx = grid[0]; tx <= grid[1]; tx++) {
     for (let tz = grid[2]; tz <= grid[3]; tz++) {
-      if ((isRoad(tx) || isRoad(tz)) && inside(tx, tz)) pads.push({ x: tx, z: tz, w: 1, d: 1, color: PARK });
+      if ((isRoad(tx) || isRoad(tz)) && inside(tx, tz) && between(tx, tz)) pads.push({ x: tx, z: tz, w: 1, d: 1, color: PARK });
       if (!roadAt(tx, tz)) continue;
       const arms = Object.keys(DIRS).filter((d) => roadAt(tx + DIRS[d][0], tz + DIRS[d][1]));
       const piece = roadPiece(arms);
@@ -401,7 +438,7 @@ export function buildCity(town) {
     }
   }
 
-  return { roads, buildings, pads, signals, labels, lanes, signs, hall, venue, homes: homeList, grid, island, built, water,
+  return { roads, buildings, pads, signals, labels, lanes, signs, hall, venue, boards, homes: homeList, grid, island, built, water,
            center: [(grid[0] + grid[1]) / 2, (grid[2] + grid[3]) / 2] };
 }
 
@@ -409,7 +446,7 @@ function placeCore(core, b, c, mid, { buildings, pads, signs }, tree) {
   const rot = c ? (c > 0 ? Math.PI : 0) : b > 0 ? -Math.PI / 2 : Math.PI / 2;
   const cos = Math.cos(rot), sin = Math.sin(rot);
   const at = (dx, dz) => [mid[0] + dx * cos + dz * sin, mid[1] - dx * sin + dz * cos];
-  pads.push({ x: mid[0], z: mid[1], w: 4, d: 4, color: core.pad || PLAZA });
+  pads.push({ x: mid[0], z: mid[1], w: BIG_W, d: BIG_W, color: core.pad || PLAZA });
   if (core.field) pads.push({ x: at(-0.4, 0.75)[0], z: at(-0.4, 0.75)[1], w: 2.2, d: 2.2, y: 0.02, color: PARK });
   const mark = { kind: "civic", id: core.id, name: core.name, color: core.color };
   core.parts.forEach(([model, dx, dz, scale, tint], i) => {
