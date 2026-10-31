@@ -5,6 +5,7 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MapControls } from "three/examples/jsm/controls/MapControls.js";
 import { WATER, heightAt, lightPhase, mix, tileOf } from "@/city3d/layout";
 import { modernModel } from "@/city3d/modern";
+import { pointAt } from "@/city3d/rail";
 import { Billboards } from "@/city3d/Billboard";
 
 const url = (model) => `/models/${model}.glb`;
@@ -544,6 +545,28 @@ function Bulbs({ at }) {
   );
 }
 
+// The train runs the loop round the city and pulls up at Central Station for a few seconds every lap.
+const TRAIN = ["loco", "wagon", "wagon", "wagon"];
+const CAR_GAP = 0.62 * 1.2;
+function Train({ rail }) {
+  const refs = useRef([]);
+  const cars = useMemo(() => TRAIN.map((m) => modernModel(`modern/${m}`).parts.map((p) => ({ geometry: p.geometry, material: skin(p, "#DC2626") }))), []);
+  useFrame(({ clock }) => {
+    const v = 1.6, dwell = 4, lap = rail.total / v + dwell, run = (clock.elapsedTime % lap) * v;
+    const head = run < rail.stop ? run : run < rail.stop + dwell * v ? rail.stop : run - dwell * v;
+    refs.current.forEach((g, i) => {
+      const [x, z, a] = pointAt(rail, head - i * CAR_GAP);
+      g.position.set(x, 0.045, z);
+      g.rotation.y = a;
+    });
+  });
+  return cars.map((parts, i) => (
+    <group key={i} ref={(el) => { refs.current[i] = el; }} scale={1.2}>
+      {parts.map((p, j) => <mesh key={j} geometry={p.geometry} material={p.material} castShadow />)}
+    </group>
+  ));
+}
+
 const _identity = new THREE.Quaternion();
 const _unit = new THREE.Vector3(1, 1, 1);
 const LENS = { r: "#EF4444", y: "#FACC15", g: "#22C55E" };
@@ -1028,6 +1051,7 @@ export function City3D({ city, labels, labelNodes, focus, flashes, onHover, onPi
           onOpen={() => onPick({ x: city.venue.x, z: city.venue.z, mark: { kind: "place", id: "arrivals" } })} />}
         {city.signs.map((s) => <StandSign key={s.text[0]} text={s.text} at={[s.x, 0, s.z]} height={s.height ?? 0.26} lift={s.lift ?? 0.3} />)}
         <Smoke at={city.smoke} />
+        {city.rail && <Train rail={city.rail} />}
         <Haze boxes={city.haze} />
         <Bulbs at={city.bulbs} />
         <Billboards boards={city.boards} />

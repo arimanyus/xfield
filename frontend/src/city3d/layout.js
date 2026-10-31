@@ -180,8 +180,10 @@ export function buildCity(town) {
   };
   CORE_KEYS.forEach(addBig);
   for (const h of town.residents) used.add(`${blockOf(h.x)},${blockOf(h.y)}`);
+  joinUp(used);
   const docked = ground.filter((r) => r.d != null);
-  const cD = bigOf(Math.min(...[...used].map((k) => Number(k.split(",")[1])))) - 2;
+  // The Docks row, then its yards, then one open row with the railway and two streets across it, then the city.
+  const cD = bigOf(Math.min(...[...used].map((k) => Number(k.split(",")[1])))) - 3;
   const slots = town.residents.filter((r) => r.d != null).map((r) => r.d);
   const nDock = Math.max(1, Math.ceil((Math.max(-1, ...slots) + 1) / DOCK_LOTS));
   const docks = new Map();
@@ -405,12 +407,17 @@ export function buildCity(town) {
     if ((!isRoad(tx) && !isRoad(tz)) || inside(tx, tz)) return false;
     return around(tx, tz).some(([b, c]) => used.has(`${b},${c}`));
   };
+  const gapTop = firstTile((cD + 2) * BIG) - 1, crossing = new Set();
+  for (const cx of [firstTile(0) - 1, firstTile(BIG) - 1]) {
+    for (let tz = gapTop + 1; tz <= grid[3] && !roadAt(cx, tz); tz++) crossing.add(`${cx},${tz}`);
+  }
+  const streetAt = (tx, tz) => crossing.has(`${tx},${tz}`) || roadAt(tx, tz);
   const roads = [], signals = [], crossings = new Set();
   for (let tx = grid[0]; tx <= grid[1]; tx++) {
     for (let tz = grid[2]; tz <= grid[3]; tz++) {
       if ((isRoad(tx) || isRoad(tz)) && inside(tx, tz) && between(tx, tz)) pads.push({ x: tx, z: tz, w: 1, d: 1, color: PARK });
-      if (!roadAt(tx, tz)) continue;
-      const arms = Object.keys(DIRS).filter((d) => roadAt(tx + DIRS[d][0], tz + DIRS[d][1]));
+      if (!streetAt(tx, tz)) continue;
+      const arms = Object.keys(DIRS).filter((d) => streetAt(tx + DIRS[d][0], tz + DIRS[d][1]));
       const piece = roadPiece(arms);
       if (!piece) continue;
       roads.push({ model: piece.model, rot: piece.rot, x: tx, z: tz });
@@ -430,7 +437,7 @@ export function buildCity(town) {
   const runs = (axis, line, from, to) => {
     let start = null;
     for (let t = from; t <= to + 1; t++) {
-      const on = t <= to && (axis === "x" ? roadAt(t, line) : roadAt(line, t));
+      const on = t <= to && (axis === "x" ? streetAt(t, line) : streetAt(line, t));
       if (on && start === null) start = t;
       if (!on && start !== null) {
         if (t - 1 - start >= 2) {
@@ -447,6 +454,7 @@ export function buildCity(town) {
 
   const xs = cityBlocks.map(([b]) => b), zs = cityBlocks.map(([, c]) => c);
   const box = [firstTile(Math.min(...xs)) - 1, firstTile(Math.max(...xs) + 1) - 1, firstTile(Math.min(...zs)) - 1, firstTile(Math.max(...zs) + 1) - 1];
+  ctx.railNorth = gapTop + 3;
   addOutskirts(ctx, box);
   const farm = (x, z) => x < box[0] - 3 && z > (box[2] + box[3]) / 2;
   for (let x = island[0]; x <= island[1]; x++) {
@@ -459,8 +467,47 @@ export function buildCity(town) {
     }
   }
 
-  return { roads, buildings, pads, signals, labels, lanes, signs, hall, venue: ctx.arrivals, boards, homes: homeList, grid, island, built, water, smoke, haze, bulbs,
-           center: [(grid[0] + grid[1]) / 2, (grid[2] + grid[3]) / 2] };
+  return { roads, buildings, pads, signals, labels, lanes, signs, hall, venue: ctx.arrivals, rail: ctx.rail, boards, homes: homeList, grid, island, built, water,
+           smoke, haze, bulbs, center: [(grid[0] + grid[1]) / 2, (grid[2] + grid[3]) / 2] };
+}
+
+// A block cut off from the rest (someone housed out past an empty stretch) gets joined back up: the fewest blocks
+// between it and the city are added, so they fill with shops and their streets link it in. Corners touching count.
+function joinUp(used) {
+  const parse = (k) => k.split(",").map(Number);
+  const N4 = [[1, 0], [-1, 0], [0, 1], [0, -1]], N8 = [...N4, [1, 1], [1, -1], [-1, 1], [-1, -1]];
+  const reach = (from) => {
+    const seen = new Set([from]), q = [from];
+    while (q.length) {
+      const [b, c] = parse(q.pop());
+      for (const [db, dc] of N8) {
+        const n = `${b + db},${c + dc}`;
+        if (used.has(n) && !seen.has(n)) seen.add(n) && q.push(n);
+      }
+    }
+    return seen;
+  };
+  let city = reach("0,0");
+  for (const k of [...used]) {
+    if (city.has(k)) continue;
+    const part = reach(k), prev = new Map([...part].map((p) => [p, null])), q = [...part];
+    let hit = null;
+    for (let i = 0; i < q.length && !hit; i++) {
+      const [b, c] = parse(q[i]);
+      for (const [db, dc] of N4) {
+        const n = `${b + db},${c + dc}`;
+        if (prev.has(n)) continue;
+        prev.set(n, q[i]);
+        if (city.has(n)) {
+          hit = n;
+          break;
+        }
+        q.push(n);
+      }
+    }
+    for (let p = prev.get(hit); p && !part.has(p); p = prev.get(p)) used.add(p);
+    city = reach("0,0");
+  }
 }
 
 function placeCore(core, b, c, mid, { buildings, pads, signs }, tree) {

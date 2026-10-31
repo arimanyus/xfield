@@ -3,6 +3,7 @@
 // landmarks on the outskirts, the industrial yard that keeps the Docks apart, and the grime of the Docks themselves.
 import { modernModel } from "@/city3d/modern";
 import { chance, pick, rand } from "@/city3d/rng";
+import { pointAt, railLoop } from "@/city3d/rail";
 
 const PLAZA = "#E7E2D6";
 const PAVING = "#F1EDE4";
@@ -157,6 +158,18 @@ export function dockGrit(ctx, key, mid, t0, u0, E, first) {
 // the station and the airport each carry a billboard the admin fills.
 const OUT = (name) => ({ kind: "civic", id: name.toLowerCase().replace(/\W+/g, "-"), name });
 
+// One railway loop round the whole city: down the west side past Central Station, along the south below the airport,
+// up the east beyond the stadium and the fair, and back along the open row between the city and the Docks yards.
+// The train pulls up at the station platform; its lap and stop go to the scene as ctx.rail.
+function addRailway(ctx, W, E, N, S, stationZ) {
+  const loop = railLoop(W, E, N, S, 2), n = Math.round(loop.total), step = loop.total / n;
+  for (let i = 0; i < n; i++) {
+    const [x, z, rot] = pointAt(loop, (i + 0.5) * step);
+    ctx.buildings.push({ model: "modern/track", x, z, rot, scale: step });
+  }
+  ctx.rail = { ...loop, stop: stationZ - (N + 2) + 1 };
+}
+
 export function addOutskirts(ctx, [x0, x1, z0, z1]) {
   const mz = Math.round((z0 + z1) / 2), mx = Math.round((x0 + x1) / 2), B = ctx.buildings, P = ctx.pads;
   const sx = x1 + 5, sz = mz - 3;
@@ -183,8 +196,7 @@ export function addOutskirts(ctx, [x0, x1, z0, z1]) {
            sign: ["CENTRAL STATION", "#7C2D12", "#FFFFFF"], mark: OUT("Train Station") });
   ctx.addBoard("station", tx - 1.4, tz - 2.05, 0.9);
   P.push({ x: line + 0.75, z: tz, w: 0.5, d: 3.6, y: 0.03, color: "#D6D3D1" });
-  for (let z = z0 - 2; z <= z1 + 4; z++) B.push({ model: "modern/track", x: line, z, rot: Math.PI / 2, scale: 1 });
-  B.push({ model: "modern/train", x: line, z: tz - 0.4, rot: Math.PI / 2, scale: 1.2, tint: "#DC2626" });
+  addRailway(ctx, line, x1 + 9.5, ctx.railNorth, z1 + 9.5, tz);
   const az = z1 + 6.5;
   P.push({ x: mx, z: az, w: 18, d: 1.7, color: "#4B5563" });
   for (let i = -8; i <= 8; i += 2) P.push({ x: mx + i, z: az, w: 0.9, d: 0.08, y: 0.026, color: "#F8FAFC" });
