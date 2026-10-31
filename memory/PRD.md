@@ -102,3 +102,11 @@
 - Mentions: @handles (up to 5, not self, existing non-hidden residents) create db.mentions {id,to,msg_id,from,h,a,text,at,seen}. GET /api/chat me.mentions = unseen ones (senders hidden later are skipped); POST /api/chat/mentions/seen {ids}. Admin removing a message deletes its mentions.
 - UI: toast "@x mentioned you" + Jump in (opens chat, scrolls to and highlights the message) / Dismiss; more than 3 missed -> one summary toast; with the chat open the message just lights up; background tabs wait until visible. Own handle highlighted in messages. Toaster added to CityPage.
 - Tested: iteration_17 (backend 70/70 incl. tests/test_chat_reactions_mentions.py; frontend all flows). Chat left empty for launch.
+
+## 2026-10-31: Production fix: cut-off block + railway loop
+- Bug (prod screenshot): a lone block in the grass west of the Timeline, not connected by road. Cause: town.frontier_target measured its ring from 0,0 while the civic core spans blocks -4..5, so newcomers on the west/north landed 2 blocks out (151/360 directions left a gap). Fix: frontier_target walks out from the core's middle and stops just past the built edge (tests/test_frontier.py).
+- Frontend safety net (user choice "fill the gap"): layout.js joinUp adds the fewest blocks between any cut-off block and the city (they fill with shops, their streets link in). Nobody's house moves.
+- Docks row moved one big row further north: Docks, yards, then an open row with the railway, crossed by two connector streets (x=-1 and x=5) so the Docks still reach downtown.
+- Railway (user choice "one loop round the city"): rail.js railLoop/pointAt, fill.js addRailway (track pieces along a rounded rectangle: west past Central Station, south below the airport, east beyond stadium/fair, north through the open row). City3D Train (loco + 3 wagons, modern.js 'loco'/'wagon') runs the loop and stops ~4 s at the station each lap (~2.5 min).
+- Tested: iteration_18 (backend 72/72, frontend road network one component, no dead ends, train moves). Fixes after: no street lamp on the rail crossing, station pad nudged off the track, joinUp guard. Needs a redeploy to reach production.
+- Note: a light-blue strip at the top of the canvas shows only in headless Chrome screenshots (likely SwiftShader); not confirmed on a real GPU.

@@ -170,14 +170,13 @@ def frontier_target(key: str, occupied: set) -> tuple:
     """Just past the city's edge in this person's own direction, walking out from the middle of the civic core, so
     the block they land in always touches the city."""
     built = CIVIC_BLOCKS | {block_of(*p) for p in occupied}
-    xs = [b[0] for b in CIVIC_BLOCKS]
-    c = BLOCK * (min(xs) + max(xs) + 1) / 2 - 0.5
+    cx, cy = (BLOCK * (min(v) + max(v) + 1) / 2 - 0.5 for v in zip(*CIVIC_BLOCKS))
     angle = math.radians(hval(key) % 360)
     dx, dy = math.cos(angle), math.sin(angle)
     r = 0.0
-    while block_of(round(c + r * dx), round(c + r * dy)) in built:
+    while block_of(round(cx + r * dx), round(cy + r * dy)) in built:
         r += 0.5
-    return c + r * dx, c + r * dy
+    return cx + r * dx, cy + r * dy
 
 
 def host_groups(nodes: list, mutuals: dict) -> list:

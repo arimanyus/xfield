@@ -424,7 +424,7 @@ export function buildCity(town) {
       if (arms.length >= 3) {
         crossings.add(`${tx},${tz}`);
         for (const arm of arms) signals.push({ x: tx + HEADS[arm].dx, z: tz + HEADS[arm].dz, rot: HEADS[arm].rot, axis: HEADS[arm].axis });
-      } else if (piece.model === "roads/road-straight" && hash(`${tx},${tz}`) % 3 === 0) {
+      } else if (piece.model === "roads/road-straight" && hash(`${tx},${tz}`) % 3 === 0 && tz !== gapTop + 3) {
         const alongX = arms.includes("E"), side = hash(`${tz},${tx}`) % 2 ? 1 : -1;
         buildings.push({ model: "roads/light-square", x: tx + (alongX ? 0 : 0.46 * side), z: tz + (alongX ? 0.46 * side : 0),
                          rot: (alongX ? 0 : Math.PI / 2) + (side > 0 ? 0 : Math.PI), scale: 0.6 });
@@ -488,6 +488,7 @@ function joinUp(used) {
     return seen;
   };
   let city = reach("0,0");
+  if (!used.has("0,0")) return;
   for (const k of [...used]) {
     if (city.has(k)) continue;
     const part = reach(k), prev = new Map([...part].map((p) => [p, null])), q = [...part];

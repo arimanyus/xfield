@@ -191,7 +191,7 @@ export function addOutskirts(ctx, [x0, x1, z0, z1]) {
   B.push({ model: "modern/college", x: ux + 1.6, z: uz + 2.1, rot: Math.PI / 2, size: 1.7, tint: "#7C2D12" });
   for (const [dx, dz] of [[-2.6, -2.6], [2.6, -2.6], [-2.6, 0.4], [2.6, 0.2], [0, 2.8]]) ctx.tree(ux + dx, uz + dz, `uni${dx}${dz}`);
   const tx = x0 - 5, tz = mz - 4, line = x0 - 8.5;
-  P.push({ x: tx - 0.9, z: tz - 0.3, w: 5.2, d: 4.6, color: CONCRETE });
+  P.push({ x: tx - 0.6, z: tz - 0.3, w: 4.8, d: 4.6, color: CONCRETE });
   B.push({ model: "modern/station", x: tx + 0.4, z: tz, rot: Math.PI / 2, size: 2.8, tint: "#B45309",
            sign: ["CENTRAL STATION", "#7C2D12", "#FFFFFF"], mark: OUT("Train Station") });
   ctx.addBoard("station", tx - 1.4, tz - 2.05, 0.9);

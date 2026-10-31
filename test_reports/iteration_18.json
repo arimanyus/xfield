@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 18 covered the fix for houses cut off from the city: the frontier_target change, joinUp gap fill, the open north row with two connector streets, the railway loop and the moving train. Backend: test_frontier.py passes 2/2. GET /api/town returns 200. A serial regression run of frontier, mansions, admin_panel, chat_billboards and chat_reactions_mentions passed 72/72. Frontend, checked two ways. (1) A headless Node simulation ran the real buildCity code (layout.js, fill.js, rail.js) on live /api/town data. (2) Playwright on the 3D city. Gap fill: zz_gap_test's house (tile -24,0) is joined to the west edge of the city by filler blocks full of shops. All 975 road tiles form one connected network, with no 'road-end-round' dead-end pieces and no lone road pieces. On screen, /?at=zz_gap_test opens the house card ('Dark: not moved in yet') and the cut-off block sits inside a continuous chain of street-ringed blocks. I also added synthetic cut-off residents to the north-east, south, east and south-west, with backend city_bounds recomputed. In every case the road network stayed one component, with no dead ends, the house was 1 tile from the network, and the track stayed on flat land. Open row: the Docks yards now sit one big row further north, an open grass row runs between them and the city, and the rail crosses it at z=-22. Two connector streets (x=-1 and x=5) cross the row with level crossings. Railway: one closed loop with rounded corners, bbox x -33.5..32.5, z -22..29.5, length 231.6, lap about 149 s including the 4 s dwell. It passes west of the station's platform, south of the runway and east of the stadium and fair. The red loco and 3 wagons were seen moving between two screenshots. No buildings, pads, trees or billboards sit on the track, apart from the one lamp post below. Regression: the labels City Hall, Timeline, Post Office, Millionaires' Row, The Ledger, Docks and Arrivals all show. Cars drive. The Millionaires' Row place card (place-card-row) opens with the top-10 ladder. The chat panel opens. The minimap moves the camera. There were 0 console or page errors. Billboards were not visually checked because town.billboards is currently empty. Cleanup is done: zz_gap_test is deleted and the db.meta town version is bumped (now 370). db.mansions is still empty.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "tests/test_share_card_v3.py::test_share_page_bot", "issue": "Failed once in a run of the whole suite with xdist (-n auto). Passes when run alone with -n 0. Flaky under parallel runs, not caused by this change."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "layout.js road loop: street lamps ('roads/light-square')", "issue": "A street lamp stands on the railway at the eastern connector-street crossing, world position (4.54, -22.0). The lamp is placed on straight road pieces where hash(tx,tz)%3===0, offset 0.46 to one side, and the crossing tile (5,-22) is a straight piece, so the train runs through the post. Fix: skip lamps on tiles where z === ctx.railNorth (or any tile within about 0.6 of the track).", "selector": "n/a (3D)", "priority": "LOW"}
+    ],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Central Station", "issues": ["The station concourse pad (x from -33.5 to -28.3) ends exactly on the track centreline (W = x0-8.5), so half the track sleepers sit on concrete. On screen this reads as a platform edge and looks OK. Optional tidy-up: shift the pad 0.3-0.4 east."]},
+      {"screen": "All views (headless Chrome)", "issues": ["A light-blue rectangle about 1250x35 px is always drawn at the top centre of the WebGL canvas, at the same screen position in every camera view. Hiding the canvas removes it, so it is inside the canvas, not an HTML element. Most likely a SwiftShader/headless artifact, but worth one look on a real GPU (for example a screen-space quad or a fog/sky plane)."]}
+    ]
+  },
+  "test_report_links": ["/app/backend/tests/test_frontier.py", "/app/test_reports/pytest/iter18.xml", "/tmp/sim/sim.mjs (headless buildCity checker, not persisted under /app)"],
+  "action_items": [
+    "Optional (low): don't place a street lamp on road tiles the railway crosses (layout.js, the light-square branch in the roads loop). One lamp currently sits on the track at (4.54, -22).",
+    "Optional: nudge the Central Station concourse pad slightly east so it does not cover half the track.",
+    "Optional: check on a real GPU whether the light-blue bar at the top of the canvas is real."
+  ],
+  "critical_code_review_comments": [
+    "joinUp: reach('0,0') assumes block '0,0' is always in used. It is, through CORE_KEYS. If that ever changed, city would be empty and the BFS for a cut-off part would never find a hit and would loop forever. A guard (if !city.size return) would make it safe.",
+    "joinUp re-runs reach('0,0') over the whole city after every cut-off part, and runs the outer loop over every used key. That is O(parts x blocks), fine at 200 homes.",
+    "frontier_target uses the x span of CIVIC_BLOCKS for both axes. That is correct only while the core is square (it is: -4..5 on both axes). Computing ys separately would be safer.",
+    "Backend bounds (city_bounds) do not include the frontend filler blocks. Filler blocks always lie between existing blocks, so they stay inside bounds. Verified in the simulation: the track never leaves the flat land."
+  ],
+  "updated_files": ["/app/test_reports/iteration_18.json"],
+  "success_rate": {"backend": "100% (72/72 serial; test_frontier 2/2)", "frontend": "100% of the listed flows. One low-priority visual issue: a lamp post on the track."},
+  "seed_data_creation": "None created. The pre-existing test resident zz_gap_test was deleted at the end and db.meta town version was bumped by 1.",
+  "retest_needed": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "Fastest way to verify the layout: copy layout/fill/rail/modern/rng.js to /tmp/sim as .mjs, rewriting '@/city3d/x' to './x.mjs'. Symlink /app/frontend/node_modules. Stub document.createElement('canvas') (modern.js needs a 2D context). Then call buildCity on the /api/town JSON in Node to count road components, find road-end-round pieces and list things on the track (sample pointAt(city.rail, s)). Writing under /app/tests is blocked by the harness. The minimap has no data-testid; it sits at about x 1700-1898, y 851-1022 in a 1920x1080 viewport. Place labels have data-testid place-label-<id>; get_by_text with Millionaires' Row did not match, so click by coordinates. The 3D city takes about 40 s to load."
+}
