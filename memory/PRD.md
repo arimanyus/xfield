@@ -56,3 +56,8 @@
 - P2 Cache load_buildings per town version (scans all residents per /residents and card request).
 - P2 Drawn fallback share card shows a lone house for floor residents (real players get the 3D snapshot).
 - Earlier P1/P2 items above still open (data-testids across v3 UI, mobile sign-in card overlap, 2D route clean-up).
+
+## 2026-10-31: Bigger houses on their land
+- city3d/layout.js: every house (lots and Docks) now scales to fill its lot (LOT = 0.98 of a tile, was shrink-only to 0.86, so most homes grew ~25%); stacked floors, their spacing and roof caps scale with the house under them.
+- Verified by screenshots (uptown, Docks towers, floors aligned). Then published to live.
+- Note: Docks blocks keep gaps where residents moved uptown (slots aren't compacted) — possible follow-up.

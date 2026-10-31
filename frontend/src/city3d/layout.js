@@ -11,12 +11,11 @@ const BLOCK = 4;
 const FLOOR_H = 0.2;
 const DOCK_FLOORS = ["fd0", "fd1", "fd2", "fd3"];
 const UP_FLOORS = ["fu0", "fu1"];
-const FIT = 0.86;
+// Every house grows to fill its lot, garden to the edges; floors stacked on it grow with it.
+const LOT = 0.98;
+const fillOf = (model) => LOT / modernModel(`modern/${model}`).footprint;
 // How high a design's roof is once placed, where the next floor goes.
-const deckOf = (model, stretch) => {
-  const { deck, footprint } = modernModel(`modern/${model}`);
-  return deck * Math.min(1, FIT / footprint) * stretch;
-};
+const deckOf = (model, stretch) => modernModel(`modern/${model}`).deck * fillOf(model) * stretch;
 const COAST = 9;
 export const WATER = -0.08;
 
@@ -212,17 +211,18 @@ export function buildCity(town) {
   const addHome = (home, rest, tx, tz, onDocks) => {
     const dark = home.s === "r", tint = tintOf(home, onDocks), rot = faceRoad(tx, tz), model = modelOf(home.m, onDocks);
     const stretch = home.m[0] === "t" ? Math.max(1, home.f / TOWER_FLOORS) : 1, deck = deckOf(model, stretch);
+    const s = fillOf(model), fh = FLOOR_H * s;
     const stack = [home, ...rest], item = { x: tx, z: tz, rot, owner: home, stories: home.f };
     homeList.push({ ...item, y: 0, top: deck + 0.02, color: dark ? "#334155" : tint, stack, level: 0 });
-    buildings.push({ ...item, model: `modern/${model}`, fit: FIT, tint, dark, face: dark ? undefined : home.a, stretch });
+    buildings.push({ ...item, model: `modern/${model}`, scale: s, tint, dark, face: dark ? undefined : home.a, stretch });
     rest.forEach((r, i) => {
-      const y = deck + i * FLOOR_H, k = `${r.k}:floor`, off = r.s === "r", shake = onDocks ? 1 : 0;
-      homeList.push({ x: tx, z: tz, y, top: y + FLOOR_H + 0.02, rot, owner: r, stories: 1, color: off ? "#334155" : tintOf(r, onDocks), stack, level: i + 1 });
-      buildings.push({ x: tx + (rand(k) - 0.5) * 0.08 * shake, z: tz + (rand(`${k}z`) - 0.5) * 0.08 * shake, y, scale: 1,
-                       rot: rot + (rand(`${k}r`) - 0.5) * 0.3 * shake, owner: r, model: `modern/${pick(onDocks ? DOCK_FLOORS : UP_FLOORS, r.k)}`,
+      const y = deck + i * fh, k = `${r.k}:floor`, off = r.s === "r", shake = onDocks ? s : 0;
+      homeList.push({ x: tx, z: tz, y, top: y + fh + 0.02, rot, owner: r, stories: 1, color: off ? "#334155" : tintOf(r, onDocks), stack, level: i + 1 });
+      buildings.push({ x: tx + (rand(k) - 0.5) * 0.08 * shake, z: tz + (rand(`${k}z`) - 0.5) * 0.08 * shake, y, scale: s,
+                       rot: rot + (rand(`${k}r`) - 0.5) * 0.3 * (onDocks ? 1 : 0), owner: r, model: `modern/${pick(onDocks ? DOCK_FLOORS : UP_FLOORS, r.k)}`,
                        tint: tintOf(r, onDocks), dark: off, face: off ? undefined : r.a });
     });
-    if (rest.length) buildings.push({ x: tx, z: tz, y: deck + rest.length * FLOOR_H, rot, scale: 1, model: onDocks ? "modern/fdcap" : "modern/fucap" });
+    if (rest.length) buildings.push({ x: tx, z: tz, y: deck + rest.length * fh, rot, scale: s, model: onDocks ? "modern/fdcap" : "modern/fucap" });
   };
 
   for (const [b, c] of blocks) {
